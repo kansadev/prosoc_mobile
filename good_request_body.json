@@ -1,0 +1,103 @@
+{
+    "codeAdhesion": "SO-26-KIN-AA0001",
+    "nom": "Mukobota",
+    "prenom": "Nelson",
+    "postnom": "Makielela",
+    "dateNaissance": "1991-02-27",
+    "telephone": "+243999938972",
+    "emailAffilie": "nelsonmukobota61@gmail.com",
+    "provinceResidence": "Kinshasa",
+    "communeResidence": "Masina",
+    "quartierResidence": "Sans-fil",
+    "avenueResidence": "Mangala",
+    "numeroResidence": "43",
+    "communeActivite": null,
+    "quartierActivite": null,
+    "avenueActivite": null,
+    "numeroActivite": null,
+    "photoBase64": "iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAYAAABw4pVUAAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH6AYbFSIzO428vQAACHlJREFUeNrtm39sVFUWxz/vvdFSisgii6Cyi6wLpSg/XIsYpYAt1KILorS7pX9Yw9psbYstYmOisS6u9Y9N3GgkJsa6u9lsjX9YjUatf6wR6mZdtmAtXbZQKNAfUAsUqyAsy69Fp8zbe/vH9GFm5s3MvDed92bu90mG997MvHfffeeee+6559wZpBEmTJgwYcKECRPE29bSOfbyLw52C4ofM9gA7AUKsh8LWBH97SgBjwLlwFvAr9L/v1R58XwYis63l8z9IWA2gYfK6f8K8DtwDLgjE790BwPId/q6S9P9XwS+gBvI9pGfLgKrgXf9wYv6gGzL9NdfBv6D96U0gN0w6L3f+fKSA8gWw/4rgT0Eni63gM3AI6GgCclSgGwqf72CwDOmGjYBy0NB84E8PCDb/PuvAXYTWMrUwnpgaTBoHpC7C7j9eLpv89v7gGXBIDWfPAn4O+BHeXo+BByg5w6Z3Ksnv3n/U6F3FwDPCXp3FfAsoHdwT07KexLwDPA7vOee/fM28Ff6B2R6GZqfA0fIdnZ9FvAQ3XfIzvKAnwDHCG7w7mngH+XzXw9E6Wb7PAs4SWeK8bT/O+g688qgZ/M976PrN36Lrqf4bdaAnwFHya9DdpUHTALmIeD08/vIAd8ZcljGZf+K3jHkaYpX6EwSfo0ePMePZ6NnDEnTMwa9Y6A8YBYg7wCPoBvKqN/P8Wb4IeAFdFz1A4A/b8Z0gBwEvqP7bMNo6w494Ad6bXk/GgD/orN0uXbZg3fTf3bIdYAn6RxtmGXN73kC3fA+hE7/o80S9v5eR8Xv9RPAX9v9MhWvF7zX9b4f99q9F2E7v6vY+9XvOat/V4z2+tT6C+95q9XfT3vX76O8+M+YF+N9zXv+TffG6C/C690g3tfvTfeE+N9xL9p7U67vBbyv/wW9N0/fD3v3fL7f90r96y/8Z+D3+vE8vN76O4Naper9f93rW9Q7xT/Pezvv9/63+zf66hXUatft/f+6B129H/F+866N/f3Mv/+Oby/L27063+f9+/w/h2hXrfH69Y+6t/x90X/bK/T9fS868Yg4M8CHvT/18wLg770D/CfwDPrf/F9w9zY/T0PvH7bF20MOfP9g9H9G7D3P4/p8L3jPP9R77v96B6B/v79+396e9R/gPTcE/+L++h8XNfX+0N9/pOfpBfgX7w/v9w/2D9T7+WwBv1XvF6T/y9FfB/468LfgH6D/R4H/gLfe6f/g/4J3AL+O98d6z68F3kK/p/+D3gZp/XgD3j7gVv9wbeA/Yf0G8D8A7NnB/w641f//wD8H7pD90H3wBv8euAPw98Dt6HeP2XOfA/4WvP7gLzY66f8E/LdG6f6z0fnAn6K7gD/F6Pw3wR/8P9H/mXh72B00w6T/L7Yg3y5Z+239gYwZfIOMuUf7vYvAwwbWtwLwKLA4FLwZWAUsCwXNAnwNWAf8GbgHnreA/6A7B/gS3U6vD+D7O/C9gO95/f43vWPAX+/tAn96bxf47wPfDPjZfWvBv279BvCrf9uAPwf8p4HPh0f+C0M9Y8YI9D8wI+p8Y76NkwAAAABJRU5ErkJggg==",
+    "photoContentType": "image/png",
+    "carteIdentiteBase64": "iVBORw0KGgoAAAANSUhEUgAAAZAAAADICAQAAADp082fAAAABGdBTUEAALGPC/xhBQAAACBjSFJNAAB6JgAAgIQAAPoAAACA6AAAdTAAAOpgAAA6mAAAF3CculE8AAAAAmJLR0QA/4ePzL8AAAAHdElNRQfmBhkSExiY3S7fAAABf0lEQVR42u3PMQEAAAwCoPdPbQ772EEF6MhcZgKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkQKRApECkWIDv3Y0AWZ0ve9AAAAAElFTkSuQmCC",
+    "carteIdentiteContentType": "image/png",
+    "affilieStatut": true,
+    "statutDossier": "COMPLET",
+    "typeAdhesionId": 2,
+    "agentId": 3,
+    "adhesionStatut": true,
+    "collectes": [
+      {
+        "souscription": null,
+        "typeCollecte": "FRAIS",
+        "fraisId": 1,
+        "cotisationAffilieId": null,
+        "montant": 1.5,
+        "mois": 3,
+        "annee": 2026,
+        "referencePaiement": null,
+        "modePaiement": "VIRTUAL_ACCOUNT",
+        "operateur": null,
+        "statutPaiement": "OK",
+        "montantRecu": 1.5,
+        "montantAttendu": 1.5,
+        "deviseId": 1,
+        "observation": "Frais d'adhésion initiaux",
+        "statut": true
+      },
+      {
+        "souscription": {
+          "prestationId": 7,
+          "dateSouscription": "2026-03-19T16:04:51.463Z",
+          "statut": true
+        },
+        "typeCollecte": "SOUSCRIPTION",
+        "fraisId": null,
+        "cotisationAffilieId": null,
+        "montant": 10.0,
+        "mois": 3,
+        "annee": 2026,
+        "referencePaiement": null,
+        "modePaiement": "VIRTUAL_ACCOUNT",
+        "operateur": null,
+        "statutPaiement": "OK",
+        "montantRecu": 10.0,
+        "montantAttendu": 10.0,
+        "deviseId": 1,
+        "observation": "Souscription : Assistance Juridique",
+        "statut": true
+      },
+      {
+        "souscription": {
+          "prestationId": 7,
+          "dateSouscription": "2026-03-19T16:04:51.465Z",
+          "statut": true
+        },
+        "typeCollecte": "SOUSCRIPTION",
+        "fraisId": null,
+        "cotisationAffilieId": null,
+        "montant": 50.0,
+        "mois": 3,
+        "annee": 2026,
+        "referencePaiement": null,
+        "modePaiement": "VIRTUAL_ACCOUNT",
+        "operateur": null,
+        "statutPaiement": "OK",
+        "montantRecu": 50.0,
+        "montantAttendu": 50.0,
+        "deviseId": 1,
+        "observation": "Souscription : Assistance Funéraire",
+        "statut": true
+      }
+    ],
+    "dependants": [
+      {
+        "nom": "Salome Mukobota",
+        "adresse": "N°43, Avenue Mangala, Q/Sans-fil, C/Masina",
+        "lienParente": "fille",
+        "affilieId": 1,
+        "dateNaissance": "2016-03-19",
+        "certificatScolariteBase64": null,
+        "certificatScolariteContentType": null
+      }
+    ],
+    "antecedants": []
+  }

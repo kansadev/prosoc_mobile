@@ -1,0 +1,25 @@
+# Flutter Development Rules
+
+## Architecture
+- Utiliser MVVM.
+- Séparer UI, Services et Models.
+- Utiliser Provider pour la gestion d'état.
+- Respecter les principes SOLID.
+
+## Widgets
+- Préférer StatelessWidget lorsque possible.
+- Éviter les widgets imbriqués excessivement.
+- Créer des widgets réutilisables.
+
+## Code Style
+- Utiliser null safety.
+- Toujours typer explicitement les variables publiques.
+- Ajouter la documentation DartDoc aux classes.
+
+## API
+- Utiliser Dio pour les requêtes HTTP.
+- Centraliser les endpoints dans api_constants.dart.
+
+## UI
+- Respecter Material Design 3.
+- Support du mode sombre obligatoire.
