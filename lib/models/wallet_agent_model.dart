@@ -8,6 +8,12 @@ import '../utils/currency_formatter.dart';
 abstract final class WalletAgentDeviseIds {
   static const int cdf = 1;
   static const int usd = 2;
+
+  static String labelForId(int deviseId) {
+    if (deviseId == usd) return 'USD';
+    if (deviseId == cdf) return 'CDF';
+    return 'devise';
+  }
 }
 
 double _walletDouble(dynamic value) {

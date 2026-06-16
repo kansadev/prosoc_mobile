@@ -12,6 +12,7 @@ import '../models/affilie_model.dart';
 import '../models/adhesion_with_affilie_model.dart';
 import '../models/dashboard_agent_model.dart';
 import '../models/dashboard_superviseur_model.dart';
+import '../models/dashboard_percepteur_model.dart';
 import '../models/dashboard_affilie_model.dart';
 import '../models/frais_model.dart';
 import '../models/recent_affilie_model.dart';
@@ -325,9 +326,9 @@ class ApiService {
     return _get<List<dynamic>>('/api/agent');
   }
 
-  /// GET /api/agent/{id} - Agent spécifique
+  /// GET /api/Agent/{id} — Détails agent
   static Future<ApiResponse<Map<String, dynamic>>> getAgent(int id) async {
-    return _get<Map<String, dynamic>>('/api/agent/$id');
+    return _get<Map<String, dynamic>>('/api/Agent/$id');
   }
 
   /// GET /api/Agent/{agentId}/affilies - Affiliés d'un agent (paginé)
@@ -1116,6 +1117,114 @@ class ApiService {
     }
   }
 
+  /// GET /api/DashboardPercepteur/summary — Dashboard percepteur (token JWT)
+  static Future<ApiResponse<DashboardPercepteurModel>>
+      getDashboardPercepteurSummary() async {
+    const context = 'DashboardPercepteur/summary';
+    try {
+      final response = await _httpGet(
+        Uri.parse('${ApiConfig.baseUrl}/api/DashboardPercepteur/summary'),
+        context: context,
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map) {
+          return ApiResponse.error(
+            'Réponse dashboard percepteur invalide',
+            statusCode: response.statusCode,
+          );
+        }
+        final map = decoded is Map<String, dynamic>
+            ? decoded
+            : Map<String, dynamic>.from(decoded);
+        return ApiResponse.success(
+          DashboardPercepteurModel.fromJson(map),
+          statusCode: response.statusCode,
+        );
+      }
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  /// GET /api/DashboardPercepteur/transactions — Transactions récentes percepteur
+  static Future<ApiResponse<List<PercepteurTransaction>>>
+      getDashboardPercepteurTransactions({
+    int limit = 5,
+  }) async {
+    const context = 'DashboardPercepteur/transactions';
+    try {
+      final response = await _httpGet(
+        Uri.parse(
+          '${ApiConfig.baseUrl}/api/DashboardPercepteur/transactions?limit=$limit',
+        ),
+        context: context,
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        final rows = decoded is List
+            ? decoded
+            : PaginatedResponseHelper.extractRows(decoded);
+        final transactions = rows
+            .whereType<Map>()
+            .map(
+              (row) => PercepteurTransaction.fromJson(
+                Map<String, dynamic>.from(row),
+              ),
+            )
+            .toList();
+        return ApiResponse.success(
+          transactions,
+          statusCode: response.statusCode,
+        );
+      }
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  /// GET /api/DashboardPercepteur/evolution-transactions — Évolution par période
+  static Future<ApiResponse<List<PercepteurEvolutionTransaction>>>
+      getDashboardPercepteurEvolutionTransactions({
+    int mois = 6,
+  }) async {
+    const context = 'DashboardPercepteur/evolution-transactions';
+    try {
+      final response = await _httpGet(
+        Uri.parse(
+          '${ApiConfig.baseUrl}/api/DashboardPercepteur/evolution-transactions?mois=$mois',
+        ),
+        context: context,
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        final rows = decoded is List
+            ? decoded
+            : PaginatedResponseHelper.extractRows(decoded);
+        final evolution = rows
+            .whereType<Map>()
+            .map(
+              (row) => PercepteurEvolutionTransaction.fromJson(
+                Map<String, dynamic>.from(row),
+              ),
+            )
+            .toList();
+        return ApiResponse.success(
+          evolution,
+          statusCode: response.statusCode,
+        );
+      }
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
   /// GET /api/DashboardAgent/performance - Performance du dashboard agent (agentID from token)
   static Future<ApiResponse<DashboardAgentModel>> getDashboardAgentPerformance(
   ) async {
@@ -1417,22 +1526,30 @@ class ApiService {
     }
   }
 
-  /// PUT /api/agent/{id} - Mettre à jour un agent
+  /// PUT /api/Agent/{id} — Mettre à jour un agent
   static Future<ApiResponse<Map<String, dynamic>>> updateAgent(
     int id, {
     String? codeAT,
     String? nomComplet,
     String? matricule,
     String? phone,
+    String? emailAgent,
+    String? fonction,
+    String? roleAgent,
+    String? photoUrl,
     int? zoneSocialeId,
     int? categorieAgentId,
     bool? statut,
   }) async {
-    return _put<Map<String, dynamic>>('/api/agent/$id', {
+    return _put<Map<String, dynamic>>('/api/Agent/$id', {
       if (codeAT != null) 'codeAT': codeAT,
       if (nomComplet != null) 'nomComplet': nomComplet,
       if (matricule != null) 'matricule': matricule,
       if (phone != null) 'phone': phone,
+      if (emailAgent != null) 'emailAgent': emailAgent,
+      if (fonction != null) 'fonction': fonction,
+      if (roleAgent != null) 'roleAgent': roleAgent,
+      if (photoUrl != null) 'photoUrl': photoUrl,
       if (zoneSocialeId != null) 'zoneSocialeId': zoneSocialeId,
       if (categorieAgentId != null) 'categorieAgentId': categorieAgentId,
       if (statut != null) 'statut': statut,
@@ -1501,13 +1618,14 @@ class ApiService {
     return _get<List<dynamic>>('/api/affilie');
   }
 
-  /// GET /api/affilie - Rechercher des affiliés avec paramètres
+  /// GET /api/Affilie — Liste paginée des affiliés (recherche, filtres)
   static Future<ApiResponse<Map<String, dynamic>>> searchAffilies({
     int page = 1,
     int pageSize = 10,
     String? search,
     String? sortBy,
     String? sortDirection,
+    String? filters,
   }) async {
     final queryParams = <String, String>{
       'Page': page.toString(),
@@ -1515,12 +1633,14 @@ class ApiService {
       'PageSize': pageSize.toString(),
       'pageSize': pageSize.toString(),
       if (sortBy != null && sortBy.isNotEmpty) 'SortBy': sortBy,
-      if (sortDirection != null && sortDirection.isNotEmpty) 'SortDirection': sortDirection,
+      if (sortDirection != null && sortDirection.isNotEmpty)
+        'SortDirection': sortDirection,
       if (search != null && search.isNotEmpty) 'Search': search,
+      if (filters != null && filters.isNotEmpty) 'Filters': filters,
     };
 
     final queryString = Uri(queryParameters: queryParams).query;
-    return _get<Map<String, dynamic>>('/api/affilie?$queryString');
+    return _get<Map<String, dynamic>>('/api/Affilie?$queryString');
   }
 
   /// GET /api/affilie/{id} - Affilié spécifique

@@ -109,14 +109,11 @@ class _HomeScreenState extends State<HomeScreen> {
         setState(() {
           _availableDeviseIds = result.availableDeviseIds;
           _walletsByDevise = result.walletsByDevise;
-          if (result.hasWallet) {
-            _walletAgent = result.wallet;
-            if (result.resolvedDeviseId != null) {
-              _syncDeviseSelection(result.resolvedDeviseId!);
-            }
-          } else if (!silent) {
-            _walletAgent = null;
+          if (result.resolvedDeviseId != null) {
+            _syncDeviseSelection(result.resolvedDeviseId!);
           }
+          _walletAgent =
+              _walletsByDevise[_selectedDeviseId] ?? result.wallet;
           _isLoadingWallet = false;
         });
       } else {
@@ -288,14 +285,20 @@ String _getGreeting() {
       );
     }
 
-    final wallet = _walletAgent;
+    final wallet = _walletsByDevise[_selectedDeviseId] ?? _walletAgent;
+    final unavailableMessage = wallet == null && !_isLoadingWallet
+        ? ApiErrorHelper.walletAgentUnavailableMessage(
+            deviseId: _selectedDeviseId,
+          )
+        : null;
+
     return AccountCard(
       balance: wallet?.formattedSolde ?? '0.00',
       matricule: wallet?.agentMatricule ?? 'N/A',
       isActive: wallet?.statut ?? false,
       isUsdSelected: _isUsdSelected,
-      availableDeviseIds:
-          _hasDiscoveredDevises ? _availableDeviseIds : null,
+      enableAllDevises: true,
+      unavailableMessage: unavailableMessage,
       onDeviseChanged: _onDeviseChanged,
     );
   }

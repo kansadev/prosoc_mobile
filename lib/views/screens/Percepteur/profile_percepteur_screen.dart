@@ -1,15 +1,28 @@
 import 'package:flutter/material.dart';
+
 import '../../../config/colors.dart';
 import '../../../services/auth_service.dart';
 import '../at/change_password_screen.dart';
+import 'edit_percepteur_profile_screen.dart';
 
 // ============================================
 // ÉCRAN PROFIL PERCEPTEUR
 // ============================================
-class ProfilePercepteurScreen extends StatelessWidget {
+class ProfilePercepteurScreen extends StatefulWidget {
   final VoidCallback? onLogout;
 
   const ProfilePercepteurScreen({super.key, this.onLogout});
+
+  @override
+  State<ProfilePercepteurScreen> createState() =>
+      _ProfilePercepteurScreenState();
+}
+
+class _ProfilePercepteurScreenState extends State<ProfilePercepteurScreen> {
+
+  static const double _headerBandHeight = 120;
+  static const double _avatarRadius = 45;
+  static const double _avatarOverlap = 45;
 
   Widget _buildProfileAvatar({
     required String userName,
@@ -22,9 +35,16 @@ class ProfilePercepteurScreen extends StatelessWidget {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.all(color: Colors.white, width: 4),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.12),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: CircleAvatar(
-        radius: 45,
+        radius: _avatarRadius,
         backgroundColor: Colors.grey[200],
         backgroundImage: userPhotoUrl != null && userPhotoUrl.isNotEmpty
             ? NetworkImage(userPhotoUrl)
@@ -43,6 +63,35 @@ class ProfilePercepteurScreen extends StatelessWidget {
     );
   }
 
+  String _memberSince(DateTime? dateCreation) {
+    if (dateCreation == null) return 'Membre Prosoc';
+    const months = [
+      'janvier',
+      'février',
+      'mars',
+      'avril',
+      'mai',
+      'juin',
+      'juillet',
+      'août',
+      'septembre',
+      'octobre',
+      'novembre',
+      'décembre',
+    ];
+    return 'Membre depuis ${months[dateCreation.month - 1]} ${dateCreation.year}';
+  }
+
+  Future<void> _openEditProfile() async {
+    final updated = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const EditPercepteurProfileScreen(),
+      ),
+    );
+    if (updated == true && mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUser = AuthService.currentUser;
@@ -51,388 +100,205 @@ class ProfilePercepteurScreen extends StatelessWidget {
     final userEmail = currentUser?.utilisateur.email ?? '';
     final userPhone = currentUser?.utilisateur.telephone ?? '';
     final userPhotoUrl = currentUser?.utilisateur.photoUrl;
-    final agentId = currentUser?.utilisateur.agentId;
     final referenceUtilisateur =
         currentUser?.utilisateur.referenceUtilisateur ?? '';
     final nomUtilisateur = currentUser?.utilisateur.nomUtilisateur ?? '';
-    final userId = currentUser?.utilisateur.idUtilisateur;
     final statutUtilisateur = currentUser?.utilisateur.statut ?? true;
-    final isConnecte = currentUser?.utilisateur.isConnecte ?? false;
     final acceptNotification = currentUser?.acceptNotification ?? false;
     final dateCreation = currentUser?.utilisateur.dateCreation;
     final doitChangerMotDePasse = currentUser?.doitChangerMotDePasse ?? false;
-    final permissions = currentUser?.permissions ?? [];
     final roles = currentUser?.roles ?? [];
     final primaryRole = currentUser?.primaryRole;
 
-    // Formater la date d'adhésion
-    String memberSince = "Membre depuis";
-    if (dateCreation != null) {
-      final months = [
-        'janvier',
-        'février',
-        'mars',
-        'avril',
-        'mai',
-        'juin',
-        'juillet',
-        'août',
-        'septembre',
-        'octobre',
-        'novembre',
-        'décembre',
-      ];
-      memberSince =
-          "Membre depuis ${months[dateCreation.month - 1]} ${dateCreation.year}";
-    }
-
     return Scaffold(
-      backgroundColor: Colors.white,
-      body: CustomScrollView(
-        slivers: [
-          // Header style Twitter (Bannière + Back button)
-          SliverAppBar(
-            expandedHeight: 160,
-            backgroundColor: AppColors.prosocGreen,
-            floating: false,
-            pinned: true,
-            elevation: 0,
-            clipBehavior: Clip.none,
-            flexibleSpace: Stack(
-              clipBehavior: Clip.none,
-              fit: StackFit.expand,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        AppColors.prosocGreen,
-                        AppColors.prosocGreen.withValues(alpha: 0.8),
-                      ],
-                    ),
-                  ),
-                ),
-                Positioned(
-                  left: 16,
-                  bottom: -45,
-                  child: _buildProfileAvatar(
-                    userName: userName,
-                    userPhotoUrl: userPhotoUrl,
-                  ),
-                ),
-              ],
-            ),
-            actions: [
-              // Indicateur de mot de passe à changer
-              if (doitChangerMotDePasse)
-                IconButton(
-                  icon: const Icon(
-                    Icons.warning_amber_rounded,
-                    color: Colors.orange,
-                  ),
-                  onPressed: () {
-                    _showPasswordChangeDialog(context);
-                  },
-                  tooltip: 'Changer le mot de passe',
-                ),
-            ],
+      backgroundColor: const Color(0xFFF8F9FA),
+      body: Column(
+        children: [
+          _buildFixedHeader(
+            context: context,
+            userName: userName,
+            userPhotoUrl: userPhotoUrl,
+            doitChangerMotDePasse: doitChangerMotDePasse,
           ),
-
-          // Contenu du profil
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 32),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const SizedBox(height: 60),
+                  const SizedBox(height: 8),
                   Align(
                     alignment: Alignment.centerRight,
                     child: OutlinedButton(
-                      onPressed: () {},
+                      onPressed: _openEditProfile,
                       style: OutlinedButton.styleFrom(
                         shape: const StadiumBorder(),
                         side: BorderSide(color: Colors.grey.shade300),
                         padding: const EdgeInsets.symmetric(horizontal: 20),
+                        backgroundColor: Colors.white,
                       ),
                       child: const Text(
-                        "Modifier le profil",
+                        'Modifier le profil',
                         style: TextStyle(
-                          color: Colors.black,
-                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
                   ),
-
                   const SizedBox(height: 12),
-
-                  // Nom et Role
                   Text(
                     userName,
                     style: const TextStyle(
                       fontSize: 22,
                       fontWeight: FontWeight.bold,
                       letterSpacing: -0.5,
+                      color: AppColors.textPrimary,
                     ),
                   ),
+                  const SizedBox(height: 4),
                   Text(
                     userRole,
-                    style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+                    style: TextStyle(
+                      fontSize: 15,
+                      color: Colors.grey.shade600,
+                    ),
                   ),
-
-                  const SizedBox(height: 15),
-
-                  // Infos rapides
-                  Wrap(
-                    spacing: 12,
-                    runSpacing: 8,
-                    crossAxisAlignment: WrapCrossAlignment.center,
+                  const SizedBox(height: 12),
+                  Row(
                     children: [
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.calendar_month_outlined,
-                            size: 16,
-                            color: Colors.grey.shade600,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            memberSince,
-                            style: TextStyle(color: Colors.grey.shade600),
-                          ),
-                        ],
+                      Icon(
+                        Icons.calendar_month_outlined,
+                        size: 16,
+                        color: Colors.grey.shade600,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        _memberSince(dateCreation),
+                        style: TextStyle(
+                          color: Colors.grey.shade600,
+                          fontSize: 14,
+                        ),
                       ),
                     ],
                   ),
-
-                  // Alerte mot de passe à changer
-                  if (doitChangerMotDePasse)
-                    Container(
-                      margin: const EdgeInsets.only(top: 12),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.orange.shade200),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.warning_amber_rounded,
-                            color: Colors.orange.shade700,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Veuillez changer votre mot de passe',
-                              style: TextStyle(
-                                color: Colors.orange.shade700,
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () {
-                              _showPasswordChangeDialog(context);
-                            },
-                            child: const Text('Changer'),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  const SizedBox(height: 25),
-
-                  // Onglets factices (Twitter Style: Tweets, Media, Likes...)
-                  const Divider(thickness: 0.5),
-
-                  _buildTwitterRow(
-                    Icons.email_outlined,
-                    userEmail.isNotEmpty ? userEmail : "Email non renseigné",
-                  ),
-                  _buildTwitterRow(
-                    Icons.phone_outlined,
-                    userPhone.isNotEmpty
-                        ? userPhone
-                        : "Téléphone non renseigné",
-                  ),
-
-                  // Afficher la description du rôle principal
-                  if (primaryRole != null && primaryRole.description.isNotEmpty)
-                    _buildTwitterRow(
-                      Icons.badge_outlined,
-                      primaryRole.description,
-                    ),
-
-                  // Infos compte utilisateur (basées sur l'utilisateur connecté)
-                  _buildTwitterRow(
-                    Icons.alternate_email_outlined,
-                    nomUtilisateur.trim().isNotEmpty
-                        ? 'Nom utilisateur: $nomUtilisateur'
-                        : 'Nom utilisateur non renseigné',
-                  ),
-                  _buildTwitterRow(
-                    Icons.qr_code_2_outlined,
-                    referenceUtilisateur.trim().isNotEmpty
-                        ? 'Référence: $referenceUtilisateur'
-                        : 'Référence non renseigné',
-                  ),
-                  _buildTwitterRow(
-                    Icons.numbers,
-                    agentId != null ? 'ID Agent: $agentId' : 'ID Agent non défini',
-                  ),
-                  _buildTwitterRow(
-                    statutUtilisateur
-                        ? Icons.check_circle_outline
-                        : Icons.cancel_outlined,
-                    statutUtilisateur ? 'Compte actif' : 'Compte inactif',
-                  ),
-                  _buildTwitterRow(
-                    isConnecte ? Icons.wifi_rounded : Icons.wifi_off_rounded,
-                    isConnecte ? 'Connecté' : 'Hors ligne',
-                  ),
-                  _buildTwitterRow(
-                    acceptNotification
-                        ? Icons.notifications_active_outlined
-                        : Icons.notifications_off_outlined,
-                    acceptNotification
-                        ? 'Notifications activées'
-                        : 'Notifications désactivées',
-                  ),
-
-                  // Section Rôles
-                  if (roles.isNotEmpty) ...[
-                    const Divider(thickness: 0.5),
-                    const SizedBox(height: 8),
-                    const Text(
-                      'Rôles',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: roles
-                          .map(
-                            (role) => Chip(
-                              label: Text(
-                                role.description,
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              backgroundColor: AppColors.prosocGreen
-                                  .withValues(alpha: 0.1),
-                              side: BorderSide.none,
-                            ),
-                          )
-                          .toList(),
-                    ),
+                  if (doitChangerMotDePasse) ...[
                     const SizedBox(height: 16),
+                    _buildPasswordAlert(context),
                   ],
-
-                  // Section Permissions (afficher les 5 premières)
-                  if (permissions.isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  const SizedBox(height: 24),
+                  _sectionCard(
+                    title: 'Coordonnées',
+                    children: [
+                      _infoTile(
+                        icon: Icons.email_outlined,
+                        label: 'Email',
+                        value: userEmail,
+                      ),
+                      _infoTile(
+                        icon: Icons.phone_outlined,
+                        label: 'Téléphone',
+                        value: userPhone,
+                      ),
+                      if (nomUtilisateur.trim().isNotEmpty)
+                        _infoTile(
+                          icon: Icons.alternate_email_outlined,
+                          label: 'Identifiant',
+                          value: nomUtilisateur,
+                        ),
+                      if (referenceUtilisateur.trim().isNotEmpty)
+                        _infoTile(
+                          icon: Icons.qr_code_2_outlined,
+                          label: 'Référence',
+                          value: referenceUtilisateur,
+                        ),
+                    ],
+                  ),
+                  _sectionCard(
+                    title: 'Compte',
+                    children: [
+                      if (primaryRole != null &&
+                          primaryRole.description.isNotEmpty)
+                        _infoTile(
+                          icon: Icons.badge_outlined,
+                          label: 'Rôle principal',
+                          value: primaryRole.description,
+                        ),
+                      _infoTile(
+                        icon: statutUtilisateur
+                            ? Icons.check_circle_outline
+                            : Icons.cancel_outlined,
+                        label: 'Statut',
+                        value: statutUtilisateur ? 'Actif' : 'Inactif',
+                      ),
+                      _infoTile(
+                        icon: acceptNotification
+                            ? Icons.notifications_active_outlined
+                            : Icons.notifications_off_outlined,
+                        label: 'Notifications',
+                        value: acceptNotification ? 'Activées' : 'Désactivées',
+                      ),
+                    ],
+                  ),
+                  if (roles.isNotEmpty)
+                    _sectionCard(
+                      title: 'Rôles',
                       children: [
-                        const Text(
-                          'Permissions',
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                        ),
-                        Text(
-                          '${permissions.length} total',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children:
-                          (permissions.length > 5
-                                  ? permissions.take(5)
-                                  : permissions)
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: roles
                               .map(
-                                (perm) => Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 4,
+                                (role) => Chip(
+                                  label: Text(
+                                    role.description,
+                                    style: const TextStyle(fontSize: 12),
                                   ),
-                                  decoration: BoxDecoration(
-                                    color: Colors.grey.shade100,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: Text(
-                                    perm,
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      color: Colors.grey.shade700,
-                                    ),
-                                  ),
+                                  backgroundColor: AppColors.prosocGreen
+                                      .withValues(alpha: 0.1),
+                                  side: BorderSide.none,
                                 ),
                               )
                               .toList(),
+                        ),
+                      ],
                     ),
-                    if (permissions.length > 5)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          '+${permissions.length - 5} autres permissions',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade600,
-                          ),
-                        ),
+                  _sectionCard(
+                    title: 'Paramètres',
+                    children: [
+                      _actionTile(
+                        icon: Icons.lock_outline_rounded,
+                        title: 'Sécurité et accès',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  const ChangePasswordScreen(),
+                            ),
+                          );
+                        },
                       ),
-                    const SizedBox(height: 16),
-                  ],
-
-                  const Divider(thickness: 0.5),
-
-                  // Menu d'options
-                  _buildListMenu(Icons.notifications_none, "Notifications"),
-                  _buildListMenu(
-                    Icons.lock_outline,
-                    "Sécurité et accès",
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const ChangePasswordScreen(),
-                        ),
-                      );
-                    },
-                  ),
-                  _buildListMenu(Icons.help_outline, "Centre d'assistance"),
-                  _buildListMenu(
-                    Icons.logout,
-                    "Déconnexion",
-                    isDestructive: true,
-                    onTap: () async {
-                      final logoutCallback = onLogout;
-                      await AuthService.logout();
-                      if (logoutCallback != null) {
-                        logoutCallback();
-                      }
-                    },
+                      _actionTile(
+                        icon: Icons.help_outline_rounded,
+                        title: 'Centre d\'assistance',
+                        onTap: () {},
+                      ),
+                      _actionTile(
+                        icon: Icons.logout_rounded,
+                        title: 'Déconnexion',
+                        iconColor: Colors.red,
+                        iconBgColor: Colors.red.withValues(alpha: 0.1),
+                        titleColor: Colors.red,
+                        showChevron: false,
+                        onTap: () async {
+                          final logoutCallback = widget.onLogout;
+                          await AuthService.logout();
+                          logoutCallback?.call();
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -443,23 +309,57 @@ class ProfilePercepteurScreen extends StatelessWidget {
     );
   }
 
-  // Widget pour les lignes d'info simples (Email, Tel)
-  Widget _buildTwitterRow(IconData icon, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 12),
-      child: Row(
+  Widget _buildFixedHeader({
+    required BuildContext context,
+    required String userName,
+    required String? userPhotoUrl,
+    required bool doitChangerMotDePasse,
+  }) {
+    return SizedBox(
+      height: _headerBandHeight + _avatarOverlap,
+      child: Stack(
+        clipBehavior: Clip.none,
         children: [
-          Icon(icon, size: 20, color: Colors.grey.shade600),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 16,
-                color: value.toLowerCase().contains('non renseigné')
-                    ? Colors.grey.shade400
-                    : Colors.black87,
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            height: _headerBandHeight,
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    AppColors.prosocGreen,
+                    AppColors.prosocGreen.withValues(alpha: 0.85),
+                  ],
+                ),
               ),
+              child: SafeArea(
+                bottom: false,
+                child: Align(
+                  alignment: Alignment.topRight,
+                  child: doitChangerMotDePasse
+                      ? IconButton(
+                          icon: const Icon(
+                            Icons.warning_amber_rounded,
+                            color: Colors.orange,
+                          ),
+                          onPressed: () => _showPasswordChangeDialog(context),
+                          tooltip: 'Changer le mot de passe',
+                        )
+                      : const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 20,
+            top: _headerBandHeight - _avatarRadius,
+            child: _buildProfileAvatar(
+              userName: userName,
+              userPhotoUrl: userPhotoUrl,
             ),
           ),
         ],
@@ -467,30 +367,175 @@ class ProfilePercepteurScreen extends StatelessWidget {
     );
   }
 
-  // Widget pour le menu type liste
-  Widget _buildListMenu(
-    IconData icon,
-    String title, {
-    bool isDestructive = false,
-    VoidCallback? onTap,
-  }) {
-    return ListTile(
-      onTap: onTap,
-      contentPadding: EdgeInsets.zero,
-      leading: Icon(icon, color: isDestructive ? Colors.red : Colors.black87),
-      title: Text(
-        title,
-        style: TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w500,
-          color: isDestructive ? Colors.red : Colors.black87,
-        ),
+  Widget _buildPasswordAlert(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade200),
       ),
-      trailing: const Icon(Icons.chevron_right, size: 20),
+      child: Row(
+        children: [
+          Icon(
+            Icons.warning_amber_rounded,
+            color: Colors.orange.shade700,
+            size: 20,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Veuillez changer votre mot de passe',
+              style: TextStyle(
+                color: Colors.orange.shade700,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          TextButton(
+            onPressed: () => _showPasswordChangeDialog(context),
+            child: const Text('Changer'),
+          ),
+        ],
+      ),
     );
   }
 
-  // Dialog pour le changement de mot de passe
+  Widget _sectionCard({
+    required String title,
+    required List<Widget> children,
+  }) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 8),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _infoTile({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    final empty = value.trim().isEmpty;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.prosocGreen.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: AppColors.prosocGreen, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  empty ? 'Non renseigné' : value,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: empty ? Colors.grey.shade400 : AppColors.textPrimary,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _actionTile({
+    required IconData icon,
+    required String title,
+    Color iconColor = AppColors.prosocGreen,
+    Color iconBgColor = const Color(0x1A4CAF50),
+    VoidCallback? onTap,
+    Color? titleColor,
+    bool showChevron = true,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: iconBgColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: iconColor, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: titleColor ?? AppColors.textPrimary,
+                  ),
+                ),
+              ),
+              if (showChevron)
+                Icon(
+                  Icons.chevron_right,
+                  color: Colors.grey.shade400,
+                  size: 22,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   void _showPasswordChangeDialog(BuildContext context) {
     showDialog(
       context: context,

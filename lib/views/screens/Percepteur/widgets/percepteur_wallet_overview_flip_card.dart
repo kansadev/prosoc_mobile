@@ -3,44 +3,44 @@ import 'dart:math' show pi;
 import 'package:flutter/material.dart';
 
 import '../../../../config/colors.dart';
-import '../../../../models/dashboard_superviseur_model.dart';
+import '../../../../models/dashboard_percepteur_model.dart';
 import '../../../../models/wallet_agent_model.dart';
 import '../../../widgets/wallet_devise_switch.dart';
 
-/// Carte recto-verso : recto = wallet agent, verso = vue d'ensemble équipe.
-class SuperviseurWalletOverviewFlipCard extends StatefulWidget {
+/// Carte recto-verso : recto = wallet agent, verso = vue d'ensemble percepteur.
+class PercepteurWalletOverviewFlipCard extends StatefulWidget {
   final WalletAgentModel? wallet;
   final bool isLoadingWallet;
   final bool isUsdSelected;
   final ValueChanged<bool>? onDeviseChanged;
   final VoidCallback? onOpenWallet;
-  final StatsSuperviseur? kpis;
+  final DashboardPercepteurModel? dashboard;
   final Set<int>? availableDeviseIds;
   final bool enableAllDevises;
   final String? walletUnavailableMessage;
 
-  const SuperviseurWalletOverviewFlipCard({
+  const PercepteurWalletOverviewFlipCard({
     super.key,
     this.wallet,
     this.isLoadingWallet = false,
     this.isUsdSelected = false,
     this.onDeviseChanged,
     this.onOpenWallet,
-    this.kpis,
+    this.dashboard,
     this.availableDeviseIds,
     this.enableAllDevises = false,
     this.walletUnavailableMessage,
   });
 
   @override
-  State<SuperviseurWalletOverviewFlipCard> createState() =>
-      _SuperviseurWalletOverviewFlipCardState();
+  State<PercepteurWalletOverviewFlipCard> createState() =>
+      _PercepteurWalletOverviewFlipCardState();
 }
 
-class _SuperviseurWalletOverviewFlipCardState
-    extends State<SuperviseurWalletOverviewFlipCard>
+class _PercepteurWalletOverviewFlipCardState
+    extends State<PercepteurWalletOverviewFlipCard>
     with SingleTickerProviderStateMixin {
-  static const double _cardHeight = 220;
+  static const double _cardHeight = 240;
 
   late final AnimationController _controller;
   late final Animation<double> _animation;
@@ -76,34 +76,29 @@ class _SuperviseurWalletOverviewFlipCardState
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          height: _cardHeight,
-          child: AnimatedBuilder(
-            animation: _animation,
-            builder: (context, child) {
-              final angle = _animation.value;
-              final showBack = angle >= pi / 2;
+    return SizedBox(
+      height: _cardHeight,
+      child: AnimatedBuilder(
+        animation: _animation,
+        builder: (context, child) {
+          final angle = _animation.value;
+          final showBack = angle >= pi / 2;
 
-              return Transform(
-                alignment: Alignment.center,
-                transform: Matrix4.identity()
-                  ..setEntry(3, 2, 0.001)
-                  ..rotateY(angle),
-                child: showBack
-                    ? Transform(
-                        alignment: Alignment.center,
-                        transform: Matrix4.identity()..rotateY(pi),
-                        child: _buildOverviewFace(),
-                      )
-                    : _buildWalletFace(),
-              );
-            },
-          ),
-        ),
-      ],
+          return Transform(
+            alignment: Alignment.center,
+            transform: Matrix4.identity()
+              ..setEntry(3, 2, 0.001)
+              ..rotateY(angle),
+            child: showBack
+                ? Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.identity()..rotateY(pi),
+                    child: _buildOverviewFace(),
+                  )
+                : _buildWalletFace(),
+          );
+        },
+      ),
     );
   }
 
@@ -237,9 +232,16 @@ class _SuperviseurWalletOverviewFlipCardState
   }
 
   Widget _buildOverviewFace() {
-    final kpis = widget.kpis;
-    final montant = kpis?.formattedMontantEquipe ?? '—';
-    final performance = kpis?.formattedPerformance ?? '—';
+    final dashboard = widget.dashboard;
+    final kpis = dashboard?.kpis;
+    final formatMontant = kpis?.formatMontant ??
+        (double value) => dashboard?.formatMontant(value) ?? '0 CDF';
+
+    final montantTotal = kpis?.formattedMontantTotal ?? formatMontant(0);
+    final montantMois = kpis?.formattedMontantMois ?? formatMontant(0);
+    final agentsActifs = kpis?.nombreAgentsActifs ?? 0;
+    final transactionsEnAttente = dashboard?.transactionsEnAttente ?? 0;
+    final montantEnAttente = dashboard?.montantEnAttente ?? 0;
 
     return Material(
       color: Colors.transparent,
@@ -274,16 +276,35 @@ class _SuperviseurWalletOverviewFlipCardState
                   children: [
                     const Expanded(
                       child: Text(
-                        'Vue d\'ensemble équipe',
+                        'Vue percepteur',
                         style: TextStyle(color: Colors.white70, fontSize: 14),
                       ),
                     ),
                     _FlipButton(onPressed: _flip),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: const Text(
+                        'Percepteur',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  montant,
+                  montantTotal,
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 28,
@@ -292,25 +313,33 @@ class _SuperviseurWalletOverviewFlipCardState
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Montant total • Perf. moyenne $performance',
+                  'Total perçu',
                   style: const TextStyle(color: Colors.white70, fontSize: 13),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
+                if (dashboard != null && dashboard.soldeAPercevoir > 0) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    'À percevoir : ${formatMontant(dashboard.soldeAPercevoir)}',
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+                if (transactionsEnAttente > 0) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    '$transactionsEnAttente en attente (${formatMontant(montantEnAttente)})',
+                    style: const TextStyle(color: Colors.white70, fontSize: 11),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
                 const Spacer(),
                 Row(
                   children: [
-                    _miniStat(
-                      'Agents directs',
-                      '${kpis?.nombreAgentsDirects ?? '—'}',
-                    ),
+                    _miniStat('Ce mois', montantMois),
                     const SizedBox(width: 8),
-                    _miniStat(
-                      'Total équipe',
-                      '${kpis?.nombreAgentsTotal ?? '—'}',
-                    ),
-                    const SizedBox(width: 8),
-                    _miniStat('Taux succès', kpis?.formattedTauxSucces ?? '—'),
+                    _miniStat('Agents actifs', '$agentsActifs'),
                   ],
                 ),
               ],
@@ -371,48 +400,6 @@ class _FlipButton extends StatelessWidget {
         child: const Padding(
           padding: EdgeInsets.all(6),
           child: Icon(Icons.flip, color: Colors.white, size: 18),
-        ),
-      ),
-    );
-  }
-}
-
-class _FaceIndicator extends StatelessWidget {
-  final String label;
-  final bool isActive;
-  final VoidCallback? onTap;
-
-  const _FaceIndicator({
-    required this.label,
-    required this.isActive,
-    this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-        decoration: BoxDecoration(
-          color: isActive
-              ? AppColors.prosocGreen.withValues(alpha: 0.12)
-              : Colors.transparent,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isActive
-                ? AppColors.prosocGreen.withValues(alpha: 0.4)
-                : Colors.grey.shade300,
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
-            color: isActive ? AppColors.prosocGreen : Colors.grey.shade600,
-          ),
         ),
       ),
     );

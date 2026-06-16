@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+
 import '../../../config/colors.dart';
 import '../../../services/auth_service.dart';
+import '../../../widgets/tab_load_gate.dart';
+import '../at/virtual_account_screen.dart';
+import '../at/wallet_screen.dart';
 import 'home_percepteur_screen.dart';
-import 'collecte_percepteur_screen.dart';
-import 'historique_percepteur_screen.dart';
 import 'profile_percepteur_screen.dart';
 
 // ============================================
@@ -26,6 +28,10 @@ class _MainPercepteurScreenState extends State<MainPercepteurScreen> {
     widget.onLogout?.call();
   }
 
+  void _goToTab(int index) {
+    setState(() => _currentIndex = index);
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -34,26 +40,32 @@ class _MainPercepteurScreenState extends State<MainPercepteurScreen> {
         children: [
           HomePercepteurScreen(
             currentIndex: _currentIndex,
-            onIndexChanged: (index) {
-              setState(() {
-                _currentIndex = index;
-              });
-            },
+            onIndexChanged: _goToTab,
+            onOpenWallet: () => _goToTab(1),
+            onOpenVirtualAccount: () => _goToTab(2),
           ),
-          const CollectePercepteurScreen(),
-          const HistoriquePercepteurScreen(),
+          TabLoadGate(
+            tabIndex: 1,
+            currentIndex: _currentIndex,
+            child: const WalletScreen(),
+          ),
+          TabLoadGate(
+            tabIndex: 2,
+            currentIndex: _currentIndex,
+            child: const VirtualAccountScreen(),
+          ),
           ProfilePercepteurScreen(onLogout: _handleLogout),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _currentIndex,
-        onTap: (index) => setState(() => _currentIndex = index),
+        onTap: _goToTab,
         type: BottomNavigationBarType.fixed,
         backgroundColor: Colors.white,
         selectedItemColor: AppColors.prosocGreen,
         unselectedItemColor: Colors.grey,
-        selectedFontSize: 12,
-        unselectedFontSize: 12,
+        selectedFontSize: 11,
+        unselectedFontSize: 11,
         elevation: 8,
         items: const [
           BottomNavigationBarItem(
@@ -62,14 +74,14 @@ class _MainPercepteurScreenState extends State<MainPercepteurScreen> {
             label: 'Accueil',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.add_circle_outline),
-            activeIcon: Icon(Icons.add_circle),
-            label: 'Encaisser',
+            icon: Icon(Icons.account_balance_wallet_outlined),
+            activeIcon: Icon(Icons.account_balance_wallet),
+            label: 'Wallet',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.history_outlined),
-            activeIcon: Icon(Icons.history),
-            label: 'Historique',
+            icon: Icon(Icons.credit_card_outlined),
+            activeIcon: Icon(Icons.credit_card),
+            label: 'Compte',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),

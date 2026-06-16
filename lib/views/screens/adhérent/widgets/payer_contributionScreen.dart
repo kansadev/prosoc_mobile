@@ -18,6 +18,7 @@ class PayerContributionScreen extends StatefulWidget {
   final int nombreDependants;
   final int? initialTarifId;
   final String? affilieTelephone;
+  final String screenTitle;
 
   const PayerContributionScreen({
     super.key,
@@ -27,6 +28,7 @@ class PayerContributionScreen extends StatefulWidget {
     this.nombreDependants = 0,
     this.initialTarifId,
     this.affilieTelephone,
+    this.screenTitle = 'Payer une cotisation',
   });
 
   @override
@@ -464,9 +466,9 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
         ),
         onPressed: () => Navigator.pop(context),
       ),
-      title: const Text(
-        'Payer une cotisation',
-        style: TextStyle(
+      title: Text(
+        widget.screenTitle,
+        style: const TextStyle(
           color: AppColors.textPrimary,
           fontWeight: FontWeight.w600,
           fontSize: 18,

@@ -215,10 +215,12 @@ class AuthUserModel {
     return nomRole.toLowerCase().contains('superviseur');
   }
 
-  /// Superviseur lié à un agent (peut faire adhésions, wallets, etc.)
+  /// Superviseur ou percepteur lié à un agent (adhésions, wallets, etc.)
   bool get isAgentTerrain {
     if (isAgentAT) return true;
-    return isSuperviseur && utilisateur.agentId != null;
+    final hasAgentProfile = utilisateur.agentId != null;
+    if (hasAgentProfile && (isSuperviseur || isPercepteur)) return true;
+    return false;
   }
 
   /// Vérifie si le rôle est autorisé sur l'application mobile

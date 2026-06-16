@@ -11,6 +11,7 @@ class WalletAgentLoadResult {
   final Map<int, WalletAgentModel> walletsByDevise;
   final String? errorMessage;
   final int? errorStatusCode;
+  final int? errorDeviseId;
 
   const WalletAgentLoadResult({
     this.wallet,
@@ -19,6 +20,7 @@ class WalletAgentLoadResult {
     this.walletsByDevise = const {},
     this.errorMessage,
     this.errorStatusCode,
+    this.errorDeviseId,
   });
 
   bool get hasWallet => wallet != null;
@@ -57,8 +59,10 @@ abstract final class WalletAgentLoader {
       return WalletAgentLoadResult(
         errorMessage: ApiErrorHelper.messageForWalletAgentError(
           statusCode: 404,
+          deviseId: preferredDeviseId,
         ),
         errorStatusCode: 404,
+        errorDeviseId: preferredDeviseId,
       );
     }
 
@@ -99,8 +103,10 @@ abstract final class WalletAgentLoader {
         walletsByDevise: wallets,
         errorMessage: ApiErrorHelper.messageForWalletAgentError(
           statusCode: 404,
+          deviseId: deviseId,
         ),
         errorStatusCode: 404,
+        errorDeviseId: deviseId,
       );
     }
 
@@ -125,8 +131,10 @@ abstract final class WalletAgentLoader {
       errorMessage: ApiErrorHelper.messageForWalletAgentError(
         statusCode: response.statusCode,
         serverMessage: response.message,
+        deviseId: deviseId,
       ),
       errorStatusCode: response.statusCode,
+      errorDeviseId: deviseId,
     );
   }
 

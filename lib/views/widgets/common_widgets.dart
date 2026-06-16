@@ -10,6 +10,8 @@ class AccountCard extends StatelessWidget {
   final bool isUsdSelected;
   final ValueChanged<bool>? onDeviseChanged;
   final Set<int>? availableDeviseIds;
+  final bool enableAllDevises;
+  final String? unavailableMessage;
 
   const AccountCard({
     super.key,
@@ -19,6 +21,8 @@ class AccountCard extends StatelessWidget {
     this.isUsdSelected = false,
     this.onDeviseChanged,
     this.availableDeviseIds,
+    this.enableAllDevises = false,
+    this.unavailableMessage,
   });
 
   @override
@@ -73,14 +77,25 @@ class AccountCard extends StatelessWidget {
             style: TextStyle(color: Colors.white70, fontSize: 14),
           ),
           const SizedBox(height: 4),
-          Text(
-            balance,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 36,
-              fontWeight: FontWeight.bold,
+          if (unavailableMessage != null)
+            Text(
+              unavailableMessage!,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                height: 1.35,
+              ),
+            )
+          else
+            Text(
+              balance,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 36,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-          ),
           const SizedBox(height: 20),
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -98,6 +113,7 @@ class AccountCard extends StatelessWidget {
                 WalletDeviseSwitch(
                   isUsdSelected: isUsdSelected,
                   availableDeviseIds: availableDeviseIds,
+                  enableAllDevises: enableAllDevises,
                   onChanged: onDeviseChanged!,
                 ),
               ],

@@ -56,26 +56,28 @@ class _SuperviseurTendancesTimelineState
     super.initState();
     _timelineController = ScrollController();
     _cardsController = ScrollController();
-    _timelineController.addListener(() => _syncScroll(fromTimeline: true));
-    _cardsController.addListener(() => _syncScroll(fromTimeline: false));
+    _timelineController.addListener(_syncCardsFromTimeline);
+    _cardsController.addListener(_syncTimelineFromCards);
   }
 
-  void _syncScroll({required bool fromTimeline}) {
-    if (_isSyncingScroll) return;
-    final source = fromTimeline ? _timelineController : _cardsController;
-    final target = fromTimeline ? _cardsController : _timelineController;
-    if (!source.hasClients || !target.hasClients) return;
-
+  void _syncCardsFromTimeline() {
+    if (_isSyncingScroll || !_cardsController.hasClients) return;
     _isSyncingScroll = true;
-    final offset = source.offset.clamp(0.0, target.position.maxScrollExtent);
-    if ((target.offset - offset).abs() > 0.5) {
-      target.jumpTo(offset);
-    }
+    _cardsController.jumpTo(_timelineController.offset);
+    _isSyncingScroll = false;
+  }
+
+  void _syncTimelineFromCards() {
+    if (_isSyncingScroll || !_timelineController.hasClients) return;
+    _isSyncingScroll = true;
+    _timelineController.jumpTo(_cardsController.offset);
     _isSyncingScroll = false;
   }
 
   @override
   void dispose() {
+    _timelineController.removeListener(_syncCardsFromTimeline);
+    _cardsController.removeListener(_syncTimelineFromCards);
     _timelineController.dispose();
     _cardsController.dispose();
     super.dispose();
@@ -127,18 +129,18 @@ class _SuperviseurTendancesTimelineState
         const SizedBox(height: 16),
         SizedBox(
           height: 178,
-          child: ListView.builder(
+          child: ListView.separated(
             controller: _cardsController,
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 4),
             physics: const BouncingScrollPhysics(),
-            itemExtent: _itemExtent,
             itemCount: sorted.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 12),
             itemBuilder: (context, index) {
               final isCurrent =
                   index == focusIndex && _currentMonthIndex != null;
-              return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4),
+              return SizedBox(
+                width: _itemExtent - 12,
                 child: _TendanceMetricsCard(
                   tendance: sorted[index],
                   isCurrentMonth: isCurrent,
@@ -167,22 +169,34 @@ class _SuperviseurTendancesTimelineState
     if (_sortedTendances.isEmpty) return;
 
     const horizontalPadding = 4.0;
-    final viewport = _cardsController.position.viewportDimension;
-    final targetOffset =
-        horizontalPadding +
+    const cardGap = 12.0;
+    final cardWidth = _itemExtent - 12;
+    final viewport = _timelineController.position.viewportDimension;
+    final cardsStride = cardWidth + cardGap;
+    final cardsTarget = horizontalPadding +
+        (_focusIndex * cardsStride) -
+        (viewport - cardWidth) / 2;
+    final timelineTarget = horizontalPadding +
         (_focusIndex * _itemExtent) -
         (viewport - _itemExtent) / 2;
 
+    _isSyncingScroll = true;
+
     _cardsController.animateTo(
-      targetOffset.clamp(0.0, _cardsController.position.maxScrollExtent),
+      cardsTarget.clamp(0.0, _cardsController.position.maxScrollExtent),
       duration: const Duration(milliseconds: 500),
       curve: Curves.easeOutCubic,
     );
-    _timelineController.animateTo(
-      targetOffset.clamp(0.0, _timelineController.position.maxScrollExtent),
+
+    _timelineController
+        .animateTo(
+      timelineTarget.clamp(0.0, _timelineController.position.maxScrollExtent),
       duration: const Duration(milliseconds: 500),
       curve: Curves.easeOutCubic,
-    );
+    )
+        .whenComplete(() {
+      if (mounted) _isSyncingScroll = false;
+    });
 
     _didInitialScroll = true;
   }
@@ -242,7 +256,6 @@ class _TimelineStrip extends StatelessWidget {
               child: Timeline.tileBuilder(
                 controller: controller,
                 scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 4),
                 physics: const BouncingScrollPhysics(),
                 builder: TimelineTileBuilder.connected(
                   connectionDirection: ConnectionDirection.before,
@@ -379,7 +392,9 @@ class _TendanceMetricsCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: isCurrentMonth ? AppColors.prosocGreen : Colors.grey.shade200,
+          color: isCurrentMonth
+              ? AppColors.prosocGreen
+              : Colors.grey.shade200,
           width: isCurrentMonth ? 1.5 : 1,
         ),
         boxShadow: [

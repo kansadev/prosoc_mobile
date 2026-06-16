@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../models/wallet_agent_model.dart';
+
 /// Messages utilisateur sûrs et journalisation technique (debug uniquement).
 class ApiErrorHelper {
   ApiErrorHelper._();
@@ -98,16 +100,24 @@ class ApiErrorHelper {
     );
   }
 
+  /// Message affiché lorsqu'aucun wallet agent n'existe pour une devise.
+  static String walletAgentUnavailableMessage({int? deviseId}) {
+    if (deviseId != null) {
+      final label = WalletAgentDeviseIds.labelForId(deviseId);
+      return 'Wallet $label indisponible. Contactez votre superviseur.';
+    }
+    return 'Wallet indisponible. Contactez votre superviseur.';
+  }
+
   static String messageForWalletAgentError({
     int? statusCode,
     String? serverMessage,
+    int? deviseId,
   }) {
     return messageFromApiResponse(
       statusCode: statusCode,
       serverMessage: serverMessage,
-      notFoundMessage:
-          'Aucun wallet agent trouvé pour ce compte. '
-          'Vérifiez la devise sélectionnée ou contactez votre administrateur.',
+      notFoundMessage: walletAgentUnavailableMessage(deviseId: deviseId),
       fallback: 'Impossible de charger votre wallet.',
     );
   }

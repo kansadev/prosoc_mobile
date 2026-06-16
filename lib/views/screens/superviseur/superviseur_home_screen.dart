@@ -99,14 +99,10 @@ class _SuperviseurHomeScreenState extends State<SuperviseurHomeScreen> {
       setState(() {
         _availableDeviseIds = result.availableDeviseIds;
         _walletsByDevise = result.walletsByDevise;
-        if (result.hasWallet) {
-          _walletAgent = result.wallet;
-          if (result.resolvedDeviseId != null) {
-            _syncDeviseSelection(result.resolvedDeviseId!);
-          }
-        } else if (!silent) {
-          _walletAgent = null;
+        if (result.resolvedDeviseId != null) {
+          _syncDeviseSelection(result.resolvedDeviseId!);
         }
+        _walletAgent = _walletsByDevise[_selectedDeviseId] ?? result.wallet;
         _isLoadingWallet = false;
       });
     } catch (e, stackTrace) {
@@ -224,13 +220,22 @@ class _SuperviseurHomeScreenState extends State<SuperviseurHomeScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: AuthService.isAgentTerrain
                       ? SuperviseurWalletOverviewFlipCard(
-                          wallet: _walletAgent,
+                          wallet: _walletsByDevise[_selectedDeviseId] ??
+                              _walletAgent,
                           isLoadingWallet: _isLoadingWallet,
                           isUsdSelected: _isUsdSelected,
-                          availableDeviseIds: _hasDiscoveredDevises
-                              ? _availableDeviseIds
-                              : null,
+                          enableAllDevises: true,
+                          walletUnavailableMessage:
+                              !_isLoadingWallet &&
+                                      (_walletsByDevise[_selectedDeviseId] ??
+                                              _walletAgent) ==
+                                          null
+                                  ? ApiErrorHelper.walletAgentUnavailableMessage(
+                                      deviseId: _selectedDeviseId,
+                                    )
+                                  : null,
                           onDeviseChanged: _onDeviseChanged,
+                          onOpenWallet: widget.onOpenWallet,
                           kpis: kpis,
                         )
                       : _buildOverviewCard(kpis),

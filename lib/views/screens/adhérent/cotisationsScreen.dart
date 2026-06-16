@@ -19,12 +19,18 @@ class ContributionsScreen extends StatefulWidget {
   final int affilieId;
   final String affilieNom;
   final String affiliePrenom;
+  final String screenTitle;
+  final String paymentFabLabel;
+  final bool showBackButton;
 
   const ContributionsScreen({
     super.key,
     required this.affilieId,
     required this.affilieNom,
     required this.affiliePrenom,
+    this.screenTitle = 'Mes cotisations',
+    this.paymentFabLabel = 'Payer',
+    this.showBackButton = false,
   });
 
   @override
@@ -355,9 +361,9 @@ class _ContributionsScreenState extends State<ContributionsScreen>
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        title: const Text(
-          'Mes cotisations',
-          style: TextStyle(
+        title: Text(
+          widget.screenTitle,
+          style: const TextStyle(
             fontWeight: FontWeight.w700,
             fontSize: 20,
             color: AppColors.textPrimary,
@@ -366,7 +372,13 @@ class _ContributionsScreenState extends State<ContributionsScreen>
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.white,
         elevation: 0,
-        automaticallyImplyLeading: false,
+        automaticallyImplyLeading: widget.showBackButton,
+        leading: widget.showBackButton
+            ? IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+                onPressed: () => Navigator.maybePop(context),
+              )
+            : null,
         actions: [
           YearPickerButton(
             selectedYear: _selectedYear,
@@ -381,9 +393,9 @@ class _ContributionsScreenState extends State<ContributionsScreen>
         onPressed: _openPaiement,
         backgroundColor: AppColors.prosocGreen,
         icon: const Icon(Icons.payment, color: Colors.white),
-        label: const Text(
-          'Payer',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+        label: Text(
+          widget.paymentFabLabel,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
         ),
       ),
       body: DashboardSegmentTabScaffold(

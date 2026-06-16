@@ -9,25 +9,30 @@ class WalletDeviseSwitch extends StatelessWidget {
   final bool isUsdSelected;
   final ValueChanged<bool> onChanged;
   final Set<int>? availableDeviseIds;
+  final bool enableAllDevises;
 
   const WalletDeviseSwitch({
     super.key,
     required this.isUsdSelected,
     required this.onChanged,
     this.availableDeviseIds,
+    this.enableAllDevises = false,
   });
 
   bool get _cdfEnabled =>
+      enableAllDevises ||
       availableDeviseIds == null ||
       availableDeviseIds!.contains(WalletAgentDeviseIds.cdf);
 
   bool get _usdEnabled =>
+      enableAllDevises ||
       availableDeviseIds == null ||
       availableDeviseIds!.contains(WalletAgentDeviseIds.usd);
 
   bool get _showSwitch {
+    if (enableAllDevises) return true;
     if (availableDeviseIds == null) return true;
-    return _cdfEnabled && _usdEnabled;
+    return _cdfEnabled || _usdEnabled;
   }
 
   @override
