@@ -10,6 +10,7 @@ import '../../../models/devise_model.dart';
 import '../../../models/prestation_model.dart';
 import '../../../models/adhesion_with_affilie_model.dart';
 import '../../../models/frais_model.dart';
+import '../../../models/wallet_agent_model.dart';
 import 'package:flutter/foundation.dart';
 import '../../../utils/api_error_helper.dart';
 import '../../../utils/email_utils.dart';
@@ -307,8 +308,6 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
               .toList();
           if (_selectedPrestation != null) {
             _applyPrestationSelection(_selectedPrestation);
-          } else if (_selectedFraisAdhesion != null) {
-            _syncDeviseFromFrais(_selectedFraisAdhesion!);
           } else if (_devises.isNotEmpty) {
             _selectedDevise = _devises.first;
             _deviseIdController.text = _selectedDevise!.idDevise.toString();
@@ -434,13 +433,14 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
     }
   }
 
-  List<Frais> get _fraisPourAdhesion => _frais
-      .where((f) => f.statut && !f.estSupprime && f.isPourAdhesion)
+  /// Uniquement le frais d'adhésion (exclut carte membre et autres frais).
+  List<Frais> get _fraisAdhesionOptions => _frais
+      .where((f) => f.statut && !f.estSupprime && f.isFraisAdhesion)
       .toList();
 
-  void _syncDeviseFromFrais(Frais frais) {
-    _syncDeviseFromId(frais.deviseId);
-  }
+  static const String _fraisAdhesionDeviseCode = 'USD';
+
+  int get _fraisAdhesionDeviseId => WalletAgentDeviseIds.usd;
 
   String _deviseCodeFor(int deviseId, {String? fallbackCode}) {
     if (fallbackCode != null && fallbackCode.isNotEmpty) return fallbackCode;
@@ -472,19 +472,9 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
       if (response.success && response.data != null) {
         setState(() {
           _frais = response.data!;
-          final options = _fraisPourAdhesion;
-          Frais? fraisAdhesion;
-          for (final f in options) {
-            if (f.isFraisAdhesion) {
-              fraisAdhesion = f;
-              break;
-            }
-          }
+          final options = _fraisAdhesionOptions;
           _selectedFraisAdhesion =
-              fraisAdhesion ?? (options.isNotEmpty ? options.first : null);
-          if (_selectedFraisAdhesion != null && _selectedPrestation == null) {
-            _syncDeviseFromFrais(_selectedFraisAdhesion!);
-          }
+              options.isNotEmpty ? options.first : null;
           _isLoadingFrais = false;
           debugPrint(
             '[DEBUG] Frais chargés: ${_frais.length}, '
@@ -953,6 +943,99 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  String _fraisAdhesionLabel(Frais frais) =>
+      '${frais.libelle} ($_fraisAdhesionDeviseCode ${frais.montant})';
+
+  Widget _buildReadOnlyInfoField({
+    required String label,
+    required String value,
+    required IconData icon,
+    String? helperText,
+    bool isRequired = false,
+    bool isLoading = false,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w500,
+                color: AppColors.textSecondary,
+              ),
+            ),
+            if (isRequired)
+              const Text(
+                ' *',
+                style: TextStyle(color: Colors.red, fontSize: 14),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Container(
+          decoration: BoxDecoration(
+            color: const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: Colors.grey.shade200),
+          ),
+          child: isLoading
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(16),
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : InputDecorator(
+                  decoration: InputDecoration(
+                    prefixIcon: Icon(
+                      icon,
+                      color: AppColors.prosocGreen,
+                      size: 20,
+                    ),
+                    suffixIcon: Icon(
+                      Icons.lock_outline,
+                      size: 18,
+                      color: Colors.grey.shade500,
+                    ),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none,
+                    ),
+                    filled: true,
+                    fillColor: const Color(0xFFF1F5F9),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 14,
+                    ),
+                  ),
+                  child: Text(
+                    value.isNotEmpty ? value : '—',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey.shade800,
+                    ),
+                  ),
+                ),
+        ),
+        if (helperText != null && helperText.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            helperText,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+              height: 1.35,
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -1839,47 +1922,56 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                   ),
                 ],
                 const SizedBox(height: 20),
-                // Frais d'Adhésion - Dropdown pour sélectionner le frais
-                if (_fraisPourAdhesion.isNotEmpty)
-                  _buildDropdownField<Frais>(
-                    label: "Frais d'adhésion",
-                    value: _selectedFraisAdhesion,
-                    items: _fraisPourAdhesion,
-                    isLoading: _isLoadingFrais,
-                    isRequired: true,
-                    icon: Icons.money_outlined,
-                    itemLabel: (frais) {
-                      final codeDevise = _deviseCodeFor(frais.deviseId);
-                      final suffix = codeDevise.isNotEmpty ? codeDevise : '';
-                      return '${frais.libelle} ($suffix ${frais.montant})'
-                          .trim();
-                    },
-                    onChanged: (newValue) async {
-                      setState(() {
-                        _selectedFraisAdhesion = newValue;
-                        if (newValue != null && _selectedPrestation == null) {
-                          _syncDeviseFromFrais(newValue);
-                        }
-                      });
-                    },
-                  ),
+                if (_fraisAdhesionOptions.isNotEmpty) ...[
+                  if (_fraisAdhesionOptions.length == 1)
+                    _buildReadOnlyInfoField(
+                      label: "Frais d'adhésion",
+                      value: _fraisAdhesionLabel(_fraisAdhesionOptions.first),
+                      icon: Icons.money_outlined,
+                      isRequired: true,
+                      isLoading: _isLoadingFrais,
+                      helperText:
+                          'Les frais d\'adhésion sont toujours libellés en '
+                          'dollars (USD).',
+                    )
+                  else
+                    _buildDropdownField<Frais>(
+                      label: "Frais d'adhésion",
+                      value: _selectedFraisAdhesion,
+                      items: _fraisAdhesionOptions,
+                      isLoading: _isLoadingFrais,
+                      isRequired: true,
+                      icon: Icons.money_outlined,
+                      itemLabel: _fraisAdhesionLabel,
+                      onChanged: (newValue) async {
+                        setState(() => _selectedFraisAdhesion = newValue);
+                      },
+                    ),
+                  if (_fraisAdhesionOptions.length > 1)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Les frais d\'adhésion sont toujours libellés en '
+                        'dollars (USD).',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                          height: 1.35,
+                        ),
+                      ),
+                    ),
+                ],
                 const SizedBox(height: 20),
-                const SizedBox(height: 20),
-                _buildDropdownField<Devise>(
-                  label: "Devise",
-                  value: _selectedDevise,
-                  items: _devises,
-                  isLoading: _isLoadingDevises,
+                _buildReadOnlyInfoField(
+                  label: 'Devise',
+                  value: _selectedDevise?.code ??
+                      _prestationDeviseCode(_selectedPrestation),
+                  icon: Icons.currency_exchange,
                   isRequired: true,
-                  itemLabel: (devise) => devise.code,
-                  onChanged: (newValue) async {
-                    setState(() {
-                      _selectedDevise = newValue;
-                      if (newValue != null) {
-                        _deviseIdController.text = newValue.idDevise.toString();
-                      }
-                    });
-                  },
+                  isLoading: _isLoadingDevises,
+                  helperText:
+                      'Devise déterminée par la prestation sélectionnée '
+                      '(non modifiable).',
                 ),
                 const SizedBox(height: 20),
                 _buildDropdownField<String>(
@@ -2991,7 +3083,7 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         throw Exception('Veuillez sélectionner une prestation');
       }
 
-      final fraisDeviseId = _selectedFraisAdhesion!.deviseId;
+      final fraisDeviseId = _fraisAdhesionDeviseId;
       final prestationDeviseId = _selectedPrestation!.deviseId;
 
       final souscriptionMontant =

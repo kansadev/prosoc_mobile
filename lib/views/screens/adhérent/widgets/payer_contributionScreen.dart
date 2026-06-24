@@ -4,6 +4,8 @@ import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/adhesion_with_affilie_model.dart';
 import 'package:prosoc/services/auth_service.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
+import 'package:prosoc/utils/cotisation_montant_helper.dart';
+import 'package:prosoc/utils/paginated_response_helper.dart';
 import 'package:prosoc/utils/phone_utils.dart';
 import 'package:prosoc/views/screens/at/flex_pay_payment_waiting_screen.dart';
 import 'package:prosoc/views/screens/at/payment_webview_screen.dart';
@@ -52,7 +54,8 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
   List<dynamic> _devises = [];
   bool _isLoadingDevises = false;
   bool _isLoading = false;
-  bool _isUpdatingMontantTotal = false;
+  bool _isLoadingDependants = false;
+  int _nombreDependantsEffectif = 0;
   int? _agentId;
 
   final TextEditingController _montantController = TextEditingController();
@@ -83,8 +86,10 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
     if (tel != null && tel.isNotEmpty) {
       _telephonePaiementController.text = tel;
     }
+    _nombreDependantsEffectif = widget.nombreDependants;
     _initializeAnimations();
     _loadAgentId();
+    _loadNombreDependants();
     _loadTarifs();
     _loadDevises();
   }
@@ -125,11 +130,33 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
     return true;
   }
 
+  String _typeAdhesionLibelleFromTarif(Map<String, dynamic> tarif) {
+    return (tarif['typeAdhesionLibelle'] ??
+            tarif['TypeAdhesionLibelle'] ??
+            '')
+        .toString()
+        .trim();
+  }
+
+  String? get _montantCalculLibelle {
+    final tarif = _tarifById(_selectedTarifId);
+    final montantUnitaire = tarif != null ? _doubleFrom(tarif['montant']) : null;
+    if (tarif == null || montantUnitaire == null || montantUnitaire <= 0) {
+      return null;
+    }
+    return CotisationMontantHelper.libelleCalcul(
+      tarifUnitaire: montantUnitaire,
+      typeAdhesionLibelle: _typeAdhesionLibelleFromTarif(tarif),
+      nombreDependants: _nombreDependantsEffectif,
+      deviseCode: _selectedDevise,
+    );
+  }
+
   String _tarifLabel(Map<String, dynamic> tarif) {
-    final libelle = tarif['typeAdhesionLibelle']?.toString().trim() ?? '';
+    final libelle = _typeAdhesionLibelleFromTarif(tarif);
     final periodicite = tarif['periodicite']?.toString().trim() ?? '';
     final montant = _doubleFrom(tarif['montant']);
-    final montantLabel = montant != null ? ' - $montant' : '';
+    final montantLabel = montant != null ? ' - $montant (unitaire)' : '';
     final parts = <String>[
       if (libelle.isNotEmpty) libelle,
       if (periodicite.isNotEmpty) periodicite,
@@ -275,56 +302,50 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
     if (tarif == null) return;
 
     final montantTarif = _doubleFrom(tarif['montant']);
+    final montantTotal = CotisationMontantHelper.montantTotal(
+      tarifUnitaire: montantTarif,
+      typeAdhesionLibelle: _typeAdhesionLibelleFromTarif(tarif),
+      nombreDependants: _nombreDependantsEffectif,
+    );
 
     setState(() {
       _selectedTarifId = tarifId;
-      if (montantTarif != null && montantTarif > 0) {
+      if (montantTotal != null && montantTotal > 0) {
+        _montantController.text = montantTotal.toString();
+      } else if (montantTarif != null && montantTarif > 0) {
         _montantController.text = montantTarif.toString();
       }
       _applyDeviseFromTarif(tarif);
     });
-
-    if (widget.nombreDependants > 0) {
-      _refreshMontantTotal(tarifId, montantTarif);
-    }
   }
 
-  Future<void> _refreshMontantTotal(
-    int tarifId,
-    double? fallbackMontant,
-  ) async {
-    setState(() => _isUpdatingMontantTotal = true);
+  Future<void> _loadNombreDependants() async {
+    setState(() => _isLoadingDependants = true);
 
     try {
-      final response = await ApiService.getTarifCotisationMontantTotal(
-        tarifId,
-        nombreDependants: widget.nombreDependants,
+      final response = await ApiService.getDependantsByAffilie(
+        widget.affilieId,
+        pageSize: 100,
       );
       if (!mounted) return;
 
       if (response.success && response.data != null) {
-        final total =
-            _doubleFrom(response.data!['montantTotal']) ??
-            _doubleFrom(response.data!['montant']);
-        if (total != null && total > 0) {
-          setState(() => _montantController.text = total.toString());
+        final total = PaginatedResponseHelper.extractTotalItems(response.data!);
+        setState(() => _nombreDependantsEffectif = total);
+        final selectedTarifId = _selectedTarifId;
+        if (selectedTarifId != null) {
+          _applyTarifSelection(selectedTarifId);
         }
       }
     } catch (e, stackTrace) {
       ApiErrorHelper.logException(
-        'Contribution/montant-total',
+        'Contribution/dependants',
         e,
         stackTrace,
         false,
       );
-      if (mounted &&
-          fallbackMontant != null &&
-          fallbackMontant > 0 &&
-          _montantController.text.isEmpty) {
-        setState(() => _montantController.text = fallbackMontant.toString());
-      }
     } finally {
-      if (mounted) setState(() => _isUpdatingMontantTotal = false);
+      if (mounted) setState(() => _isLoadingDependants = false);
     }
   }
 
@@ -534,8 +555,9 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
             children: [
               TextField(
                 controller: _montantController,
+                readOnly: true,
                 decoration: _inputDecoration(
-                  'Montant',
+                  'Montant total',
                   prefix: _montantPrefix != null ? Text(_montantPrefix!) : null,
                   suffix: _selectedDevise?.toUpperCase() == 'CDF'
                       ? const Text(' CDF')
@@ -547,7 +569,7 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              if (_isUpdatingMontantTotal) ...[
+              if (_isLoadingDependants) ...[
                 const SizedBox(height: 8),
                 Row(
                   children: [
@@ -561,13 +583,22 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
                     ),
                     const SizedBox(width: 8),
                     Text(
-                      'Recalcul avec les personnes à charge…',
+                      'Chargement des dépendants…',
                       style: TextStyle(
                         fontSize: 12,
                         color: Colors.grey.shade600,
                       ),
                     ),
                   ],
+                ),
+              ] else if (_montantCalculLibelle != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _montantCalculLibelle!,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey.shade600,
+                  ),
                 ),
               ],
             ],
@@ -833,6 +864,19 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
     final selectedTarif = _tarifById(_selectedTarifId);
     if (selectedTarif == null) {
       _showErrorSnackBar('Tarif invalide. Réessayez la sélection.');
+      return;
+    }
+
+    final montantAttendu = CotisationMontantHelper.montantTotal(
+      tarifUnitaire: _doubleFrom(selectedTarif['montant']),
+      typeAdhesionLibelle: _typeAdhesionLibelleFromTarif(selectedTarif),
+      nombreDependants: _nombreDependantsEffectif,
+    );
+    if (montantAttendu != null &&
+        (montant - montantAttendu).abs() > 0.009) {
+      _showErrorSnackBar(
+        'Montant incorrect. Attendu : ${montantAttendu.toStringAsFixed(2)}',
+      );
       return;
     }
 

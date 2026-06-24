@@ -385,8 +385,7 @@ class _FaceIndicator extends StatelessWidget {
   const _FaceIndicator({
     required this.label,
     required this.isActive,
-    this.onTap,
-  });
+  }) : onTap = null;
 
   @override
   Widget build(BuildContext context) {

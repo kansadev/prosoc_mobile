@@ -19,9 +19,8 @@ class WalletScreen extends StatefulWidget {
 }
 
 class _WalletScreenState extends State<WalletScreen> {
-  WalletAgentModel? _walletData;
   bool _isLoading = true;
-  String? _errorMessage;
+  String? _criticalErrorMessage;
   bool _isUsdSelected = false;
   Set<int> _availableDeviseIds = {};
   Map<int, WalletAgentModel> _walletsByDevise = {};
@@ -30,10 +29,8 @@ class _WalletScreenState extends State<WalletScreen> {
       ? WalletAgentDeviseIds.usd
       : WalletAgentDeviseIds.cdf;
 
-  bool get _hasDiscoveredDevises => _availableDeviseIds.isNotEmpty;
-
   WalletAgentModel? get _walletForSelectedDevise =>
-      _walletsByDevise[_selectedDeviseId] ?? _walletData;
+      _walletsByDevise[_selectedDeviseId];
 
   String? get _unavailableMessageForSelectedDevise {
     if (_isLoading) return null;
@@ -54,7 +51,7 @@ class _WalletScreenState extends State<WalletScreen> {
   void _onDeviseChanged(bool isUsd) {
     if (_isUsdSelected == isUsd) return;
     setState(() => _isUsdSelected = isUsd);
-    _loadWalletData(silent: _walletData != null, singleDeviseOnly: true);
+    _loadWalletData(silent: _hasAnyWallet, singleDeviseOnly: true);
   }
 
   void _syncDeviseSelection(int deviseId) {
@@ -68,7 +65,7 @@ class _WalletScreenState extends State<WalletScreen> {
     if (!silent) {
       setState(() {
         _isLoading = true;
-        _errorMessage = null;
+        _criticalErrorMessage = null;
       });
     }
 
@@ -77,13 +74,13 @@ class _WalletScreenState extends State<WalletScreen> {
 
       if (agentId == null) {
         setState(() {
-          _errorMessage = 'Agent non identifié';
+          _criticalErrorMessage = 'Agent non identifié';
           _isLoading = false;
         });
         return;
       }
 
-      final result = singleDeviseOnly && _hasDiscoveredDevises
+      final result = singleDeviseOnly
           ? await WalletAgentLoader.loadSingleDevise(
               agentId: agentId,
               deviseId: _selectedDeviseId,
@@ -96,41 +93,20 @@ class _WalletScreenState extends State<WalletScreen> {
               cachedWallets: singleDeviseOnly ? _walletsByDevise : null,
             );
 
-      if (result.hasWallet) {
-        setState(() {
-          _availableDeviseIds = result.availableDeviseIds;
-          _walletsByDevise = result.walletsByDevise;
-          if (result.resolvedDeviseId != null) {
-            _syncDeviseSelection(result.resolvedDeviseId!);
-          }
-          _walletData =
-              _walletsByDevise[_selectedDeviseId] ?? result.wallet;
-          _errorMessage = null;
-          _isLoading = false;
-        });
-      } else {
-        setState(() {
-          _availableDeviseIds = result.availableDeviseIds;
-          _walletsByDevise = result.walletsByDevise;
-          _walletData = _walletsByDevise[_selectedDeviseId];
-          final hasAnyWallet = result.availableDeviseIds.isNotEmpty;
-          if (hasAnyWallet && _walletData != null) {
-            _errorMessage = null;
-          } else if (!silent || !hasAnyWallet) {
-            _errorMessage = result.errorMessage ??
-                ApiErrorHelper.messageForWalletAgentError(
-                  statusCode: result.errorStatusCode ?? 404,
-                  deviseId: result.errorDeviseId ?? _selectedDeviseId,
-                );
-          }
-          _isLoading = false;
-        });
-      }
+      setState(() {
+        _availableDeviseIds = result.availableDeviseIds;
+        _walletsByDevise = result.walletsByDevise;
+        if (result.resolvedDeviseId != null && !singleDeviseOnly) {
+          _syncDeviseSelection(result.resolvedDeviseId!);
+        }
+        _criticalErrorMessage = null;
+        _isLoading = false;
+      });
     } catch (e, stackTrace) {
       ApiErrorHelper.logException('WalletScreen', e, stackTrace, false);
       setState(() {
-        if (!silent || _walletData == null) {
-          _errorMessage = ApiErrorHelper.userFacingNetwork();
+        if (!silent || !_hasAnyWallet) {
+          _criticalErrorMessage = ApiErrorHelper.userFacingNetwork();
         }
         _isLoading = false;
       });
@@ -173,19 +149,19 @@ class _WalletScreenState extends State<WalletScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: _isLoading && !_hasAnyWallet
-            ? const Center(
-                child: CircularProgressIndicator(
-                  color: AppColors.prosocGreen,
+        child: _criticalErrorMessage != null
+            ? _buildRefreshableBody([
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: _buildErrorView(),
                 ),
-              )
-            : _errorMessage != null && !_hasAnyWallet
-                ? _buildRefreshableBody([
-                    SliverFillRemaining(
-                      hasScrollBody: false,
-                      child: _buildErrorView(),
+              ])
+            : _isLoading && !_hasAnyWallet
+                ? const Center(
+                    child: CircularProgressIndicator(
+                      color: AppColors.prosocGreen,
                     ),
-                  ])
+                  )
                 : _buildRefreshableBody(_walletSlivers(context)),
       ),
     );
@@ -193,7 +169,7 @@ class _WalletScreenState extends State<WalletScreen> {
 
   Widget _buildErrorView() {
     return ProsocResourceErrorView(
-      message: _errorMessage ?? 'Une erreur est survenue',
+      message: _criticalErrorMessage ?? 'Une erreur est survenue',
       onRetry: () => _loadWalletData(),
     );
   }

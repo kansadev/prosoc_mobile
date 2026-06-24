@@ -12,8 +12,7 @@ import 'package:prosoc/views/widgets/empty_state_widget.dart';
 import 'package:prosoc/views/widgets/year_picker_sheet.dart';
 
 /// Cotisations affilié :
-/// - GET /api/DashboardAffilie/cotisations/recentes/{affilieId}
-/// - GET /api/DashboardAffilie/cotisations/{affilieId}?annee=&mois=
+/// - GET /api/DashboardAffilie/cotisations/{affilieId}?annee= (retards)
 /// - GET /api/Affilie/paiements/historique
 class ContributionsScreen extends StatefulWidget {
   final int affilieId;
@@ -42,18 +41,12 @@ class _ContributionsScreenState extends State<ContributionsScreen>
   late TabController _tabController;
   final _historiqueScrollController = ScrollController();
 
-  List<DashboardAffilieCotisation> _recentes = [];
-  List<DashboardAffilieCotisation> _periode = [];
   List<DashboardAffilieCotisation> _enRetard = [];
   List<AffiliePaiementHistoriqueModel> _historique = [];
 
-  bool _loadingRecentes = false;
-  bool _loadingPeriode = false;
   bool _loadingRetards = false;
   bool _loadingHistorique = false;
   bool _loadingHistoriqueMore = false;
-  String? _errorRecentes;
-  String? _errorPeriode;
   String? _errorRetards;
   String? _errorHistorique;
 
@@ -61,29 +54,13 @@ class _ContributionsScreenState extends State<ContributionsScreen>
   bool _historiqueHasNext = false;
 
   int _selectedYear = DateTime.now().year;
-  int? _selectedMonth;
 
   static const _historiquePageSize = 20;
-
-  static const _moisLabels = [
-    'Jan',
-    'Fév',
-    'Mar',
-    'Avr',
-    'Mai',
-    'Juin',
-    'Juil',
-    'Aoû',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Déc',
-  ];
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 2, vsync: this);
     _historiqueScrollController.addListener(_onHistoriqueScroll);
     _loadAll();
   }
@@ -107,8 +84,6 @@ class _ContributionsScreenState extends State<ContributionsScreen>
 
   Future<void> _loadAll() async {
     await Future.wait([
-      _loadRecentes(),
-      _loadPeriode(),
       _loadRetards(),
       _loadHistorique(reset: true),
     ]);
@@ -210,90 +185,6 @@ class _ContributionsScreenState extends State<ContributionsScreen>
     }
   }
 
-  Future<void> _loadRecentes() async {
-    setState(() {
-      _loadingRecentes = true;
-      _errorRecentes = null;
-    });
-
-    try {
-      final response = await ApiService.getDashboardAffilieCotisationsRecentes(
-        widget.affilieId,
-        limit: 20,
-      );
-      if (!mounted) return;
-
-      if (response.success && response.data != null) {
-        setState(() {
-          _recentes = response.data!;
-          _loadingRecentes = false;
-        });
-      } else {
-        setState(() {
-          _errorRecentes = response.message ??
-              ApiErrorHelper.userFacingMessage(
-                statusCode: response.statusCode,
-              );
-          _loadingRecentes = false;
-        });
-      }
-    } catch (e, st) {
-      ApiErrorHelper.logException('Cotisations/recentes', e, st, false);
-      if (!mounted) return;
-      setState(() {
-        _errorRecentes = ApiErrorHelper.userFacingNetwork();
-        _loadingRecentes = false;
-      });
-    }
-  }
-
-  Future<void> _loadPeriode() async {
-    setState(() {
-      _loadingPeriode = true;
-      _errorPeriode = null;
-    });
-
-    try {
-      final response = await ApiService.getDashboardAffilieCotisations(
-        widget.affilieId,
-        annee: _selectedYear,
-        mois: _selectedMonth,
-      );
-      if (!mounted) return;
-
-      if (response.success && response.data != null) {
-        final sorted = List<DashboardAffilieCotisation>.from(response.data!)
-          ..sort((a, b) {
-            final da = a.dateCotisation;
-            final db = b.dateCotisation;
-            if (da == null && db == null) return 0;
-            if (da == null) return 1;
-            if (db == null) return -1;
-            return db.compareTo(da);
-          });
-        setState(() {
-          _periode = sorted;
-          _loadingPeriode = false;
-        });
-      } else {
-        setState(() {
-          _errorPeriode = response.message ??
-              ApiErrorHelper.userFacingMessage(
-                statusCode: response.statusCode,
-              );
-          _loadingPeriode = false;
-        });
-      }
-    } catch (e, st) {
-      ApiErrorHelper.logException('Cotisations/periode', e, st, false);
-      if (!mounted) return;
-      setState(() {
-        _errorPeriode = ApiErrorHelper.userFacingNetwork();
-        _loadingPeriode = false;
-      });
-    }
-  }
-
   Future<void> _loadRetards() async {
     setState(() {
       _loadingRetards = true;
@@ -336,7 +227,6 @@ class _ContributionsScreenState extends State<ContributionsScreen>
   Future<void> _onYearChanged(int year) async {
     setState(() => _selectedYear = year);
     await Future.wait([
-      _loadPeriode(),
       _loadRetards(),
       _loadHistorique(reset: true),
     ]);
@@ -383,7 +273,7 @@ class _ContributionsScreenState extends State<ContributionsScreen>
           YearPickerButton(
             selectedYear: _selectedYear,
             sheetTitle: 'Année des cotisations',
-            sheetSubtitle: 'Filtre Période, Retards et Historique',
+            sheetSubtitle: 'Filtre Retards et Historique',
             onYearSelected: _onYearChanged,
           ),
         ],
@@ -402,64 +292,20 @@ class _ContributionsScreenState extends State<ContributionsScreen>
         controller: _tabController,
         tabs: [
           DashboardSegmentTabItem(
-            label: 'Récentes',
-            badgeCount: _recentes.length,
-          ),
-          DashboardSegmentTabItem(
-            label: 'Période',
-            badgeCount: _periode.length,
+            label: 'Historique',
+            badgeCount: _historique.length,
           ),
           DashboardSegmentTabItem(
             label: 'Retards',
             badgeCount: _enRetard.length,
             showBadgeOnlyIfPositive: true,
           ),
-          DashboardSegmentTabItem(
-            label: 'Historique',
-            badgeCount: _historique.length,
-          ),
         ],
         children: [
-          _buildRecentesTab(),
-          _buildPeriodeTab(),
-          _buildRetardsTab(),
           _buildHistoriqueTab(),
+          _buildRetardsTab(),
         ],
       ),
-    );
-  }
-
-  Widget _buildRecentesTab() {
-    return _buildListTab(
-      loading: _loadingRecentes,
-      error: _errorRecentes,
-      items: _recentes,
-      emptyIcon: Icons.receipt_long_outlined,
-      emptyTitle: 'Aucune cotisation récente',
-      emptySubtitle:
-          'Les dernières cotisations apparaîtront ici (endpoint recentes).',
-      onRefresh: _loadRecentes,
-    );
-  }
-
-  Widget _buildPeriodeTab() {
-    return Column(
-      children: [
-        _buildMonthChips(),
-        Expanded(
-          child: _buildListTab(
-            loading: _loadingPeriode,
-            error: _errorPeriode,
-            items: _periode,
-            emptyIcon: Icons.calendar_month_outlined,
-            emptyTitle: 'Aucune cotisation',
-            emptySubtitle: _selectedMonth == null
-                ? 'Aucune cotisation pour $_selectedYear.'
-                : 'Aucune cotisation pour ${_moisLabels[_selectedMonth! - 1]} $_selectedYear.',
-            onRefresh: _loadPeriode,
-          ),
-        ),
-      ],
     );
   }
 
@@ -668,42 +514,6 @@ class _ContributionsScreenState extends State<ContributionsScreen>
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildMonthChips() {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: Row(
-        children: [
-          FilterChip(
-            label: const Text('Toute l\'année'),
-            selected: _selectedMonth == null,
-            onSelected: (_) {
-              setState(() => _selectedMonth = null);
-              _loadPeriode();
-            },
-            selectedColor: AppColors.prosocGreen.withValues(alpha: 0.2),
-            checkmarkColor: AppColors.prosocGreen,
-          ),
-          const SizedBox(width: 6),
-          for (var m = 1; m <= 12; m++)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: FilterChip(
-                label: Text(_moisLabels[m - 1]),
-                selected: _selectedMonth == m,
-                onSelected: (_) {
-                  setState(() => _selectedMonth = m);
-                  _loadPeriode();
-                },
-                selectedColor: AppColors.prosocGreen.withValues(alpha: 0.2),
-                checkmarkColor: AppColors.prosocGreen,
-              ),
-            ),
         ],
       ),
     );
