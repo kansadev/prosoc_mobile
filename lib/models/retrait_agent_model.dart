@@ -2,48 +2,126 @@
 // MODELE DEMANDE RETRAIT AGENT
 // ============================================
 
+import '../utils/currency_formatter.dart';
+
 class DemandeRetraitAgentModel {
-  final int id;
+  final int idDemande;
   final int agentId;
-  final double montant;
-  final String statut;
-  final DateTime dateCreation;
-  final DateTime? dateValidation;
-  final String? motifRejet;
-  final String? tokenRetrait;
-  final DateTime? dateUtilisation;
   final String agentNom;
   final String agentMatricule;
+  final double montantDemande;
+  final String typeRetrait;
+  final String statutDemande;
+  final String motifRetrait;
+  final String motifRejet;
+  final int deviseId;
+  final String deviseCode;
+  final String deviseSymbole;
+  final DateTime? dateDemande;
+  final DateTime? dateValidation;
+  final DateTime? dateTraitement;
+  final int agentValidationId;
+  final String agentValidationNom;
+  final int jetonRetraitId;
+  final String jetonRetraitCode;
+  final DateTime? dateCreation;
+  final DateTime? dateModification;
+  final bool statut;
 
   DemandeRetraitAgentModel({
-    required this.id,
+    required this.idDemande,
     required this.agentId,
-    required this.montant,
-    required this.statut,
-    required this.dateCreation,
-    this.dateValidation,
-    this.motifRejet,
-    this.tokenRetrait,
-    this.dateUtilisation,
     required this.agentNom,
     required this.agentMatricule,
+    required this.montantDemande,
+    required this.typeRetrait,
+    required this.statutDemande,
+    required this.motifRetrait,
+    required this.motifRejet,
+    required this.deviseId,
+    required this.deviseCode,
+    required this.deviseSymbole,
+    this.dateDemande,
+    this.dateValidation,
+    this.dateTraitement,
+    required this.agentValidationId,
+    required this.agentValidationNom,
+    required this.jetonRetraitId,
+    required this.jetonRetraitCode,
+    this.dateCreation,
+    this.dateModification,
+    required this.statut,
   });
+
+  DateTime? get dateReference =>
+      dateDemande ?? dateCreation ?? dateValidation ?? dateTraitement;
+
+  bool get hasJeton => jetonRetraitCode.trim().isNotEmpty;
+
+  bool get isEnAttente {
+    final s = statutDemande.trim().toUpperCase();
+    return s.contains('ATTENTE') || s.contains('PENDING') || s.isEmpty;
+  }
+
+  bool get isValidee {
+    final s = statutDemande.trim().toUpperCase();
+    return s.contains('VALID') ||
+        s.contains('APPROUV') ||
+        hasJeton && !s.contains('TRAIT');
+  }
+
+  String get formattedMontant => CurrencyFormatter.format(
+        amount: montantDemande,
+        deviseId: deviseId,
+        deviseCode: deviseCode,
+        deviseSymbole: deviseSymbole,
+      );
 
   factory DemandeRetraitAgentModel.fromJson(Map<String, dynamic> json) {
     return DemandeRetraitAgentModel(
-      id: json['id'] ?? 0,
-      agentId: json['agentId'] ?? 0,
-      montant: (json['montant'] ?? 0).toDouble(),
-      statut: json['statut'] ?? '',
-      dateCreation: DateTime.parse(json['dateCreation'] ?? DateTime.now().toIso8601String()),
-      dateValidation: json['dateValidation'] != null ? DateTime.parse(json['dateValidation']) : null,
-      motifRejet: json['motifRejet'],
-      tokenRetrait: json['tokenRetrait'],
-      dateUtilisation: json['dateUtilisation'] != null ? DateTime.parse(json['dateUtilisation']) : null,
-      agentNom: json['agentNom'] ?? '',
-      agentMatricule: json['agentMatricule'] ?? '',
+      idDemande: _retraitInt(json['idDemande'] ?? json['id']),
+      agentId: _retraitInt(json['agentId']),
+      agentNom: (json['agentNom'] ?? '').toString(),
+      agentMatricule: (json['agentMatricule'] ?? '').toString(),
+      montantDemande: _retraitDouble(json['montantDemande'] ?? json['montant']),
+      typeRetrait: (json['typeRetrait'] ?? '').toString(),
+      statutDemande: (json['statutDemande'] ?? json['statut'] ?? '').toString(),
+      motifRetrait: (json['motifRetrait'] ?? '').toString(),
+      motifRejet: (json['motifRejet'] ?? '').toString(),
+      deviseId: _retraitInt(json['deviseId']),
+      deviseCode: (json['deviseCode'] ?? '').toString(),
+      deviseSymbole: (json['deviseSymbole'] ?? '').toString(),
+      dateDemande: _retraitDate(json['dateDemande']),
+      dateValidation: _retraitDate(json['dateValidation']),
+      dateTraitement: _retraitDate(json['dateTraitement']),
+      agentValidationId: _retraitInt(json['agentValidationId']),
+      agentValidationNom: (json['agentValidationNom'] ?? '').toString(),
+      jetonRetraitId: _retraitInt(json['jetonRetraitId']),
+      jetonRetraitCode: (json['jetonRetraitCode'] ?? json['tokenRetrait'] ?? '')
+          .toString(),
+      dateCreation: _retraitDate(json['dateCreation']),
+      dateModification: _retraitDate(json['dateModification']),
+      statut: json['statut'] == true || json['statut'] == 1,
     );
   }
+}
+
+int _retraitInt(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+double _retraitDouble(dynamic value) {
+  if (value is num) return value.toDouble();
+  return double.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+DateTime? _retraitDate(dynamic value) {
+  if (value == null) return null;
+  final raw = value.toString().trim();
+  if (raw.isEmpty) return null;
+  return DateTime.tryParse(raw);
 }
 
 // ============================================

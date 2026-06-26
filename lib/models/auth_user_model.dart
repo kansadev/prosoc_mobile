@@ -17,6 +17,10 @@ class UtilisateurModel {
   final bool doitChangerMotDePasse;
   final int? agentId;
   final int? affilieId;
+  /// Agent territorial gestionnaire du compte affilié (renvoyé à la connexion).
+  final int? idAgentGestionnaireCompte;
+  final String? nomAgentGestionnaireCompte;
+  final String? matriculeAgentGestionnaireCompte;
 
   UtilisateurModel({
     required this.idUtilisateur,
@@ -33,7 +37,19 @@ class UtilisateurModel {
     required this.doitChangerMotDePasse,
     this.agentId,
     this.affilieId,
+    this.idAgentGestionnaireCompte,
+    this.nomAgentGestionnaireCompte,
+    this.matriculeAgentGestionnaireCompte,
   });
+
+  /// ID agent pour les collectes : AT connecté ou agent gestionnaire affilié.
+  int? get collecteAgentId {
+    if (agentId != null && agentId! > 0) return agentId;
+    if (idAgentGestionnaireCompte != null && idAgentGestionnaireCompte! > 0) {
+      return idAgentGestionnaireCompte;
+    }
+    return null;
+  }
 
   factory UtilisateurModel.fromJson(Map<String, dynamic> json) {
     return UtilisateurModel(
@@ -51,6 +67,11 @@ class UtilisateurModel {
       doitChangerMotDePasse: json['doitChangerMotDePasse'] ?? false,
       agentId: json['agentId'],
       affilieId: json['affilieId'],
+      idAgentGestionnaireCompte: json['idAgentGestionnaireCompte'],
+      nomAgentGestionnaireCompte:
+          json['nomAgentGestionnaireCompte']?.toString(),
+      matriculeAgentGestionnaireCompte:
+          json['matriculeAgentGestionnaireCompte']?.toString(),
     );
   }
 
@@ -62,6 +83,9 @@ class UtilisateurModel {
     bool? statut,
     int? agentId,
     int? affilieId,
+    int? idAgentGestionnaireCompte,
+    String? nomAgentGestionnaireCompte,
+    String? matriculeAgentGestionnaireCompte,
   }) {
     return UtilisateurModel(
       idUtilisateur: idUtilisateur,
@@ -78,6 +102,12 @@ class UtilisateurModel {
       doitChangerMotDePasse: doitChangerMotDePasse,
       agentId: agentId ?? this.agentId,
       affilieId: affilieId ?? this.affilieId,
+      idAgentGestionnaireCompte:
+          idAgentGestionnaireCompte ?? this.idAgentGestionnaireCompte,
+      nomAgentGestionnaireCompte:
+          nomAgentGestionnaireCompte ?? this.nomAgentGestionnaireCompte,
+      matriculeAgentGestionnaireCompte: matriculeAgentGestionnaireCompte ??
+          this.matriculeAgentGestionnaireCompte,
     );
   }
 }

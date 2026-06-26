@@ -1,21 +1,30 @@
 import 'package:flutter/material.dart';
+
+import '../../models/wallet_agent_model.dart';
 import '../screens/at/withdrawal_screen.dart';
 
 /// Ouvre l'écran dédié de demande de retrait (remplace l'ancien bottom sheet).
 class WithdrawalBottomSheet extends StatelessWidget {
-  final double? soldeDisponible;
+  final int? initialDeviseId;
+  final Map<int, WalletAgentModel>? initialWalletsByDevise;
 
-  const WithdrawalBottomSheet({super.key, this.soldeDisponible});
+  const WithdrawalBottomSheet({
+    super.key,
+    this.initialDeviseId,
+    this.initialWalletsByDevise,
+  });
 
   static Future<bool?> show(
     BuildContext context, {
-    double? soldeDisponible,
+    int? initialDeviseId,
+    Map<int, WalletAgentModel>? initialWalletsByDevise,
   }) {
     return Navigator.push<bool>(
       context,
       MaterialPageRoute(
         builder: (context) => WithdrawalScreen(
-          soldeDisponible: soldeDisponible,
+          initialDeviseId: initialDeviseId,
+          initialWalletsByDevise: initialWalletsByDevise,
         ),
       ),
     );
@@ -23,6 +32,9 @@ class WithdrawalBottomSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return WithdrawalScreen(soldeDisponible: soldeDisponible);
+    return WithdrawalScreen(
+      initialDeviseId: initialDeviseId,
+      initialWalletsByDevise: initialWalletsByDevise,
+    );
   }
 }

@@ -319,6 +319,7 @@ class _AdherentProfileScreenState extends State<AdherentProfileScreen> {
     final userPhone = info?.telephone.trim().isNotEmpty == true
         ? info!.telephone
         : (utilisateur?.telephone ?? '');
+    final agentGestionnaireCard = _buildAgentGestionnaireCard();
 
     if (_isLoading && _data == null) {
       return Scaffold(
@@ -549,6 +550,7 @@ class _AdherentProfileScreenState extends State<AdherentProfileScreen> {
                     ),
                 ],
               ),
+            if (agentGestionnaireCard != null) agentGestionnaireCard,
             _card(
               title: 'Compte',
               children: [
@@ -595,6 +597,75 @@ class _AdherentProfileScreenState extends State<AdherentProfileScreen> {
           color: color,
         ),
       ),
+    );
+  }
+
+  Widget? _buildAgentGestionnaireCard() {
+    final utilisateur = AuthService.currentUser?.utilisateur;
+    if (utilisateur == null) return null;
+
+    final agentNom = utilisateur.nomAgentGestionnaireCompte?.trim() ?? '';
+    final matricule =
+        utilisateur.matriculeAgentGestionnaireCompte?.trim() ?? '';
+    final hasAgent = utilisateur.idAgentGestionnaireCompte != null &&
+        utilisateur.idAgentGestionnaireCompte! > 0;
+
+    if (!hasAgent && agentNom.isEmpty) return null;
+
+    return _card(
+      title: 'Agent territorial',
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8, top: 4),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: AppColors.prosocGreen.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.support_agent_rounded,
+                  color: AppColors.prosocGreen,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      agentNom.isNotEmpty ? agentNom : 'Agent assigné',
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Gestionnaire de votre compte affilié',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (matricule.isNotEmpty)
+          _compactRow(
+            icon: Icons.badge_outlined,
+            label: 'Matricule',
+            value: matricule,
+          ),
+      ],
     );
   }
 }

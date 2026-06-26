@@ -38,7 +38,7 @@ class _KpiScreenState extends State<KpiScreen> {
 
       if (response.success && response.data != null) {
         setState(() {
-          _kpiData = response.data!;
+          _kpiData = response.data;
           _error = null;
           _isLoading = false;
         });
@@ -202,7 +202,9 @@ class _KpiScreenState extends State<KpiScreen> {
   }
 
   Widget _buildObjectiveHeader() {
-    final progress = (_kpiData!.progressionObjectif / 100).clamp(0.0, 1.0);
+    final progress = _kpiData!.progressionBarValue;
+    final progressionLabel = _kpiData!.progressionLabel;
+    final progressionPercent = progress * 100;
 
     return Container(
       width: double.infinity,
@@ -282,7 +284,7 @@ class _KpiScreenState extends State<KpiScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '${_kpiData!.progressionObjectif.toStringAsFixed(1)} % atteint',
+                '$progressionLabel atteint',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 13,
@@ -290,7 +292,7 @@ class _KpiScreenState extends State<KpiScreen> {
                 ),
               ),
               Text(
-                'Reste ${(100 - _kpiData!.progressionObjectif).clamp(0, 100).toStringAsFixed(1)} %',
+                'Reste ${(100 - progressionPercent).clamp(0, 100).toStringAsFixed(1)} %',
                 style: TextStyle(
                   color: Colors.white.withValues(alpha: 0.85),
                   fontSize: 12,
@@ -537,7 +539,7 @@ class _KpiScreenState extends State<KpiScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  '${_kpiData!.tauxConversion.toStringAsFixed(1)} %',
+                  _kpiData!.formattedTauxConversion,
                   style: const TextStyle(
                     fontSize: 28,
                     fontWeight: FontWeight.bold,

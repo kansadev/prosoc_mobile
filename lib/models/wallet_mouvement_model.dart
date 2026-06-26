@@ -2,6 +2,8 @@
 // MODÈLE MOUVEMENT WALLET
 // ============================================
 
+import '../utils/currency_formatter.dart';
+
 int _walletMouvementInt(dynamic value) {
   if (value == null) return 0;
   if (value is int) return value;
@@ -20,6 +22,10 @@ class WalletMouvementModel {
   final int walletAgentId;
   final String agentNom;
   final String agentMatricule;
+  final int deviseId;
+  final String deviseCode;
+  final String deviseNom;
+  final String deviseSymbole;
 
   WalletMouvementModel({
     required this.idWalletMouvement,
@@ -32,6 +38,10 @@ class WalletMouvementModel {
     required this.walletAgentId,
     required this.agentNom,
     required this.agentMatricule,
+    this.deviseId = 0,
+    this.deviseCode = '',
+    this.deviseNom = '',
+    this.deviseSymbole = '',
   });
 
   factory WalletMouvementModel.fromJson(Map<String, dynamic> json) {
@@ -50,6 +60,20 @@ class WalletMouvementModel {
       walletAgentId: _walletMouvementInt(json['walletAgentId']),
       agentNom: json['agentNom']?.toString() ?? '',
       agentMatricule: json['agentMatricule']?.toString() ?? '',
+      deviseId: _walletMouvementInt(json['deviseId']),
+      deviseCode: json['deviseCode']?.toString() ?? '',
+      deviseNom: json['deviseNom']?.toString() ?? '',
+      deviseSymbole: json['deviseSymbole']?.toString() ?? '',
+    );
+  }
+
+  String formattedMontant({bool withSign = false}) {
+    return CurrencyFormatter.formatMovementAmount(
+      amount: montant,
+      deviseId: deviseId > 0 ? deviseId : null,
+      deviseCode: deviseCode.isNotEmpty ? deviseCode : null,
+      deviseSymbole: deviseSymbole.isNotEmpty ? deviseSymbole : null,
+      withSign: withSign,
     );
   }
 

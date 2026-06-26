@@ -30,6 +30,8 @@ class PopupMenuItemWidget extends PopupMenuItem<String> {
 /// Widget réutilisable pour le menu popup complet avec actions
 class AffiliatePopupMenuWidget extends StatelessWidget {
   final VoidCallback? onCollecte;
+  final VoidCallback? onPayerFrais;
+  final VoidCallback? onPayerSouscription;
   final VoidCallback? onDependants;
   final VoidCallback? onSouscription;
   final VoidCallback? onAntecedents;
@@ -37,6 +39,8 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
   const AffiliatePopupMenuWidget({
     super.key,
     this.onCollecte,
+    this.onPayerFrais,
+    this.onPayerSouscription,
     this.onDependants,
     this.onSouscription,
     this.onAntecedents,
@@ -50,6 +54,12 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
         switch (value) {
           case 'collecte':
             onCollecte?.call();
+            break;
+          case 'payer_frais':
+            onPayerFrais?.call();
+            break;
+          case 'payer_souscription':
+            onPayerSouscription?.call();
             break;
           case 'dependants':
             onDependants?.call();
@@ -69,6 +79,20 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
             value: 'collecte',
             icon: Icons.payments_outlined,
             label: 'Payer une cotisation',
+          ),
+
+        if (onPayerFrais != null)
+          PopupMenuItemWidget(
+            value: 'payer_frais',
+            icon: Icons.receipt_long_outlined,
+            label: 'Payer un frais',
+          ),
+
+        if (onPayerSouscription != null)
+          PopupMenuItemWidget(
+            value: 'payer_souscription',
+            icon: Icons.medical_services_outlined,
+            label: 'Payer une souscription',
           ),
 
         // Dépendants
@@ -104,6 +128,8 @@ AppBar createAppBarWithPopupMenu({
   required String title,
   List<Widget>? actions,
   VoidCallback? onCollecte,
+  VoidCallback? onPayerFrais,
+  VoidCallback? onPayerSouscription,
   VoidCallback? onDependants,
   VoidCallback? onSouscription,
   VoidCallback? onAntecedents,
@@ -117,6 +143,8 @@ AppBar createAppBarWithPopupMenu({
     actions: [
       AffiliatePopupMenuWidget(
         onCollecte: onCollecte,
+        onPayerFrais: onPayerFrais,
+        onPayerSouscription: onPayerSouscription,
         onDependants: onDependants,
         onSouscription: onSouscription,
         onAntecedents: onAntecedents,

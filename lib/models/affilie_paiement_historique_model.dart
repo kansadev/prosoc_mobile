@@ -1,4 +1,7 @@
 // GET /api/Affilie/paiements/historique
+// GET /api/Collecte/by-agent/{agentId}
+
+import '../utils/currency_formatter.dart';
 
 class AffiliePaiementHistoriqueModel {
   final int idCollecte;
@@ -117,8 +120,28 @@ class AffiliePaiementHistoriqueModel {
     if (cotisationTypeAdhesionLibelle.trim().isNotEmpty) {
       return cotisationTypeAdhesionLibelle.trim();
     }
-    if (typeCollecte.trim().isNotEmpty) return typeCollecte.trim();
+    if (typeCollecte.trim().isNotEmpty) return _humanizeTypeCollecte(typeCollecte);
     return 'Paiement';
+  }
+
+  String get formattedMontant {
+    return CurrencyFormatter.formatMovementAmount(
+      amount: montant,
+      deviseId: deviseId > 0 ? deviseId : null,
+      deviseCode: deviseCode.isNotEmpty ? deviseCode : null,
+      withSign: false,
+    );
+  }
+
+  String get typeCollecteLabel => _humanizeTypeCollecte(typeCollecte);
+
+  static String _humanizeTypeCollecte(String value) {
+    final normalized = value.trim().toLowerCase();
+    if (normalized.isEmpty) return 'Collecte';
+    if (normalized == 'frais') return 'Frais';
+    if (normalized == 'souscription') return 'Souscription';
+    if (normalized == 'cotisation') return 'Cotisation';
+    return value.trim().replaceAll('_', ' ');
   }
 
   static int _int(dynamic v) {

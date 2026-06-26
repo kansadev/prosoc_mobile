@@ -11,6 +11,7 @@ import '../models/wallet_virtuel_mouvement_model.dart';
 import '../models/affilie_model.dart';
 import '../models/adhesion_with_affilie_model.dart';
 import '../models/dashboard_agent_model.dart';
+import '../models/dashboard_agent_graphs_model.dart';
 import '../models/dashboard_superviseur_model.dart';
 import '../models/dashboard_percepteur_model.dart';
 import '../models/dashboard_affilie_model.dart';
@@ -23,6 +24,9 @@ import '../models/bon_envoi_model.dart';
 import '../models/kpi_agent_model.dart';
 import '../models/agent_model.dart';
 import '../models/devise_model.dart';
+import '../models/retrait_agent_model.dart';
+import '../models/retrait_agent_periode_model.dart';
+import '../models/retrait_agent_verifier_solde_model.dart';
 
 // ============================================
 // CONFIGURATION API PROSOC
@@ -1227,18 +1231,68 @@ class ApiService {
 
   /// GET /api/DashboardAgent/performance - Performance du dashboard agent (agentID from token)
   static Future<ApiResponse<DashboardAgentModel>> getDashboardAgentPerformance(
-  ) async {
-    const context = 'DashboardAgent/performance';
+  ) {
+    return _getDashboardAgent('performance', context: 'DashboardAgent/performance');
+  }
+
+  /// GET /api/DashboardAgent/terrain - Dashboard terrain agent (agentID from token)
+  static Future<ApiResponse<DashboardAgentModel>> getDashboardAgentTerrain() {
+    return _getDashboardAgent('terrain', context: 'DashboardAgent/terrain');
+  }
+
+  /// GET /api/DashboardAgent/graphs - Graphiques du dashboard agent (agentID from token)
+  static Future<ApiResponse<DashboardAgentGraphsModel>>
+      getDashboardAgentGraphs() async {
+    const context = 'DashboardAgent/graphs';
     try {
       final response = await _httpGet(
-        Uri.parse('${ApiConfig.baseUrl}/api/DashboardAgent/performance'),
+        Uri.parse('${ApiConfig.baseUrl}/api/DashboardAgent/graphs'),
+        context: context,
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        final map = unwrapDashboardAgentGraphsJson(decoded);
+        if (map == null || !dashboardAgentGraphsPayloadLooksValid(map)) {
+          if (kDebugMode) {
+            debugPrint(
+              '[API] $context — structure inattendue: '
+              '${decoded.runtimeType}',
+            );
+          }
+          return ApiResponse.error(
+            'Réponse graphiques invalide',
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.success(DashboardAgentGraphsModel.fromJson(map));
+      }
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  static Future<ApiResponse<DashboardAgentModel>> _getDashboardAgent(
+    String segment, {
+    required String context,
+  }) async {
+    try {
+      final response = await _httpGet(
+        Uri.parse('${ApiConfig.baseUrl}/api/DashboardAgent/$segment'),
         context: context,
       );
 
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         final map = unwrapDashboardAgentJson(decoded);
-        if (map == null) {
+        if (map == null || !dashboardAgentPayloadLooksValid(map)) {
+          if (kDebugMode) {
+            debugPrint(
+              '[API] $context — structure inattendue: '
+              '${decoded.runtimeType}',
+            );
+          }
           return ApiResponse.error(
             'Réponse dashboard invalide',
             statusCode: response.statusCode,
@@ -1254,20 +1308,33 @@ class ApiService {
 
   /// GET /api/DashboardAgent/kpis - KPIs du agent (agentID from token)
   static Future<ApiResponse<KpiAgentModel>> getAgentKpis() async {
+    const context = 'DashboardAgent/kpis';
     try {
-      final response = await http.get(
+      final response = await _httpGet(
         Uri.parse('${ApiConfig.baseUrl}/api/DashboardAgent/kpis'),
-        headers: ApiConfig.authHeaders(_token!),
+        context: context,
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        return ApiResponse.success(KpiAgentModel.fromJson(data));
-      } else {
-        return _errorResponse(response);
+        final decoded = jsonDecode(response.body);
+        final map = unwrapKpiAgentJson(decoded);
+        if (map == null || !kpiAgentPayloadLooksValid(map)) {
+          if (kDebugMode) {
+            debugPrint(
+              '[API] $context — structure inattendue: '
+              '${decoded.runtimeType}',
+            );
+          }
+          return ApiResponse.error(
+            'Réponse KPI invalide',
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.success(KpiAgentModel.fromJson(map));
       }
-    } catch (e) {
-      return _errorFromException(e, StackTrace.current);
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
     }
   }
 
@@ -1286,11 +1353,15 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        final List<dynamic> list = data is List ? data : [];
+        final rows = data is List
+            ? data
+            : PaginatedResponseHelper.extractRows(data);
         return ApiResponse.success(
-          list
-              .whereType<Map<String, dynamic>>()
-              .map((json) => RecentAffilieModel.fromJson(json))
+          rows
+              .whereType<Map>()
+              .map((json) => RecentAffilieModel.fromJson(
+                    Map<String, dynamic>.from(json),
+                  ))
               .toList(),
         );
       } else {
@@ -1870,10 +1941,41 @@ class ApiService {
     return _get<Map<String, dynamic>>('/api/collecte/$id');
   }
 
+  /// GET /api/Collecte/by-agent/{agentId} — Historique des collectes d'un agent
+  static Future<ApiResponse<List<dynamic>>> getCollecteByAgent(
+    int agentId,
+  ) async {
+    return _get<List<dynamic>>('/api/Collecte/by-agent/$agentId');
+  }
+
+  /// GET /api/Collecte/by-type/{typeCollecte} — FRAIS | SOUSCRIPTION | COTISATION
+  static Future<ApiResponse<List<dynamic>>> getCollecteByType(
+    String typeCollecte,
+  ) async {
+    final normalized = typeCollecte.trim().toUpperCase();
+    return _get<List<dynamic>>('/api/Collecte/by-type/$normalized');
+  }
+
+  static List<AffiliePaiementHistoriqueModel> parseCollecteHistoriqueList(
+    dynamic data,
+  ) {
+    final rows = data is List
+        ? data
+        : PaginatedResponseHelper.extractRows(data);
+    return rows
+        .whereType<Map>()
+        .map(
+          (item) => AffiliePaiementHistoriqueModel.fromJson(
+            Map<String, dynamic>.from(item),
+          ),
+        )
+        .toList();
+  }
+
   /// POST /api/Collecte - Créer une collecte
   ///
-  /// Pour `typeCollecte` = Souscription, [souscriptionPrestationId] (ou [prestationId])
-  /// correspond à l'id de la **prestation** souscrite.
+  /// Pour `typeCollecte` = Souscription, [souscriptionPrestationId] correspond à
+  /// l'`id` de l'enregistrement **SouscriptionPrestation** (pas `prestationId`).
   static Future<ApiResponse<Map<String, dynamic>>> createCollecte({
     required String typeCollecte,
     required int affilieId,
@@ -1902,12 +2004,14 @@ class ApiService {
     final isSouscription = normalizedType == 'souscription';
     final isCotisation = normalizedType == 'cotisation';
 
-    final resolvedPrestationId = (prestationId != null && prestationId > 0)
-        ? prestationId
-        : ((souscriptionPrestationId ?? subscriptionPrestationId) != null &&
-                (souscriptionPrestationId ?? subscriptionPrestationId)! > 0)
-            ? (souscriptionPrestationId ?? subscriptionPrestationId)
-            : null;
+    final resolvedSouscriptionPrestationId = isSouscription
+        ? () {
+            final explicit =
+                souscriptionPrestationId ?? subscriptionPrestationId;
+            if (explicit != null && explicit > 0) return explicit;
+            return null;
+          }()
+        : null;
 
     int? resolvedFraisId;
     if (isFrais && fraisId != null && fraisId > 0) {
@@ -1941,9 +2045,9 @@ class ApiService {
         'tarifCotisationId': resolvedCotisationId,
       },
       if (isSouscription &&
-          resolvedPrestationId != null &&
-          resolvedPrestationId > 0)
-        'souscriptionPrestationId': resolvedPrestationId,
+          resolvedSouscriptionPrestationId != null &&
+          resolvedSouscriptionPrestationId > 0)
+        'souscriptionPrestationId': resolvedSouscriptionPrestationId,
       if (operateur != null && operateur.isNotEmpty) 'operateur': operateur,
       if (observation != null && observation.isNotEmpty)
         'observation': observation,
@@ -2644,6 +2748,111 @@ class ApiService {
     return _get<List<dynamic>>('/api/retraitagent');
   }
 
+  /// GET /api/RetraitAgent/by-agent/{agentId} - Historique des retraits d'un agent
+  static Future<ApiResponse<List<dynamic>>> getRetraitAgentByAgent(
+    int agentId,
+  ) async {
+    return _get<List<dynamic>>('/api/RetraitAgent/by-agent/$agentId');
+  }
+
+  static List<DemandeRetraitAgentModel> parseRetraitAgentList(dynamic data) {
+    final rows = data is List
+        ? data
+        : PaginatedResponseHelper.extractRows(data);
+    return rows
+        .whereType<Map>()
+        .map(
+          (item) => DemandeRetraitAgentModel.fromJson(
+            Map<String, dynamic>.from(item),
+          ),
+        )
+        .toList();
+  }
+
+  static Future<ApiResponse<List<DemandeRetraitAgentModel>>>
+      _fetchRetraitAgentListe(String endpoint) async {
+    final context = 'GET $endpoint';
+    try {
+      final response = await _httpGet(
+        Uri.parse('${ApiConfig.baseUrl}$endpoint'),
+        context: context,
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        return ApiResponse.success(parseRetraitAgentList(decoded));
+      }
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  /// GET /api/RetraitAgent/en-attente
+  static Future<ApiResponse<List<DemandeRetraitAgentModel>>>
+      getRetraitsEnAttente() =>
+          _fetchRetraitAgentListe('/api/RetraitAgent/en-attente');
+
+  /// GET /api/RetraitAgent/validees
+  static Future<ApiResponse<List<DemandeRetraitAgentModel>>>
+      getRetraitsValidees() =>
+          _fetchRetraitAgentListe('/api/RetraitAgent/validees');
+
+  /// GET /api/RetraitAgent/traitees
+  static Future<ApiResponse<List<DemandeRetraitAgentModel>>>
+      getRetraitsTraitees() =>
+          _fetchRetraitAgentListe('/api/RetraitAgent/traitees');
+
+  /// POST /api/RetraitAgent/verifier-solde
+  static Future<ApiResponse<RetraitAgentVerifierSolde>>
+      verifierSoldeRetraitAgent({
+    required int agentId,
+    required double montantDemande,
+    int? deviseId,
+  }) async {
+    const context = 'RetraitAgent/verifier-solde';
+    final body = <String, dynamic>{
+      'agentId': agentId,
+      'montantDemande': montantDemande,
+      if (deviseId != null) 'deviseId': deviseId,
+    };
+
+    try {
+      if (kDebugMode) {
+        ApiErrorHelper.logRequest(context, body);
+      }
+
+      final response = await _withAuthRetry(
+        () => http.post(
+          Uri.parse('${ApiConfig.baseUrl}/api/RetraitAgent/verifier-solde'),
+          headers: isAuthenticated
+              ? ApiConfig.authHeaders(_token!)
+              : ApiConfig.headers,
+          body: jsonEncode(body),
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        final map = unwrapRetraitVerifierSoldeJson(decoded);
+        if (map == null) {
+          return ApiResponse.error(
+            'Réponse vérification solde invalide',
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.success(RetraitAgentVerifierSolde.fromJson(map));
+      }
+      return _errorResponse(
+        response,
+        context: context,
+        requestBody: body,
+      );
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
   /// GET /api/retraitagent/{id} - Détail d'une demande de retrait
   static Future<ApiResponse<Map<String, dynamic>>> getDemandeRetraitAgent(
     int id,
@@ -2657,12 +2866,14 @@ class ApiService {
     required double montant,
     required String typeRetrait,
     required String motifRetrait,
+    int? deviseId,
   }) async {
     return _post<Map<String, dynamic>>('/api/retraitAgent', {
       'agentId': agentId,
       'montantDemande': montant,
       'typeRetrait': typeRetrait,
       'motifRetrait': motifRetrait,
+      if (deviseId != null) 'deviseId': deviseId,
     });
   }
 
@@ -2780,15 +2991,40 @@ class ApiService {
     );
   }
 
-  /// GET /api/SouscriptionPrestation/by-affilie/{affilieId} - Liste des souscriptions d'un adhérent
-  static Future<ApiResponse<List<dynamic>>> getSouscriptionsByAffilie(int affilieId) async {
-    return _get<List<dynamic>>('/api/SouscriptionPrestation/by-affilie/$affilieId');
+  /// GET /api/SouscriptionPrestation/by-affilie/{affilieId} - Liste paginée
+  static Future<ApiResponse<List<dynamic>>> getSouscriptionsByAffilie(
+    int affilieId, {
+    int page = 1,
+    int pageSize = 100,
+    String? sortBy,
+    String? sortDirection,
+  }) async {
+    return _get<List<dynamic>>(
+      '/api/SouscriptionPrestation/by-affilie/$affilieId',
+      queryParams: {
+        'Page': page.toString(),
+        'pageNumber': page.toString(),
+        'PageSize': pageSize.toString(),
+        'pageSize': pageSize.toString(),
+        if (sortBy != null && sortBy.isNotEmpty) 'SortBy': sortBy,
+        if (sortDirection != null && sortDirection.isNotEmpty)
+          'SortDirection': sortDirection,
+      },
+    );
   }
 
   /// Liste typée des souscriptions prestation d'un affilié.
   static Future<ApiResponse<List<SouscriptionPrestationModel>>>
-  getSouscriptionsPrestationByAffilie(int affilieId) async {
-    final response = await getSouscriptionsByAffilie(affilieId);
+  getSouscriptionsPrestationByAffilie(
+    int affilieId, {
+    int pageSize = 100,
+  }) async {
+    final response = await getSouscriptionsByAffilie(
+      affilieId,
+      pageSize: pageSize,
+      sortBy: 'dateSouscription',
+      sortDirection: 'desc',
+    );
     if (!response.success || response.data == null) {
       return ApiResponse(
         success: false,
@@ -2797,8 +3033,12 @@ class ApiService {
       );
     }
 
+    final rows = response.data is List
+        ? response.data!
+        : PaginatedResponseHelper.extractRows(response.data);
+
     final parsed = <SouscriptionPrestationModel>[];
-    for (final item in response.data!) {
+    for (final item in rows) {
       if (item is! Map) continue;
       try {
         final map = item is Map<String, dynamic>
@@ -3097,7 +3337,26 @@ class ApiService {
     });
   }
 
-  /// POST /api/retraitagent/utiliser - Utiliser un token de retrait
+  /// POST /api/RetraitAgent/utiliser-jeton - Utiliser un jeton de retrait
+  static Future<ApiResponse<Map<String, dynamic>>> utiliserJetonRetraitAgent({
+    required int idJeton,
+    required String codeJeton,
+    required int agentId,
+    String? observationUtilisation,
+  }) async {
+    return _post<Map<String, dynamic>>(
+      '/api/RetraitAgent/utiliser-jeton',
+      {
+        'idJeton': idJeton,
+        'codeJeton': codeJeton,
+        'agentId': agentId,
+        'observationUtilisation': observationUtilisation ?? '',
+      },
+      logContext: 'RetraitAgent/utiliser-jeton',
+    );
+  }
+
+  /// @deprecated Utiliser [utiliserJetonRetraitAgent]
   static Future<ApiResponse<Map<String, dynamic>>> utiliserTokenRetrait({
     required String token,
   }) async {
@@ -3106,7 +3365,34 @@ class ApiService {
     });
   }
 
-  /// GET /api/retraitagent/periodes - Vérifier les périodes autorisées (15-20 et 30+)
+  /// GET /api/RetraitAgent/periode-courante - Période de retrait en cours
+  static Future<ApiResponse<RetraitAgentPeriodeCourante>>
+      getRetraitAgentPeriodeCourante() async {
+    const context = 'RetraitAgent/periode-courante';
+    try {
+      final response = await _httpGet(
+        Uri.parse('${ApiConfig.baseUrl}/api/RetraitAgent/periode-courante'),
+        context: context,
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        final map = unwrapRetraitPeriodeJson(decoded);
+        if (map == null) {
+          return ApiResponse.error(
+            'Réponse période de retrait invalide',
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.success(RetraitAgentPeriodeCourante.fromJson(map));
+      }
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  /// GET /api/retraitagent/periodes - Vérifier les périodes autorisées (legacy)
   static Future<ApiResponse<Map<String, dynamic>>>
   getPeriodesAutorisees() async {
     return _get<Map<String, dynamic>>('/api/retraitagent/periodes');

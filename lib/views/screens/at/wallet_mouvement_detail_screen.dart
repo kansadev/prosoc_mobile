@@ -176,7 +176,7 @@ class _WalletMouvementDetailScreenState
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    AppFormatters.formatCurrencyDollar(m.montant.abs()),
+                    m.formattedMontant(),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 32,
@@ -196,6 +196,19 @@ class _WalletMouvementDetailScreenState
             ),
             const SizedBox(height: 20),
             _buildSection(
+              title: 'Montant',
+              rows: [
+                _DetailRow('Montant', m.formattedMontant()),
+                _DetailRow(
+                  'Devise',
+                  m.deviseNom.isNotEmpty
+                      ? '${m.deviseCode} — ${m.deviseNom}'
+                      : _valueOrDash(m.deviseCode),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            _buildSection(
               title: 'Opération',
               rows: [
                 _DetailRow('Description', _valueOrDash(m.description)),
@@ -207,15 +220,7 @@ class _WalletMouvementDetailScreenState
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            _buildSection(
-              title: 'Références',
-              rows: [
-                _DetailRow('N° mouvement', '#${m.idWalletMouvement}'),
-                _DetailRow('Wallet ID', m.walletId.toString()),
-                _DetailRow('Agent ID', m.walletAgentId.toString()),
-              ],
-            ),
+
             const SizedBox(height: 14),
             _buildSection(
               title: 'Agent',

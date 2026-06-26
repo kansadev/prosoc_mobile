@@ -7,6 +7,7 @@ import '../../../utils/wallet_agent_loader.dart';
 import 'withdrawal_screen.dart';
 import 'token_screen.dart';
 import 'wallet_mouvements_screen.dart';
+import 'collecte_historique_screen.dart';
 import '../../widgets/prosoc_resource_error_view.dart';
 import '../../widgets/wallet_devise_switch.dart';
 
@@ -233,7 +234,8 @@ class _WalletScreenState extends State<WalletScreen> {
             const SizedBox(height: 8),
             Text(
               _unavailableMessageForSelectedDevise ??
-                  (_walletForSelectedDevise?.formattedSolde ?? '0.00'),
+                  (_walletForSelectedDevise?.formattedSoldeDisponible ??
+                      '0.00'),
               style: TextStyle(
                 color: Colors.white,
                 fontSize: _unavailableMessageForSelectedDevise != null ? 15 : 32,
@@ -241,6 +243,27 @@ class _WalletScreenState extends State<WalletScreen> {
                 height: _unavailableMessageForSelectedDevise != null ? 1.35 : 1.1,
               ),
             ),
+            if (_walletForSelectedDevise != null &&
+                _unavailableMessageForSelectedDevise == null) ...[
+              const SizedBox(height: 8),
+              Text(
+                'Solde courant : ${_walletForSelectedDevise!.formattedSolde}',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.75),
+                  fontSize: 13,
+                ),
+              ),
+              if (_walletForSelectedDevise!.hasRetenue) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Retenues à la source appliquées',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.65),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ],
             const SizedBox(height: 24),
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -251,7 +274,8 @@ class _WalletScreenState extends State<WalletScreen> {
                 ),
                 WalletDeviseSwitch(
                   isUsdSelected: _isUsdSelected,
-                  enableAllDevises: true,
+                  enableAllDevises: false,
+                  availableDeviseIds: _availableDeviseIds,
                   onChanged: _onDeviseChanged,
                 ),
               ],
@@ -333,10 +357,17 @@ class _WalletScreenState extends State<WalletScreen> {
                 },
               ),
               _buildActionButton(
-                icon: Icons.qr_code,
-                label: 'Scanner',
+                icon: Icons.history_rounded,
+                label: 'Historique',
                 color: AppColors.prosocGreen,
-                onTap: () {},
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const CollecteHistoriqueScreen(),
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -386,7 +417,8 @@ class _WalletScreenState extends State<WalletScreen> {
       context,
       MaterialPageRoute(
         builder: (context) => WithdrawalScreen(
-          soldeDisponible: _walletForSelectedDevise?.soldeCourant,
+          initialDeviseId: _selectedDeviseId,
+          initialWalletsByDevise: _walletsByDevise,
         ),
       ),
     );

@@ -52,4 +52,42 @@ abstract final class CurrencyFormatter {
 
     return '$sign${formatCdf(absolute)}';
   }
+
+  /// Affiche le montant tel que renvoyé par l'API, sans arrondi [NumberFormat].
+  static String formatMovementAmount({
+    required num amount,
+    int? deviseId,
+    String? deviseCode,
+    String? deviseSymbole,
+    bool withSign = false,
+  }) {
+    final sign = withSign
+        ? (amount > 0 ? '+' : amount < 0 ? '-' : '')
+        : '';
+    final absolute = amount.abs();
+    final amountText = _rawAmountString(absolute);
+
+    if (isUsd(deviseId: deviseId, deviseCode: deviseCode)) {
+      final symbole = deviseSymbole?.trim();
+      final prefix = (symbole != null && symbole.isNotEmpty) ? symbole : r'$';
+      return '$sign$prefix$amountText';
+    }
+
+    final code = deviseCode?.trim();
+    final suffix = (code != null && code.isNotEmpty)
+        ? code.toUpperCase()
+        : 'CDF';
+    return '$sign$amountText $suffix';
+  }
+
+  static String _rawAmountString(num value) {
+    final text = value.toString();
+    if (text.contains('e') || text.contains('E')) {
+      return value
+          .toStringAsFixed(12)
+          .replaceAll(RegExp(r'0+$'), '')
+          .replaceAll(RegExp(r'\.$'), '');
+    }
+    return text;
+  }
 }

@@ -230,8 +230,14 @@ class _WalletMovementsScreenState extends State<WalletMovementsScreen> {
             ? -movement.montant.abs()
             : movement.montant;
 
-    return CurrencyFormatter.format(
+    return CurrencyFormatter.formatMovementAmount(
       amount: signedAmount,
+      deviseId: movement.deviseId > 0 ? movement.deviseId : null,
+      deviseCode:
+          movement.deviseCode.isNotEmpty ? movement.deviseCode : null,
+      deviseSymbole: movement.deviseSymbole.isNotEmpty
+          ? movement.deviseSymbole
+          : null,
       withSign: true,
     );
   }

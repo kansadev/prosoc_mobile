@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_contributionScreen.dart';
+import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_frais_screen.dart';
+import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_souscription_screen.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/AffiliateDetailsScreen.dart';
 import 'package:prosoc/widgets/popup_menu_widget.dart';
 import 'package:prosoc/widgets/antecedent_bottom_sheet.dart';
@@ -497,6 +499,36 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                         affilieId: affilieId,
                         affilieNom: nom,
                         affiliePrenom: prenom,
+                        affilieTelephone:
+                            telephone.isNotEmpty ? telephone : null,
+                      ),
+                    ),
+                  );
+                },
+                onPayerFrais: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => PayerFraisScreen(
+                        affilieId: affilieId,
+                        affilieNom: nom,
+                        affiliePrenom: prenom,
+                        affilieTelephone:
+                            telephone.isNotEmpty ? telephone : null,
+                      ),
+                    ),
+                  );
+                },
+                onPayerSouscription: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => PayerSouscriptionScreen(
+                        affilieId: affilieId,
+                        affilieNom: nom,
+                        affiliePrenom: prenom,
+                        affilieTelephone:
+                            telephone.isNotEmpty ? telephone : null,
                       ),
                     ),
                   );

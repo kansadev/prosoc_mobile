@@ -40,6 +40,10 @@ class AuthService {
   /// ID agent lié au compte (agent AT, percepteur, superviseur terrain)
   static int? get agentId => _currentUser?.utilisateur.agentId;
 
+  /// ID agent pour une collecte (AT ou agent gestionnaire d'un affilié).
+  static int? get collecteAgentId =>
+      _currentUser?.utilisateur.collecteAgentId;
+
   /// Peut utiliser les parcours agent (wallet, adhésion, réseau)
   static bool get isAgentTerrain {
     return _currentUser?.isAgentTerrain ?? false;
@@ -88,6 +92,12 @@ class AuthService {
         'doitChangerMotDePasse': authUser.utilisateur.doitChangerMotDePasse,
         'agentId': authUser.utilisateur.agentId,
         'affilieId': authUser.utilisateur.affilieId,
+        'idAgentGestionnaireCompte':
+            authUser.utilisateur.idAgentGestionnaireCompte,
+        'nomAgentGestionnaireCompte':
+            authUser.utilisateur.nomAgentGestionnaireCompte,
+        'matriculeAgentGestionnaireCompte':
+            authUser.utilisateur.matriculeAgentGestionnaireCompte,
       });
       await prefs.setString(_userDataKey, userJson);
 
@@ -363,6 +373,10 @@ class AuthService {
       'doitChangerMotDePasse': utilisateur.doitChangerMotDePasse,
       'agentId': utilisateur.agentId,
       'affilieId': utilisateur.affilieId,
+      'idAgentGestionnaireCompte': utilisateur.idAgentGestionnaireCompte,
+      'nomAgentGestionnaireCompte': utilisateur.nomAgentGestionnaireCompte,
+      'matriculeAgentGestionnaireCompte':
+          utilisateur.matriculeAgentGestionnaireCompte,
     });
     await prefs.setString(_userDataKey, userJson);
     if (utilisateur.nomComplet.isNotEmpty) {

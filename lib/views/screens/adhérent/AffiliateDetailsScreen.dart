@@ -8,6 +8,8 @@ import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/formatters.dart';
 import 'package:prosoc/utils/paginated_response_helper.dart';
 import 'widgets/payer_contributionScreen.dart';
+import 'widgets/payer_souscription_screen.dart';
+import 'widgets/payer_frais_screen.dart';
 import 'package:prosoc/widgets/antecedent_bottom_sheet.dart';
 import 'package:prosoc/widgets/dependant_bottom_sheet.dart';
 import 'package:prosoc/widgets/souscription_bottom_sheet.dart';
@@ -614,8 +616,9 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
       actions: [
         AffiliatePopupMenuWidget(
           onCollecte: _navigateToContributionScreen,
+          onPayerFrais: _navigateToPayerFraisScreen,
+          onPayerSouscription: _navigateToPayerSouscriptionScreen,
           onDependants: _isSoloAdhesion ? null : _showAddDependantBottomSheet,
-
           onSouscription: _showSouscriptionBottomSheet,
           onAntecedents: _showAddAntecedentBottomSheet,
         ),
@@ -1382,6 +1385,36 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
         ),
       ),
     );
+  }
+
+  void _navigateToPayerFraisScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PayerFraisScreen(
+          affilieId: widget.affilieId,
+          affilieNom: widget.preview?.nom ?? '',
+          affiliePrenom: widget.preview?.prenom ?? '',
+        ),
+      ),
+    );
+  }
+
+  void _navigateToPayerSouscriptionScreen() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PayerSouscriptionScreen(
+          affilieId: widget.affilieId,
+          affilieNom: widget.preview?.nom ?? '',
+          affiliePrenom: widget.preview?.prenom ?? '',
+        ),
+      ),
+    ).then((paid) {
+      if (paid == true && mounted) {
+        _loadSouscriptions();
+      }
+    });
   }
 
   Future<void> _showAddDependantBottomSheet() async {

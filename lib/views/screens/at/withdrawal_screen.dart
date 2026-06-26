@@ -1,14 +1,25 @@
 import 'package:flutter/material.dart';
+
 import '../../../config/api.dart';
 import '../../../config/colors.dart';
+import '../../../models/retrait_agent_periode_model.dart';
+import '../../../models/wallet_agent_model.dart';
 import '../../../services/auth_service.dart';
 import '../../../utils/api_error_helper.dart';
+import '../../../utils/wallet_agent_loader.dart';
 import '../../../utils/withdrawal_window_helper.dart';
+import '../../widgets/wallet_devise_switch.dart';
+import 'retrait_historique_screen.dart';
 
 class WithdrawalScreen extends StatefulWidget {
-  final double? soldeDisponible;
+  final int? initialDeviseId;
+  final Map<int, WalletAgentModel>? initialWalletsByDevise;
 
-  const WithdrawalScreen({super.key, this.soldeDisponible});
+  const WithdrawalScreen({
+    super.key,
+    this.initialDeviseId,
+    this.initialWalletsByDevise,
+  });
 
   @override
   State<WithdrawalScreen> createState() => _WithdrawalScreenState();
@@ -18,11 +29,21 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
   final _formKey = GlobalKey<FormState>();
   final _montantController = TextEditingController();
   final _motifController = TextEditingController();
+  final _pageController = PageController();
 
   String _selectedTypeRetrait = 'Espèces';
   bool _isLoading = false;
+  bool _isLoadingWallets = true;
+  bool _isLoadingPeriode = true;
   String? _serverMessage;
   bool _isSuccess = false;
+
+  RetraitAgentPeriodeCourante? _periodeCourante;
+
+  Set<int> _availableDeviseIds = {};
+  Map<int, WalletAgentModel> _walletsByDevise = {};
+  int? _selectedDeviseId;
+  bool _isUsdSelected = false;
 
   final List<String> _typeRetraitOptions = [
     'Espèces',
@@ -30,13 +51,162 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
     'Mobile Money',
   ];
 
-  bool get _windowOpen => WithdrawalWindowHelper.isOpen();
+  bool get _windowOpen =>
+      _periodeCourante?.estPeriodeAutorisee ?? WithdrawalWindowHelper.isOpen();
+
+  bool get _isRetraitTotal => _periodeCourante?.isRetraitTotal ?? false;
+
+  List<int> get _orderedDeviseIds {
+    final ids = _availableDeviseIds.toList();
+    ids.sort();
+    return ids;
+  }
+
+  WalletAgentModel? get _selectedWallet {
+    final id = _selectedDeviseId;
+    if (id == null) return null;
+    return _walletsByDevise[id];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _walletsByDevise = Map<int, WalletAgentModel>.from(
+      widget.initialWalletsByDevise ?? {},
+    );
+    _availableDeviseIds = _walletsByDevise.keys.toSet();
+    _selectedDeviseId = widget.initialDeviseId;
+    if (_selectedDeviseId != null) {
+      _isUsdSelected = WalletAgentLoader.isUsdDeviseId(_selectedDeviseId!);
+    }
+    _loadInitialData();
+  }
 
   @override
   void dispose() {
     _montantController.dispose();
     _motifController.dispose();
+    _pageController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadInitialData() async {
+    await Future.wait([
+      _loadWallets(),
+      _loadPeriodeCourante(),
+    ]);
+  }
+
+  Future<void> _loadPeriodeCourante() async {
+    setState(() => _isLoadingPeriode = true);
+
+    try {
+      final response = await ApiService.getRetraitAgentPeriodeCourante();
+      if (!mounted) return;
+
+      setState(() {
+        if (response.success && response.data != null) {
+          _periodeCourante = response.data;
+        }
+        _isLoadingPeriode = false;
+      });
+      _syncMontantForRetraitType();
+    } catch (e, stackTrace) {
+      ApiErrorHelper.logException(
+        'WithdrawalScreen/periode',
+        e,
+        stackTrace,
+        false,
+      );
+      if (!mounted) return;
+      setState(() => _isLoadingPeriode = false);
+    }
+  }
+
+  void _syncMontantForRetraitType() {
+    if (!_isRetraitTotal) return;
+    final wallet = _selectedWallet;
+    if (wallet == null || wallet.soldeDisponible <= 0) return;
+    _montantController.text = _formatAmountInput(wallet.soldeDisponible);
+  }
+
+  String _formatAmountInput(double amount) {
+    if (amount == amount.roundToDouble()) {
+      return amount.toStringAsFixed(0);
+    }
+    return amount.toStringAsFixed(2);
+  }
+
+  Future<void> _loadWallets() async {
+    final agentId = AuthService.currentUser?.utilisateur.agentId;
+    if (agentId == null) {
+      setState(() => _isLoadingWallets = false);
+      return;
+    }
+
+    final result = await WalletAgentLoader.load(
+      agentId: agentId,
+      preferredDeviseId: _selectedDeviseId,
+      cachedWallets: _walletsByDevise.isNotEmpty ? _walletsByDevise : null,
+    );
+
+    if (!mounted) return;
+
+    setState(() {
+      _walletsByDevise = result.walletsByDevise;
+      _availableDeviseIds = result.availableDeviseIds;
+      if (result.resolvedDeviseId != null) {
+        _selectedDeviseId = result.resolvedDeviseId;
+        _isUsdSelected = WalletAgentLoader.isUsdDeviseId(result.resolvedDeviseId!);
+      }
+      _isLoadingWallets = false;
+    });
+
+    _jumpToSelectedDevisePage();
+    _syncMontantForRetraitType();
+  }
+
+  void _jumpToSelectedDevisePage() {
+    final ids = _orderedDeviseIds;
+    final selected = _selectedDeviseId;
+    if (selected == null || ids.length < 2) return;
+
+    final index = ids.indexOf(selected);
+    if (index >= 0 && _pageController.hasClients) {
+      _pageController.jumpToPage(index);
+    } else if (index >= 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_pageController.hasClients) {
+          _pageController.jumpToPage(index);
+        }
+      });
+    }
+  }
+
+  void _onDeviseSwitchChanged(bool isUsd) {
+    final targetId =
+        isUsd ? WalletAgentDeviseIds.usd : WalletAgentDeviseIds.cdf;
+    if (!_availableDeviseIds.contains(targetId)) return;
+
+    setState(() {
+      _isUsdSelected = isUsd;
+      _selectedDeviseId = targetId;
+      _montantController.clear();
+    });
+    _jumpToSelectedDevisePage();
+    _syncMontantForRetraitType();
+  }
+
+  void _onWalletPageChanged(int index) {
+    final ids = _orderedDeviseIds;
+    if (index < 0 || index >= ids.length) return;
+    final deviseId = ids[index];
+    setState(() {
+      _selectedDeviseId = deviseId;
+      _isUsdSelected = WalletAgentLoader.isUsdDeviseId(deviseId);
+      _montantController.clear();
+    });
+    _syncMontantForRetraitType();
   }
 
   InputDecoration _fieldDecoration({
@@ -66,13 +236,24 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
   Future<void> _submitWithdrawal() async {
     if (!_windowOpen) {
       setState(() {
-        _serverMessage = WithdrawalWindowHelper.statusDescription();
+        _serverMessage = _periodeCourante?.message.isNotEmpty == true
+            ? _periodeCourante!.message
+            : WithdrawalWindowHelper.statusDescription();
         _isSuccess = false;
       });
       return;
     }
 
     if (!_formKey.currentState!.validate()) return;
+
+    final wallet = _selectedWallet;
+    if (wallet == null) {
+      setState(() {
+        _serverMessage = 'Aucun wallet disponible pour cette devise.';
+        _isSuccess = false;
+      });
+      return;
+    }
 
     final agentId = AuthService.currentUser?.utilisateur.agentId;
     if (agentId == null) {
@@ -91,11 +272,41 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
 
     try {
       final montant = double.parse(_montantController.text.trim());
+
+      final verif = await ApiService.verifierSoldeRetraitAgent(
+        agentId: agentId,
+        montantDemande: montant,
+        deviseId: wallet.deviseId > 0 ? wallet.deviseId : null,
+      );
+
+      if (!mounted) return;
+
+      if (!verif.success || verif.data == null) {
+        setState(() {
+          _serverMessage =
+              verif.message ??
+              ApiErrorHelper.userFacingMessage(statusCode: verif.statusCode);
+          _isLoading = false;
+        });
+        return;
+      }
+
+      if (!verif.data!.soldeSuffisant) {
+        setState(() {
+          _serverMessage = verif.data!.message.isNotEmpty
+              ? verif.data!.message
+              : 'Solde insuffisant pour ce montant.';
+          _isLoading = false;
+        });
+        return;
+      }
+
       final response = await ApiService.createDemandeRetraitAgent(
         agentId: agentId,
         montant: montant,
         typeRetrait: _selectedTypeRetrait,
         motifRetrait: _motifController.text.trim(),
+        deviseId: wallet.deviseId > 0 ? wallet.deviseId : null,
       );
 
       if (!mounted) return;
@@ -143,6 +354,37 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
           ),
           onPressed: () => Navigator.pop(context),
         ),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(
+              Icons.more_vert_rounded,
+              color: AppColors.textPrimary,
+            ),
+            tooltip: 'Menu',
+            onSelected: (value) {
+              if (value == 'historique') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const RetraitHistoriqueScreen(),
+                  ),
+                );
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem<String>(
+                value: 'historique',
+                child: Row(
+                  children: [
+                    Icon(Icons.history_rounded, size: 20),
+                    SizedBox(width: 12),
+                    Text('Historique des retraits'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
         elevation: 0,
       ),
       body: _isSuccess ? _buildSuccessView() : _buildFormView(),
@@ -215,6 +457,15 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
   }
 
   Widget _buildFormView() {
+    final wallet = _selectedWallet;
+    final canWithdraw = _windowOpen &&
+        !_isLoading &&
+        !_isLoadingPeriode &&
+        wallet != null &&
+        wallet.soldeDisponible > 0;
+    final currencyLabel = wallet?.currencyLabel ?? 'devise';
+    final montantReadOnly = _isRetraitTotal;
+
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
       child: Form(
@@ -222,7 +473,9 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            if (widget.soldeDisponible != null) _buildBalanceCard(),
+            _buildWalletSwipeSection(),
+            const SizedBox(height: 16),
+            _buildRetenueInfoBanner(),
             const SizedBox(height: 16),
             _buildWindowBanner(),
             if (_serverMessage != null) ...[
@@ -235,9 +488,12 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
-              enabled: _windowOpen && !_isLoading,
+              enabled: canWithdraw && !montantReadOnly,
+              readOnly: montantReadOnly,
               decoration: _fieldDecoration(
-                label: 'Montant demandé (CDF)',
+                label: montantReadOnly
+                    ? 'Montant total ($currencyLabel)'
+                    : 'Montant demandé ($currencyLabel)',
                 icon: Icons.payments_outlined,
               ),
               validator: (value) {
@@ -248,9 +504,22 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
                 if (montant == null || montant <= 0) {
                   return 'Montant invalide';
                 }
-                final solde = widget.soldeDisponible;
-                if (solde != null && montant > solde) {
-                  return 'Montant supérieur au solde disponible';
+                final solde = wallet?.soldeDisponible;
+                if (solde == null || solde <= 0) {
+                  return 'Aucun solde disponible pour le retrait';
+                }
+                if (montant > solde) {
+                  return 'Montant supérieur au solde disponible '
+                      '(${wallet!.formattedSoldeDisponible})';
+                }
+                if (_isRetraitTotal && (montant - solde).abs() > 0.009) {
+                  return 'Le retrait total du solde disponible est requis';
+                }
+                final minPartiel = _periodeCourante?.montantMinimumPartiel ?? 0;
+                if (!_isRetraitTotal &&
+                    minPartiel > 0 &&
+                    montant < minPartiel) {
+                  return 'Montant minimum : $minPartiel';
                 }
                 return null;
               },
@@ -267,7 +536,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
                     (type) => DropdownMenuItem(value: type, child: Text(type)),
                   )
                   .toList(),
-              onChanged: _windowOpen && !_isLoading
+              onChanged: canWithdraw
                   ? (value) {
                       if (value != null) {
                         setState(() => _selectedTypeRetrait = value);
@@ -279,7 +548,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
             TextFormField(
               controller: _motifController,
               maxLines: 3,
-              enabled: _windowOpen && !_isLoading,
+              enabled: canWithdraw,
               decoration: _fieldDecoration(
                 label: 'Motif du retrait',
                 icon: Icons.edit_note_outlined,
@@ -293,7 +562,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
             ),
             const SizedBox(height: 28),
             ElevatedButton(
-              onPressed: _windowOpen && !_isLoading ? _submitWithdrawal : null,
+              onPressed: canWithdraw ? _submitWithdrawal : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.prosocGreen,
                 foregroundColor: Colors.white,
@@ -326,7 +595,94 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
     );
   }
 
-  Widget _buildBalanceCard() {
+  Widget _buildWalletSwipeSection() {
+    if (_isLoadingWallets) {
+      return const SizedBox(
+        height: 170,
+        child: Center(
+          child: CircularProgressIndicator(color: AppColors.prosocGreen),
+        ),
+      );
+    }
+
+    final ids = _orderedDeviseIds;
+    if (ids.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Text(
+          ApiErrorHelper.walletAgentUnavailableMessage(),
+          style: TextStyle(color: Colors.grey.shade700),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        if (ids.length > 1) ...[
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Glissez pour changer de devise',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+              WalletDeviseSwitch(
+                isUsdSelected: _isUsdSelected,
+                availableDeviseIds: _availableDeviseIds,
+                onChanged: _onDeviseSwitchChanged,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+        ],
+        SizedBox(
+          height: 170,
+          child: ids.length == 1
+              ? _buildBalanceCard(_walletsByDevise[ids.first]!)
+              : PageView.builder(
+                  controller: _pageController,
+                  itemCount: ids.length,
+                  onPageChanged: _onWalletPageChanged,
+                  itemBuilder: (context, index) {
+                    final wallet = _walletsByDevise[ids[index]];
+                    if (wallet == null) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: _buildBalanceCard(wallet),
+                    );
+                  },
+                ),
+        ),
+        if (ids.length > 1) ...[
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(ids.length, (index) {
+              final selected = ids[index] == _selectedDeviseId;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                width: selected ? 18 : 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: selected
+                      ? AppColors.prosocGreen
+                      : Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              );
+            }),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildBalanceCard(WalletAgentModel wallet) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
@@ -343,17 +699,86 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Solde disponible',
-            style: TextStyle(color: Colors.white70, fontSize: 13),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Solde disponible · ${wallet.currencyLabel}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                ),
+              ),
+              if (wallet.statut)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Text(
+                    'Actif',
+                    style: TextStyle(color: Colors.white, fontSize: 10),
+                  ),
+                ),
+            ],
           ),
           const SizedBox(height: 6),
           Text(
-            '${widget.soldeDisponible!.toStringAsFixed(2)} \$',
+            wallet.formattedSoldeDisponible,
             style: const TextStyle(
               color: Colors.white,
               fontSize: 28,
               fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Solde courant : ${wallet.formattedSolde}',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.8),
+              fontSize: 13,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRetenueInfoBanner() {
+    final wallet = _selectedWallet;
+    if (wallet == null) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFF2196F3).withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFF2196F3).withValues(alpha: 0.25),
+        ),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.info_outline_rounded,
+            color: Color(0xFF2196F3),
+            size: 22,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              wallet.hasRetenue
+                  ? 'Le retrait est limité au solde disponible. '
+                      'Une partie du solde courant est retenue à la source '
+                      'pour maintenir votre compte actif.'
+                  : 'Seul le solde disponible peut être retiré. '
+                      'Votre compte ne peut pas être vidé entièrement.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade800,
+                height: 1.4,
+              ),
             ),
           ),
         ],
@@ -362,9 +787,38 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
   }
 
   Widget _buildWindowBanner() {
+    if (_isLoadingPeriode) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade100,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: const Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.prosocGreen,
+              ),
+            ),
+            SizedBox(width: 12),
+            Text('Vérification de la période de retrait…'),
+          ],
+        ),
+      );
+    }
+
+    final periode = _periodeCourante;
     final open = _windowOpen;
-    final hint = WithdrawalWindowHelper.nextWindowHint();
     final color = open ? AppColors.prosocGreen : AppColors.warningColor;
+    final title = periode?.statusLabel ?? WithdrawalWindowHelper.statusLabel();
+    final description = periode?.message.isNotEmpty == true
+        ? periode!.message
+        : WithdrawalWindowHelper.statusDescription();
+    final hint = periode == null ? WithdrawalWindowHelper.nextWindowHint() : '';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -387,7 +841,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  WithdrawalWindowHelper.statusLabel(),
+                  title,
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 15,
@@ -396,14 +850,42 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  WithdrawalWindowHelper.statusDescription(),
+                  description,
                   style: TextStyle(
                     fontSize: 13,
                     color: Colors.grey.shade800,
                     height: 1.35,
                   ),
                 ),
-                if (hint.isNotEmpty) ...[
+                if (periode != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    periode.fenetresDescription,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  if (open && periode.activeWindowLabel.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      'Fenêtre active : ${periode.activeWindowLabel}',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: color,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 4),
+                  Text(
+                    periode.typeRetraitLabel,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ] else if (hint.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   Text(
                     hint,
@@ -426,6 +908,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
     final message = _serverMessage!;
     final isWindowError =
         message.contains('retraits ne sont autorisés') ||
+        message.contains('retraits sont autorisés') ||
         message.contains('Jour actuel');
     final color = isWindowError ? AppColors.warningColor : AppColors.errorColor;
     final icon = isWindowError

@@ -7,6 +7,8 @@ import '../../../config/api.dart';
 import '../../../controllers/main_controller.dart';
 import '../../../services/auth_service.dart';
 import '../../../models/wallet_agent_model.dart';
+import '../../../models/dashboard_agent_model.dart';
+import '../../../models/kpi_agent_model.dart';
 import '../../../models/recent_affilie_model.dart';
 import '../../../utils/api_error_helper.dart';
 import '../../../utils/wallet_agent_loader.dart';
@@ -35,7 +37,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Set<int> _availableDeviseIds = {};
   Map<int, WalletAgentModel> _walletsByDevise = {};
   List<RecentAffilieModel> _recentAffiliates = [];
-  bool _isLoadingRecentAffiliates = true;
+  KpiAgentModel? _monthlyKpis;
+  bool _isLoadingSummary = true;
 
   int get _selectedDeviseId => _isUsdSelected
       ? WalletAgentDeviseIds.usd
@@ -47,7 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _loadWalletData();
-    _loadRecentAffiliates();
+    _loadAgentSummary();
   }
 
   void _onDeviseChanged(bool isUsd) {
@@ -60,26 +63,55 @@ class _HomeScreenState extends State<HomeScreen> {
     _isUsdSelected = WalletAgentLoader.isUsdDeviseId(deviseId);
   }
 
-  Future<void> _loadRecentAffiliates({bool silent = false}) async {
+  Future<void> _loadAgentSummary({bool silent = false}) async {
     if (!silent) {
-      setState(() => _isLoadingRecentAffiliates = true);
+      setState(() => _isLoadingSummary = true);
     }
 
     try {
-      final response = await ApiService.getRecentAffiliates(limit: 5);
+      final results = await Future.wait([
+        ApiService.getDashboardAgentTerrain(),
+        ApiService.getAgentKpis(),
+      ]);
+      final terrainResponse =
+          results[0] as ApiResponse<DashboardAgentModel>;
+      final kpisResponse = results[1] as ApiResponse<KpiAgentModel>;
 
-      if (response.success && response.data != null) {
-        setState(() {
-          _recentAffiliates = response.data!;
-          _isLoadingRecentAffiliates = false;
-        });
-      } else {
-        setState(() => _isLoadingRecentAffiliates = false);
-      }
+      if (!mounted) return;
+
+      setState(() {
+        if (terrainResponse.success && terrainResponse.data != null) {
+          _recentAffiliates = terrainResponse.data!.affiliesRecents
+              .map(_mapDashboardAffilieRecent)
+              .toList();
+        }
+        _monthlyKpis =
+            kpisResponse.success ? kpisResponse.data : _monthlyKpis;
+        _isLoadingSummary = false;
+      });
     } catch (e, stackTrace) {
-      ApiErrorHelper.logException('Home/recentAffiliates', e, stackTrace, false);
-      setState(() => _isLoadingRecentAffiliates = false);
+      ApiErrorHelper.logException('Home/agentSummary', e, stackTrace, false);
+      if (!mounted) return;
+      setState(() => _isLoadingSummary = false);
     }
+  }
+
+  RecentAffilieModel _mapDashboardAffilieRecent(
+    DashboardAgentAffilieRecent affilie,
+  ) {
+    return RecentAffilieModel(
+      idAffilie: affilie.idAffilie,
+      nom: affilie.nom,
+      prenom: affilie.prenom,
+      telephone: affilie.telephone,
+      dateAdhesion: affilie.dateAdhesion,
+      typeAdhesion: affilie.typeAdhesion,
+      derniereCollecte: affilie.derniereCollecte,
+      derniereCollecteDate: affilie.derniereCollecteDate,
+      nombreCollectes: affilie.nombreCollectes,
+      totalCollectes: affilie.totalCollectes,
+      statutDossier: affilie.statutDossier,
+    );
   }
 
   Future<void> _loadWalletData({
@@ -128,7 +160,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _onRefresh() async {
     await Future.wait([
       _loadWalletData(silent: true),
-      _loadRecentAffiliates(silent: true),
+      _loadAgentSummary(silent: true),
     ]);
   }
 
@@ -144,6 +176,12 @@ class _HomeScreenState extends State<HomeScreen> {
           slivers: [
             SliverToBoxAdapter(
               child: _buildMainCard(),
+            ),
+            const SliverToBoxAdapter(
+              child: SizedBox(height: 20),
+            ),
+            SliverToBoxAdapter(
+              child: _buildMonthlyKpisStrip(),
             ),
             SliverToBoxAdapter(
               child: _buildQuickServices(context),
@@ -303,6 +341,126 @@ String _getGreeting() {
     );
   }
 
+  Widget _buildMonthlyKpisStrip() {
+    if (_isLoadingSummary && _monthlyKpis == null) {
+      return const Padding(
+        padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
+        child: SizedBox(
+          height: 72,
+          child: Center(
+            child: SizedBox(
+              width: 22,
+              height: 22,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: AppColors.prosocGreen,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final kpis = _monthlyKpis;
+    if (kpis == null) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Ce mois-ci',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.prosocGreen.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    kpis.devisePrincipaleCode.toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.prosocGreen,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _homeKpiChip(
+                    label: 'Collectes',
+                    value: kpis.formattedTotalCollectes,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _homeKpiChip(
+                    label: 'Commissions',
+                    value: kpis.formattedCommissions,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _homeKpiChip(
+                    label: 'Adhésions',
+                    value: '${kpis.nouvellesAdhesionsMois}',
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _homeKpiChip({required String label, required String value}) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+        ),
+      ],
+    );
+  }
+
   Widget _buildQuickServices(BuildContext context) {
     final services = widget.controller.quickServices;
 
@@ -340,10 +498,8 @@ String _getGreeting() {
           MaterialPageRoute(builder: (context) => const NewAdhesionScreen()),
         );
         if (created == true && mounted) {
-          setState(() {
-            _isLoadingRecentAffiliates = true;
-          });
-          await _loadRecentAffiliates();
+          setState(() => _isLoadingSummary = true);
+          await _loadAgentSummary();
         }
         break;
       case 'Mon Réseau':
@@ -370,7 +526,7 @@ String _getGreeting() {
   }
 
   Widget _buildRecentActivity(BuildContext context) {
-    if (_isLoadingRecentAffiliates) {
+    if (_isLoadingSummary && _recentAffiliates.isEmpty) {
       return const Padding(
         padding: EdgeInsets.all(20),
         child: Center(

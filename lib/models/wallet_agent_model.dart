@@ -87,6 +87,15 @@ class WalletAgentModel {
         deviseCode: deviseCode,
         deviseSymbole: deviseSymbole,
       );
+
+  String get formattedSoldeDisponible => CurrencyFormatter.format(
+        amount: soldeDisponible,
+        deviseId: deviseId,
+        deviseCode: deviseCode,
+        deviseSymbole: deviseSymbole,
+      );
+
+  bool get hasRetenue => soldeCourant > soldeDisponible;
 }
 
 // ============================================

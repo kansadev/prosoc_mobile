@@ -9,6 +9,7 @@ class AdhesionApiValues {
   static const typeCollecteFrais = 'FRAIS';
   /// Adhésion groupée (`/api/adhesion/with-affilie`).
   static const typeCollecteSouscription = 'SOUSCRIPTION';
+  static const typeCollecteCotisation = 'COTISATION';
   /// Collecte unitaire (`POST /api/Collecte`) — `souscriptionPrestationId` = id prestation.
   static const typeCollecteSouscriptionCollecte = 'Souscription';
   static const statutDossierComplet = 'COMPLET';
