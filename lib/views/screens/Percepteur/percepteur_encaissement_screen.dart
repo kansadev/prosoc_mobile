@@ -8,6 +8,10 @@ import 'package:prosoc/utils/affilie_id_helper.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/paginated_response_helper.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_contributionScreen.dart';
+import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_frais_screen.dart';
+import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_souscription_screen.dart';
+import 'package:prosoc/widgets/popup_menu_widget.dart';
+import 'package:prosoc/widgets/souscription_bottom_sheet.dart';
 
 /// Sélection d'un affilié (GET /api/Affilie) puis encaissement via [PayerContributionScreen].
 class PercepteurEncaissementScreen extends StatefulWidget {
@@ -146,25 +150,86 @@ class _PercepteurEncaissementScreenState
     }
   }
 
-  void _openPaiement(Map<String, dynamic> membre) {
-    final affilieId = resolveAffilieId(membre);
-    if (affilieId <= 0) return;
-
-    final nom = (membre['nom'] ?? '').toString();
-    final prenom = (membre['prenom'] ?? '').toString();
-    final phone = (membre['phone'] ?? membre['telephone'] ?? '').toString();
+  void _openPayerCotisation(Map<String, dynamic> membre) {
+    final ctx = _affilieContext(membre);
+    if (ctx == null) return;
 
     Navigator.push(
       context,
       MaterialPageRoute(
         builder: (context) => PayerContributionScreen(
-          affilieId: affilieId,
-          affilieNom: nom,
-          affiliePrenom: prenom,
-          affilieTelephone: phone.isNotEmpty ? phone : null,
+          affilieId: ctx.affilieId,
+          affilieNom: ctx.nom,
+          affiliePrenom: ctx.prenom,
+          affilieTelephone: ctx.telephone,
           screenTitle: 'Encaisser une cotisation',
         ),
       ),
+    );
+  }
+
+  void _openPayerFrais(Map<String, dynamic> membre) {
+    final ctx = _affilieContext(membre);
+    if (ctx == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PayerFraisScreen(
+          affilieId: ctx.affilieId,
+          affilieNom: ctx.nom,
+          affiliePrenom: ctx.prenom,
+          affilieTelephone: ctx.telephone,
+          screenTitle: 'Encaisser un frais',
+        ),
+      ),
+    );
+  }
+
+  void _openPayerSouscription(Map<String, dynamic> membre) {
+    final ctx = _affilieContext(membre);
+    if (ctx == null) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PayerSouscriptionScreen(
+          affilieId: ctx.affilieId,
+          affilieNom: ctx.nom,
+          affiliePrenom: ctx.prenom,
+          affilieTelephone: ctx.telephone,
+          screenTitle: 'Encaisser une souscription',
+        ),
+      ),
+    );
+  }
+
+  void _openSouscriptionBottomSheet(Map<String, dynamic> membre) {
+    final ctx = _affilieContext(membre);
+    if (ctx == null) return;
+
+    SouscriptionBottomSheet.show(
+      context,
+      affilieId: ctx.affilieId,
+      affilieNom: ctx.nom,
+      affiliePrenom: ctx.prenom,
+      affilieTelephone: ctx.telephone,
+    );
+  }
+
+  _AffilieEncaissementContext? _affilieContext(Map<String, dynamic> membre) {
+    final affilieId = resolveAffilieId(membre);
+    if (affilieId <= 0) return null;
+
+    final nom = (membre['nom'] ?? '').toString();
+    final prenom = (membre['prenom'] ?? '').toString();
+    final phone = (membre['phone'] ?? membre['telephone'] ?? '').toString();
+
+    return _AffilieEncaissementContext(
+      affilieId: affilieId,
+      nom: nom,
+      prenom: prenom,
+      telephone: phone.isNotEmpty ? phone : null,
     );
   }
 
@@ -303,69 +368,68 @@ class _PercepteurEncaissementScreenState
           return Material(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            child: InkWell(
-              onTap: () => _openPaiement(membre),
-              borderRadius: BorderRadius.circular(16),
-              child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Row(
-                  children: [
-                    CircleAvatar(
-                      backgroundColor:
-                          AppColors.prosocGreen.withValues(alpha: 0.12),
-                      child: Text(
-                        initials.isNotEmpty ? initials : '?',
-                        style: const TextStyle(
-                          color: AppColors.prosocGreen,
-                          fontWeight: FontWeight.bold,
-                        ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    backgroundColor:
+                        AppColors.prosocGreen.withValues(alpha: 0.12),
+                    child: Text(
+                      initials.isNotEmpty ? initials : '?',
+                      style: const TextStyle(
+                        color: AppColors.prosocGreen,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '$prenom $nom'.trim(),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 15,
+                          ),
+                        ),
+                        if (matricule.isNotEmpty)
                           Text(
-                            '$prenom $nom'.trim(),
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
+                            matricule,
+                            style: TextStyle(
+                              color: Colors.grey.shade600,
+                              fontSize: 13,
                             ),
                           ),
-                          if (matricule.isNotEmpty)
-                            Text(
-                              matricule,
-                              style: TextStyle(
-                                color: Colors.grey.shade600,
-                                fontSize: 13,
-                              ),
+                        if (phone.isNotEmpty)
+                          Text(
+                            phone,
+                            style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontSize: 12,
                             ),
-                          if (phone.isNotEmpty)
-                            Text(
-                              phone,
-                              style: TextStyle(
-                                color: Colors.grey.shade500,
-                                fontSize: 12,
-                              ),
+                          ),
+                        if (typeAdhesion.isNotEmpty)
+                          Text(
+                            typeAdhesion,
+                            style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontSize: 12,
                             ),
-                          if (typeAdhesion.isNotEmpty)
-                            Text(
-                              typeAdhesion,
-                              style: TextStyle(
-                                color: Colors.grey.shade500,
-                                fontSize: 12,
-                              ),
-                            ),
-                        ],
-                      ),
+                          ),
+                      ],
                     ),
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      color: AppColors.prosocGreen,
-                    ),
-                  ],
-                ),
+                  ),
+                  AffiliatePopupMenuWidget(
+                    iconColor: AppColors.prosocGreen,
+                    onCollecte: () => _openPayerCotisation(membre),
+                    onPayerFrais: () => _openPayerFrais(membre),
+                    onPayerSouscription: () => _openPayerSouscription(membre),
+                    onSouscription: () => _openSouscriptionBottomSheet(membre),
+                  ),
+                ],
               ),
             ),
           );
@@ -373,4 +437,18 @@ class _PercepteurEncaissementScreenState
       ),
     );
   }
+}
+
+class _AffilieEncaissementContext {
+  final int affilieId;
+  final String nom;
+  final String prenom;
+  final String? telephone;
+
+  const _AffilieEncaissementContext({
+    required this.affilieId,
+    required this.nom,
+    required this.prenom,
+    this.telephone,
+  });
 }

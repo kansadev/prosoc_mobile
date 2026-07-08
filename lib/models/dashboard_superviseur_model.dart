@@ -97,9 +97,13 @@ class SuperviseurAgentPerformance {
   factory SuperviseurAgentPerformance.fromJson(Map<String, dynamic> json) {
     final nom = _supString(json, 'nomAgent');
     final agentNom = _supString(json, 'agentNom');
+    final nomComplet = _supString(json, 'nomComplet');
+    final agentId = _supInt(json, 'agentId');
     return SuperviseurAgentPerformance(
-      agentId: _supInt(json, 'agentId'),
-      nomAgent: nom.isNotEmpty ? nom : agentNom,
+      agentId: agentId != 0 ? agentId : _supInt(json, 'idAgent'),
+      nomAgent: nom.isNotEmpty
+          ? nom
+          : (agentNom.isNotEmpty ? agentNom : nomComplet),
       montantTotal: _supDouble(json, 'montantTotal'),
       nombreTransactions: _supInt(json, 'nombreTransactions'),
       montantMoyen: _supDouble(json, 'montantMoyen'),
@@ -418,4 +422,54 @@ class DashboardSuperviseurModel {
   String get formattedAtteinteObjectif =>
       '${atteinteObjectifEquipe.toStringAsFixed(1)}%';
   String get formattedTauxSucces => '${tauxSuccesEquipe.toStringAsFixed(1)}%';
+}
+
+/// GET /api/Superviseur/hierarchie/{superviseurId}
+class SuperviseurHierarchieModel {
+  final int superviseurId;
+  final String nomSuperviseur;
+  final int niveauHierarchique;
+  final List<SuperviseurAgentPerformance> agentsSupervises;
+  final List<SuperviseurHierarchieModel> sousSuperviseurs;
+  final int totalAgentsDansHierarchie;
+  final double montantTotalHierarchie;
+
+  SuperviseurHierarchieModel({
+    required this.superviseurId,
+    required this.nomSuperviseur,
+    required this.niveauHierarchique,
+    required this.agentsSupervises,
+    required this.sousSuperviseurs,
+    required this.totalAgentsDansHierarchie,
+    required this.montantTotalHierarchie,
+  });
+
+  factory SuperviseurHierarchieModel.fromJson(Map<String, dynamic> json) {
+    return SuperviseurHierarchieModel(
+      superviseurId: _supInt(json, 'superviseurId'),
+      nomSuperviseur: _supString(json, 'nomSuperviseur'),
+      niveauHierarchique: _supInt(json, 'niveauHierarchique'),
+      agentsSupervises: _supListMap(_supField(json, 'agentsSupervises'))
+          .map(SuperviseurAgentPerformance.fromJson)
+          .toList(),
+      sousSuperviseurs: _supListMap(_supField(json, 'sousSuperviseurs'))
+          .map(SuperviseurHierarchieModel.fromJson)
+          .toList(),
+      totalAgentsDansHierarchie: _supInt(json, 'totalAgentsDansHierarchie'),
+      montantTotalHierarchie: _supDouble(json, 'montantTotalHierarchie'),
+    );
+  }
+
+  /// Agents directs + agents des sous-superviseurs (récursif).
+  List<SuperviseurAgentPerformance> get allAgents {
+    final result = <SuperviseurAgentPerformance>[];
+    result.addAll(agentsSupervises);
+    for (final sub in sousSuperviseurs) {
+      result.addAll(sub.allAgents);
+    }
+    return result;
+  }
+
+  String get formattedMontantHierarchie =>
+      '${montantTotalHierarchie.toStringAsFixed(2)}';
 }

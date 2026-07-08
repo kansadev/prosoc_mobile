@@ -22,6 +22,8 @@ class PayerSouscriptionScreen extends StatefulWidget {
   final String? affilieTelephone;
   final int? agentId;
   final String screenTitle;
+  final int? initialSouscriptionPrestationId;
+  final double? initialMontant;
 
   const PayerSouscriptionScreen({
     super.key,
@@ -31,6 +33,8 @@ class PayerSouscriptionScreen extends StatefulWidget {
     this.affilieTelephone,
     this.agentId,
     this.screenTitle = 'Payer une souscription',
+    this.initialSouscriptionPrestationId,
+    this.initialMontant,
   });
 
   @override
@@ -155,8 +159,17 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
           _isLoadingSouscriptions = false;
         });
 
-        if (actives.length == 1) {
-          _applySouscriptionSelection(actives.first.id);
+        final initialId = widget.initialSouscriptionPrestationId;
+        if (initialId != null && actives.any((s) => s.id == initialId)) {
+          _applySouscriptionSelection(
+            initialId,
+            montantOverride: widget.initialMontant,
+          );
+        } else if (actives.length == 1) {
+          _applySouscriptionSelection(
+            actives.first.id,
+            montantOverride: widget.initialMontant,
+          );
         }
       } else {
         setState(() {
@@ -225,12 +238,18 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
     );
   }
 
-  void _applySouscriptionSelection(int souscriptionId) {
+  void _applySouscriptionSelection(
+    int souscriptionId, {
+    double? montantOverride,
+  }) {
     final souscription = _souscriptions.firstWhere(
       (s) => s.id == souscriptionId,
       orElse: () => _souscriptions.first,
     );
-    final montant = _resolveMontantForSouscription(souscription);
+    final montantCalcule = _resolveMontantForSouscription(souscription);
+    final montant = (montantOverride != null && montantOverride > 0)
+        ? montantOverride
+        : montantCalcule;
     final deviseCode = _resolveDeviseCodeForSouscription(souscription);
     final deviseId = _resolveDeviseIdForSouscription(souscription);
 

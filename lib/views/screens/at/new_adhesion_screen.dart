@@ -3151,9 +3151,9 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         typeAdhesionId: typeAdhesionId,
         agentId: agentId,
         adhesionStatut: true,
-        statutDossier: (_isElectronicPayment || _dependantsDeferredToAdmin)
-            ? AdhesionApiValues.statutDossierEnAttente
-            : AdhesionApiValues.statutDossierComplet,
+        // Règle métier: une adhésion nouvellement créée doit toujours démarrer en "En Attente",
+        // que des dépendants soient renseignés ou non.
+        statutDossier: AdhesionApiValues.statutDossierEnAttente,
         collectes: [
           CollecteRequest(
             typeCollecte: AdhesionApiValues.typeCollecteFrais,

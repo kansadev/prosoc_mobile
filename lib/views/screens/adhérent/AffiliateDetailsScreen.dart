@@ -4,12 +4,15 @@ import 'package:prosoc/config/api.dart';
 import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/dependant_model.dart';
 import 'package:prosoc/models/recent_affilie_model.dart';
+import 'package:prosoc/models/arriere_affilie_model.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
+import 'package:prosoc/utils/arriere_payment_navigator.dart';
 import 'package:prosoc/utils/formatters.dart';
 import 'package:prosoc/utils/paginated_response_helper.dart';
 import 'widgets/payer_contributionScreen.dart';
 import 'widgets/payer_souscription_screen.dart';
 import 'widgets/payer_frais_screen.dart';
+import 'arrieres_affilie_screen.dart';
 import 'package:prosoc/widgets/antecedent_bottom_sheet.dart';
 import 'package:prosoc/widgets/dependant_bottom_sheet.dart';
 import 'package:prosoc/widgets/souscription_bottom_sheet.dart';
@@ -39,6 +42,8 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
   bool _isLoadingDependants = false;
   List<dynamic> _souscriptions = [];
   bool _isLoadingSouscriptions = false;
+  List<ArriereAffilieModel> _arrieres = [];
+  bool _isLoadingArrieres = false;
   late AnimationController _animationController;
   late Animation<double> _fadeAnimation;
   late AnimationController _slideController;
@@ -93,6 +98,7 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
     _loadAffilie();
     _loadDependants();
     _loadSouscriptions();
+    _loadArrieres();
 
     // Animations
     _animationController = AnimationController(
@@ -257,6 +263,54 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
       });
     }
   }
+
+  Future<void> _loadArrieres() async {
+    setState(() {
+      _isLoadingArrieres = true;
+    });
+
+    try {
+      final response = await ApiService.getArrieresAffilie(widget.affilieId);
+      if (!mounted) return;
+
+      if (response.success && response.data != null) {
+        setState(() {
+          _arrieres = response.data!;
+          _isLoadingArrieres = false;
+        });
+      } else {
+        setState(() {
+          _arrieres = [];
+          _isLoadingArrieres = false;
+        });
+      }
+    } catch (e, stackTrace) {
+      ApiErrorHelper.logException('ArriereAffilie/details', e, stackTrace);
+      if (!mounted) return;
+      setState(() {
+        _arrieres = [];
+        _isLoadingArrieres = false;
+      });
+    }
+  }
+
+  List<ArriereAffilieModel> get _sortedArrieres {
+    final copy = List<ArriereAffilieModel>.from(_arrieres);
+    copy.sort((a, b) {
+      if (a.estImpaye != b.estImpaye) {
+        return a.estImpaye ? -1 : 1;
+      }
+      return b.restAPayer.compareTo(a.restAPayer);
+    });
+    return copy;
+  }
+
+  int get _arrieresImpayesCount =>
+      _arrieres.where((arriere) => arriere.estImpaye).length;
+
+  double get _arrieresTotalReste => _arrieres
+      .where((arriere) => arriere.estImpaye)
+      .fold<double>(0, (sum, arriere) => sum + arriere.restAPayer);
 
   Map<String, dynamic> get _apiData {
     final data = _data ?? const <String, dynamic>{};
@@ -549,6 +603,8 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
                             _buildDependantsCard(),
                             const SizedBox(height: 16),
                           ],
+                          _buildArrieresCard(),
+                          const SizedBox(height: 16),
                           _buildSouscriptionsCard(),
 
                           if (_errorMessage != null) ...[
@@ -621,6 +677,7 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
           onDependants: _isSoloAdhesion ? null : _showAddDependantBottomSheet,
           onSouscription: _showSouscriptionBottomSheet,
           onAntecedents: _showAddAntecedentBottomSheet,
+          onArrieres: _navigateToArrieresScreen,
         ),
       ],
     );
@@ -1116,6 +1173,235 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
     );
   }
 
+  Widget _buildArrieresCard() {
+    final previewItems = _sortedArrieres.take(3).toList();
+    final hasMore = _arrieres.length > previewItems.length;
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: AppColors.warningColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.history_toggle_off_rounded,
+                    color: AppColors.warningColor,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    'Arriérés',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                if (_arrieresImpayesCount > 0)
+                  Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.warningColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '$_arrieresImpayesCount impayé${_arrieresImpayesCount > 1 ? 's' : ''}',
+                      style: const TextStyle(
+                        color: AppColors.warningColor,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Container(
+            height: 1,
+            color: Colors.grey.shade200,
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: _isLoadingArrieres
+                ? const Center(child: CircularProgressIndicator())
+                : _arrieres.isEmpty
+                    ? Center(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Column(
+                            children: [
+                              Icon(
+                                Icons.check_circle_outline,
+                                size: 48,
+                                color: Colors.grey.shade400,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                'Aucun arriéré',
+                                style: TextStyle(color: Colors.grey.shade600),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (_arrieresImpayesCount > 0)
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              margin: const EdgeInsets.only(bottom: 12),
+                              decoration: BoxDecoration(
+                                color: AppColors.warningColor
+                                    .withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Text(
+                                'Reste à payer : ${AppFormatters.formatCurrencyDollar(_arrieresTotalReste)}',
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.warningColor,
+                                ),
+                              ),
+                            ),
+                          ListView.separated(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: previewItems.length,
+                            separatorBuilder: (context, index) =>
+                                const Divider(),
+                            itemBuilder: (context, index) {
+                              final arriere = previewItems[index];
+                              final isImpaye = arriere.estImpaye;
+                              final statusColor = isImpaye
+                                  ? AppColors.warningColor
+                                  : AppColors.prosocGreen;
+
+                              return Column(
+                                children: [
+                                  ListTile(
+                                    contentPadding: EdgeInsets.zero,
+                                    leading: CircleAvatar(
+                                      backgroundColor:
+                                          statusColor.withValues(alpha: 0.1),
+                                      child: Icon(
+                                        Icons.receipt_long_outlined,
+                                        color: statusColor,
+                                        size: 20,
+                                      ),
+                                    ),
+                                    title: Text(
+                                      arriere.titre,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    subtitle: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          arriere.typeObligationLabel,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                        if (arriere.periode.isNotEmpty)
+                                          Text(
+                                            arriere.periode,
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.grey.shade600,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                    trailing: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.end,
+                                      children: [
+                                        Text(
+                                          AppFormatters.formatCurrencyDollar(
+                                            arriere.restAPayer,
+                                          ),
+                                          style: TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            color: statusColor,
+                                          ),
+                                        ),
+                                        Text(
+                                          arriere.statutPaiement.isNotEmpty
+                                              ? arriere.statutPaiement
+                                              : (isImpaye ? 'Impayé' : 'Payé'),
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.grey.shade600,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (isImpaye)
+                                    Align(
+                                      alignment: Alignment.centerRight,
+                                      child: TextButton.icon(
+                                        onPressed: () => _payerArriere(arriere),
+                                        icon: const Icon(
+                                          Icons.payments_outlined,
+                                          size: 18,
+                                        ),
+                                        label: const Text('Payer'),
+                                      ),
+                                    ),
+                                ],
+                              );
+                            },
+                          ),
+                          if (hasMore || _arrieres.isNotEmpty)
+                            Align(
+                              alignment: Alignment.centerRight,
+                              child: TextButton(
+                                onPressed: _navigateToArrieresScreen,
+                                child: const Text('Voir tout'),
+                              ),
+                            ),
+                        ],
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSouscriptionsCard() {
     return Container(
       width: double.infinity,
@@ -1400,6 +1686,49 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
     );
   }
 
+  void _navigateToArrieresScreen() {
+    final telephone =
+        _stringFrom(_apiData, ['telephone', 'phone', 'telephoneAffilie']) ??
+        widget.preview?.telephone;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => ArrieresAffilieScreen(
+          affilieId: widget.affilieId,
+          affilieNom: widget.preview?.nom ?? '',
+          affiliePrenom: widget.preview?.prenom ?? '',
+          affilieTelephone: telephone,
+          nombreDependants: _dependantsTotal,
+        ),
+      ),
+    ).then((_) {
+      if (mounted) {
+        _loadArrieres();
+      }
+    });
+  }
+
+  Future<void> _payerArriere(ArriereAffilieModel arriere) async {
+    final telephone =
+        _stringFrom(_apiData, ['telephone', 'phone', 'telephoneAffilie']) ??
+        widget.preview?.telephone;
+
+    final paid = await ArrierePaymentNavigator.openPayment(
+      context: context,
+      arriere: arriere,
+      affilieId: widget.affilieId,
+      affilieNom: widget.preview?.nom ?? '',
+      affiliePrenom: widget.preview?.prenom ?? '',
+      affilieTelephone: telephone,
+      nombreDependants: _dependantsTotal,
+    );
+
+    if (paid == true && mounted) {
+      await _loadArrieres();
+    }
+  }
+
   void _navigateToPayerSouscriptionScreen() {
     Navigator.push(
       context,
@@ -1435,11 +1764,15 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
   }
 
   Future<void> _showSouscriptionBottomSheet() async {
+    final telephone =
+        _stringFrom(_apiData, ['telephone', 'phone', 'telephoneAffilie']) ??
+        widget.preview?.telephone;
     final created = await SouscriptionBottomSheet.show(
       context,
       affilieId: widget.affilieId,
       affilieNom: widget.preview?.nom ?? '',
       affiliePrenom: widget.preview?.prenom ?? '',
+      affilieTelephone: telephone,
     );
     if (created == true && mounted) {
       await _loadSouscriptions();

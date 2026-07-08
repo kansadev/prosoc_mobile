@@ -43,18 +43,45 @@ class RecentAffilieModel {
     return DateTime.tryParse(raw);
   }
 
+  static int? _asNullableInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return null;
+      return int.tryParse(trimmed);
+    }
+    return null;
+  }
+
+  static num? _asNullableNum(dynamic value) {
+    if (value == null) return null;
+    if (value is num) return value;
+    if (value is String) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty) return null;
+      return num.tryParse(trimmed.replaceAll(',', '.'));
+    }
+    return null;
+  }
+
   factory RecentAffilieModel.fromJson(Map<String, dynamic> json) {
     return RecentAffilieModel(
       idAffilie: _asInt(json['idAffilie'] ?? json['affilieId'] ?? json['id']),
       nom: (json['nom'] ?? '').toString(),
       prenom: (json['prenom'] ?? '').toString(),
       telephone: (json['telephone'] ?? json['phone'] ?? '').toString(),
-      dateAdhesion: _tryParseDate(json['dateAdhesion']),
+      dateAdhesion: _tryParseDate(
+        json['dateAdhesion'] ??
+            json['dateCreationAffilie'] ??
+            json['dateCreation'],
+      ),
       typeAdhesion: (json['typeAdhesion'] ?? '').toString(),
-      derniereCollecte: json['derniereCollecte'] as num?,
+      derniereCollecte: _asNullableNum(json['derniereCollecte']),
       derniereCollecteDate: _tryParseDate(json['derniereCollecteDate']),
-      nombreCollectes: json['nombreCollectes'] as int?,
-      totalCollectes: json['totalCollectes'] as num?,
+      nombreCollectes: _asNullableInt(json['nombreCollectes']),
+      totalCollectes: _asNullableNum(json['totalCollectes']),
       statutDossier: json['statutDossier']?.toString(),
     );
   }

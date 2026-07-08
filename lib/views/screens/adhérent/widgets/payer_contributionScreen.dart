@@ -20,6 +20,7 @@ class PayerContributionScreen extends StatefulWidget {
   final String affiliePrenom;
   final int nombreDependants;
   final int? initialTarifId;
+  final double? initialMontant;
   final String? affilieTelephone;
   /// Agent territorial explicite (encaissement AT / percepteur).
   final int? agentId;
@@ -32,6 +33,7 @@ class PayerContributionScreen extends StatefulWidget {
     required this.affiliePrenom,
     this.nombreDependants = 0,
     this.initialTarifId,
+    this.initialMontant,
     this.affilieTelephone,
     this.agentId,
     this.screenTitle = 'Payer une cotisation',
@@ -319,12 +321,16 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
       typeAdhesionLibelle: _typeAdhesionLibelleFromTarif(tarif),
       nombreDependants: _nombreDependantsEffectif,
     );
+    final montantOverride = widget.initialMontant;
+    final montantEffectif = (montantOverride != null && montantOverride > 0)
+        ? montantOverride
+        : (montantTotal ?? montantTarif);
 
     setState(() {
       _selectedTarifId = tarifId;
-      _montantAttendu = montantTotal ?? montantTarif;
-      if (montantTotal != null && montantTotal > 0) {
-        _montantController.text = montantTotal.toString();
+      _montantAttendu = montantEffectif;
+      if (montantEffectif != null && montantEffectif > 0) {
+        _montantController.text = montantEffectif.toString();
       } else if (montantTarif != null && montantTarif > 0) {
         _montantController.text = montantTarif.toString();
       }

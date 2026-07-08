@@ -80,3 +80,92 @@ class SouscriptionPrestationModel {
     return DateTime.tryParse(value.toString());
   }
 }
+
+/// Collecte imbriquée — POST /api/SouscriptionPrestation?affilieId=
+class SouscriptionPrestationCollecteRequest {
+  final int agentId;
+  final double montant;
+  final int mois;
+  final int annee;
+  final int deviseId;
+  final String modePaiement;
+  final double montantRecu;
+  final double montantAttendu;
+  final String statutPaiement;
+  final bool statut;
+  final String? referencePaiement;
+  final String? observation;
+
+  const SouscriptionPrestationCollecteRequest({
+    required this.agentId,
+    required this.montant,
+    required this.mois,
+    required this.annee,
+    required this.deviseId,
+    required this.modePaiement,
+    required this.montantRecu,
+    required this.montantAttendu,
+    required this.statutPaiement,
+    this.statut = true,
+    this.referencePaiement,
+    this.observation,
+  });
+
+  Map<String, dynamic> toJson() {
+    final payload = <String, dynamic>{
+      'agentId': agentId,
+      'montant': montant,
+      'mois': mois,
+      'annee': annee,
+      'deviseId': deviseId,
+      'modePaiement': modePaiement,
+      'montantRecu': montantRecu,
+      'montantAttendu': montantAttendu,
+      'statutPaiement': statutPaiement,
+      'statut': statut,
+    };
+    final ref = referencePaiement?.trim();
+    if (ref != null && ref.isNotEmpty) {
+      payload['referencePaiement'] = ref;
+    }
+    final obs = observation?.trim();
+    if (obs != null && obs.isNotEmpty) {
+      payload['observation'] = obs;
+    }
+    return payload;
+  }
+}
+
+/// Corps POST /api/SouscriptionPrestation?affilieId=
+class SouscriptionPrestationCreateRequest {
+  final int prestationId;
+  final DateTime dateSouscription;
+  final bool statut;
+  final SouscriptionPrestationCollecteRequest collecte;
+
+  const SouscriptionPrestationCreateRequest({
+    required this.prestationId,
+    required this.dateSouscription,
+    required this.statut,
+    required this.collecte,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'prestationId': prestationId,
+        'dateSouscription': dateSouscription.toUtc().toIso8601String(),
+        'statut': statut,
+        'collecte': collecte.toJson(),
+      };
+}
+
+/// Réponse POST /api/SouscriptionPrestation (extrait utile).
+class SouscriptionPrestationCreateResult {
+  final Map<String, dynamic> raw;
+
+  SouscriptionPrestationCreateResult(this.raw);
+
+  factory SouscriptionPrestationCreateResult.fromJson(
+    Map<String, dynamic> json,
+  ) =>
+      SouscriptionPrestationCreateResult(json);
+}

@@ -22,6 +22,8 @@ class PayerFraisScreen extends StatefulWidget {
   final String? affilieTelephone;
   final int? agentId;
   final String screenTitle;
+  final int? initialFraisId;
+  final double? initialMontant;
 
   const PayerFraisScreen({
     super.key,
@@ -31,6 +33,8 @@ class PayerFraisScreen extends StatefulWidget {
     this.affilieTelephone,
     this.agentId,
     this.screenTitle = 'Payer un frais',
+    this.initialFraisId,
+    this.initialMontant,
   });
 
   @override
@@ -117,7 +121,13 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
       if (response.success && response.data != null) {
         final actifs =
             response.data!
-                .where((f) => f.statut && !f.estSupprime && f.idFrais > 0)
+                .where(
+                  (f) =>
+                      f.statut &&
+                      !f.estSupprime &&
+                      f.idFrais > 0 &&
+                      !f.isFraisAdhesion,
+                )
                 .toList()
               ..sort((a, b) => a.libelle.compareTo(b.libelle));
 
@@ -126,8 +136,17 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
           _isLoadingFrais = false;
         });
 
-        if (actifs.length == 1) {
-          _applyFraisSelection(actifs.first.idFrais);
+        final initialId = widget.initialFraisId;
+        if (initialId != null && actifs.any((f) => f.idFrais == initialId)) {
+          _applyFraisSelection(
+            initialId,
+            montantOverride: widget.initialMontant,
+          );
+        } else if (actifs.length == 1) {
+          _applyFraisSelection(
+            actifs.first.idFrais,
+            montantOverride: widget.initialMontant,
+          );
         }
       } else {
         setState(() {
@@ -147,11 +166,15 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
     }
   }
 
-  void _applyFraisSelection(int fraisId) {
+  void _applyFraisSelection(int fraisId, {double? montantOverride}) {
     final frais = _frais.firstWhere(
       (f) => f.idFrais == fraisId,
       orElse: () => _frais.first,
     );
+
+    final montant = (montantOverride != null && montantOverride > 0)
+        ? montantOverride
+        : frais.montant;
 
     setState(() {
       _selectedFraisId = frais.idFrais;
@@ -159,8 +182,8 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
           ? frais.deviseId
           : WalletAgentDeviseIds.usd;
       _selectedDevise = WalletAgentDeviseIds.labelForId(_selectedDeviseId!);
-      _montantAttendu = frais.montant;
-      _montantController.text = frais.montant.toString();
+      _montantAttendu = montant;
+      _montantController.text = montant.toString();
     });
   }
 

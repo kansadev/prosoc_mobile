@@ -464,7 +464,8 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
         wallet != null &&
         wallet.soldeDisponible > 0;
     final currencyLabel = wallet?.currencyLabel ?? 'devise';
-    final montantReadOnly = _isRetraitTotal;
+    // Retrait autorisé => le client choisit librement le montant (dans la limite du solde disponible).
+    final montantReadOnly = false;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
@@ -491,9 +492,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
               enabled: canWithdraw && !montantReadOnly,
               readOnly: montantReadOnly,
               decoration: _fieldDecoration(
-                label: montantReadOnly
-                    ? 'Montant total ($currencyLabel)'
-                    : 'Montant demandé ($currencyLabel)',
+                label: 'Montant demandé ($currencyLabel)',
                 icon: Icons.payments_outlined,
               ),
               validator: (value) {
@@ -511,9 +510,6 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
                 if (montant > solde) {
                   return 'Montant supérieur au solde disponible '
                       '(${wallet!.formattedSoldeDisponible})';
-                }
-                if (_isRetraitTotal && (montant - solde).abs() > 0.009) {
-                  return 'Le retrait total du solde disponible est requis';
                 }
                 final minPartiel = _periodeCourante?.montantMinimumPartiel ?? 0;
                 if (!_isRetraitTotal &&

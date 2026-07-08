@@ -4,11 +4,13 @@ import 'package:shimmer/shimmer.dart';
 import '../../../config/api.dart';
 import '../../../config/colors.dart';
 import '../../../models/dashboard_affilie_model.dart';
+import '../../../models/arriere_affilie_model.dart';
 import '../../../services/auth_service.dart';
 import '../../../utils/api_error_helper.dart';
 import '../../../utils/formatters.dart';
 import '../../widgets/adherent_cotisations_chart.dart';
 import '../../widgets/year_picker_sheet.dart';
+import 'arrieres_affilie_screen.dart';
 
 /// Accueil / dashboard affilié — données `/api/DashboardAffilie/resume/{affilieId}`.
 class AdherentHomeScreen extends StatefulWidget {
@@ -31,8 +33,10 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
   DashboardAffilieResumeModel? _data;
   List<DashboardAffilieCotisation> _cotisationsRecentes = [];
   List<DashboardAffilieCotisation> _cotisationsPeriode = [];
+  List<ArriereAffilieModel> _mesArrieres = [];
   bool _isLoading = true;
   bool _loadingCotisations = false;
+  bool _loadingArrieres = false;
   String? _errorMessage;
   late int _selectedYear;
   int? _filterMois;
@@ -71,6 +75,7 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           annee: _selectedYear,
           mois: _filterMois,
         ),
+        ApiService.getMesArrieresAffilie(),
       ]);
 
       if (!mounted) return;
@@ -81,6 +86,8 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           results[1] as ApiResponse<List<DashboardAffilieCotisation>>;
       final periodeResponse =
           results[2] as ApiResponse<List<DashboardAffilieCotisation>>;
+      final arrieresResponse =
+          results[3] as ApiResponse<List<ArriereAffilieModel>>;
 
       if (resumeResponse.success && resumeResponse.data != null) {
         setState(() {
@@ -91,9 +98,13 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           _cotisationsPeriode = periodeResponse.success
               ? (periodeResponse.data ?? [])
               : _cotisationsPeriode;
+          _mesArrieres = arrieresResponse.success
+              ? (arrieresResponse.data ?? [])
+              : _mesArrieres;
           _errorMessage = null;
           _isLoading = false;
           _loadingCotisations = false;
+          _loadingArrieres = false;
         });
       } else {
         setState(() {
@@ -165,6 +176,35 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
     final fromApi = _data?.informations.nomComplet.trim();
     if (fromApi != null && fromApi.isNotEmpty) return fromApi;
     return AuthService.userName ?? 'Adhérent';
+  }
+
+  ({String nom, String prenom}) _splitDisplayName() {
+    final full = _displayName().trim();
+    final parts = full.split(RegExp(r'\s+'));
+    if (parts.isEmpty) return (nom: '', prenom: '');
+    if (parts.length == 1) return (nom: parts.first, prenom: '');
+    return (nom: parts.sublist(1).join(' '), prenom: parts.first);
+  }
+
+  int get _arrieresImpayesCount =>
+      _mesArrieres.where((arriere) => arriere.estImpaye).length;
+
+  double get _arrieresTotalReste => _mesArrieres
+      .where((arriere) => arriere.estImpaye)
+      .fold<double>(0, (sum, arriere) => sum + arriere.restAPayer);
+
+  void _openMesArrieres() {
+    final names = _splitDisplayName();
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => ArrieresAffilieScreen.mesArrieres(
+          affilieNom: names.nom,
+          affiliePrenom: names.prenom,
+        ),
+      ),
+    ).then((_) {
+      if (mounted) _loadDashboard(silent: true);
+    });
   }
 
   @override
@@ -266,6 +306,8 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
         _buildSectionTitle('Actions rapides'),
         const SizedBox(height: 12),
         _buildQuickActions(),
+        const SizedBox(height: 20),
+        _buildArrieresSection(),
         const SizedBox(height: 20),
         _buildKpiRow(kpis),
         if (kpis.montantPlafond > 0) ...[
@@ -679,6 +721,95 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildArrieresSection() {
+    if (_loadingArrieres && _mesArrieres.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: const Center(
+          child: SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+        ),
+      );
+    }
+
+    final impayes = _arrieresImpayesCount;
+    final hasArrieres = _mesArrieres.isNotEmpty;
+    final accentColor =
+        impayes > 0 ? AppColors.warningColor : AppColors.prosocGreen;
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: _openMesArrieres,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: accentColor.withValues(alpha: 0.2)),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: accentColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.history_toggle_off_rounded,
+                  color: accentColor,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Mes arriérés',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      impayes > 0
+                          ? '$impayes impayé${impayes > 1 ? 's' : ''} · '
+                              'Reste ${AppFormatters.formatCurrencyDollar(_arrieresTotalReste)}'
+                          : hasArrieres
+                              ? 'Toutes vos obligations sont à jour'
+                              : 'Aucun arriéré enregistré',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(Icons.chevron_right, color: Colors.grey.shade500),
+            ],
+          ),
+        ),
+      ),
     );
   }
 

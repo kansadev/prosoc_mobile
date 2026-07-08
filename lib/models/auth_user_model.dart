@@ -245,9 +245,18 @@ class AuthUserModel {
     return nomRole.toLowerCase().contains('superviseur');
   }
 
-  /// Superviseur ou percepteur lié à un agent (adhésions, wallets, etc.)
+  /// Vérifie si l'utilisateur a le rôle Chef d'équipe (tolérant aux variantes
+  /// d'accents/espaces renvoyées par le backend).
+  bool get isChefEquipe {
+    final roleLower = nomRole.toLowerCase();
+    final hasChef = roleLower.contains('chef');
+    final hasEquipe = roleLower.contains('equipe') || roleLower.contains('équipe');
+    return hasChef && hasEquipe;
+  }
+
+  /// Superviseur, percepteur ou chef d'équipe lié à un profil agent.
   bool get isAgentTerrain {
-    if (isAgentAT) return true;
+    if (isAgentAT || isChefEquipe) return true;
     final hasAgentProfile = utilisateur.agentId != null;
     if (hasAgentProfile && (isSuperviseur || isPercepteur)) return true;
     return false;
@@ -255,7 +264,7 @@ class AuthUserModel {
 
   /// Vérifie si le rôle est autorisé sur l'application mobile
   bool get isRoleAutorise {
-    return isAgentAT || isAdherentOrAffilie || isPercepteur || isSuperviseur;
+    return isAgentAT || isAdherentOrAffilie || isPercepteur || isSuperviseur || isChefEquipe;
   }
 
   bool hasPermission(String permission) {
@@ -269,6 +278,7 @@ class AuthUserModel {
     'Affilié',
     'Percepteur',
     'Superviseur',
+    "Chef d'équipe",
   ];
 
   /// Vérifie si un rôle est dans la liste des rôles autorisés
@@ -280,6 +290,8 @@ class AuthUserModel {
         roleLower.contains('affilie') ||
         roleLower.contains('adherent') ||
         roleLower.contains('percepteur') ||
-        roleLower.contains('superviseur');
+        roleLower.contains('superviseur') ||
+        (roleLower.contains('chef') &&
+            (roleLower.contains('equipe') || roleLower.contains('équipe')));
   }
 }

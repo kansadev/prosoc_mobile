@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_contributionScreen.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_frais_screen.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_souscription_screen.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/AffiliateDetailsScreen.dart';
+import 'package:prosoc/views/screens/adh%C3%A9rent/arrieres_affilie_screen.dart';
 import 'package:prosoc/widgets/popup_menu_widget.dart';
 import 'package:prosoc/widgets/antecedent_bottom_sheet.dart';
 import 'package:prosoc/widgets/dependant_bottom_sheet.dart';
@@ -33,15 +36,22 @@ class MyNetworkScreen extends StatefulWidget {
 
 class _MyNetworkScreenState extends State<MyNetworkScreen> {
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _searchController = TextEditingController();
+  Timer? _searchDebounce;
+
   bool _isLoading = true;
   bool _isLoadingMore = false;
   String? _errorMessage;
+  String? _activeSearch;
 
   // Données des affiliés de l'agent (son réseau)
   List<Map<String, dynamic>> _membres = [];
   int _currentPage = 1;
-  final int _pageSize = 20;
+  static const int _pageSize = 20;
   bool _hasNextPage = false;
+
+  static const String _sortBy = 'dateAdhesion';
+  static const String _sortDirection = 'desc';
 
   @override
   void initState() {
@@ -60,7 +70,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
     }
   }
 
-  Future<void> _loadAffilies({bool reset = false}) async {
+  Future<void> _loadAffilies({bool reset = false, String? search}) async {
     try {
       if (reset) {
         setState(() {
@@ -70,6 +80,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
           _membres = [];
           _currentPage = 1;
           _hasNextPage = false;
+          _activeSearch = search;
         });
       } else {
         if (_isLoadingMore || !_hasNextPage) return;
@@ -99,6 +110,9 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
         agentId,
         page: pageToLoad,
         pageSize: _pageSize,
+        sortBy: _sortBy,
+        sortDirection: _sortDirection,
+        search: search ?? _activeSearch,
       );
 
       if (!mounted) return;
@@ -118,10 +132,11 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
 
         setState(() {
           _membres = reset ? membresPage : [..._membres, ...membresPage];
-          _currentPage = payload['currentPage'] is int
-              ? payload['currentPage'] as int
-              : pageToLoad;
-          _hasNextPage = payload['hasNextPage'] == true;
+          _currentPage = PaginatedResponseHelper.extractCurrentPage(
+            payload,
+            fallback: pageToLoad,
+          );
+          _hasNextPage = PaginatedResponseHelper.extractHasNext(payload);
           _isLoading = false;
           _isLoadingMore = false;
         });
@@ -147,6 +162,17 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
     }
   }
 
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+      final query = value.trim();
+      _loadAffilies(
+        reset: true,
+        search: query.isEmpty ? null : query,
+      );
+    });
+  }
+
   Future<void> _navigateToNewAdhesion() async {
     final created = await Navigator.push<bool>(
       context,
@@ -160,6 +186,8 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -201,37 +229,50 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
           ),
         ),
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage != null
-          ? Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(
-                    Icons.error_outline,
-                    size: 48,
-                    color: Colors.red.shade300,
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    _errorMessage!,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.red.shade600),
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => _loadAffilies(reset: true),
-                    child: const Text('Réessayer'),
-                  ),
-                ],
+      body: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                hintText: 'Rechercher un affilié (nom, matricule…)',
+                prefixIcon: const Icon(Icons.search_rounded),
+                suffixIcon: _searchController.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded),
+                        onPressed: () {
+                          _searchController.clear();
+                          _onSearchChanged('');
+                          setState(() {});
+                        },
+                      )
+                    : null,
+                filled: true,
+                fillColor: const Color(0xFFF5F7FA),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none,
+                ),
               ),
-            )
-          : RefreshIndicator(
-              onRefresh: () => _loadAffilies(reset: true),
-              color: AppColors.prosocGreen,
-              child: _buildMembersList(),
+              onChanged: (value) {
+                setState(() {});
+                _onSearchChanged(value);
+              },
             ),
+          ),
+          if (_errorMessage != null)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Text(
+                _errorMessage!,
+                style: TextStyle(color: Colors.red.shade700, fontSize: 13),
+              ),
+            ),
+          Expanded(child: _buildBody()),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _navigateToNewAdhesion,
         backgroundColor: AppColors.prosocGreen,
@@ -244,103 +285,81 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
     );
   }
 
-  Widget _buildMembersList() {
-    if (_membres.isEmpty) {
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: [
-          const SizedBox(height: 120),
-          Icon(Icons.people_outline, size: 64, color: Colors.grey.shade300),
-          const SizedBox(height: 16),
-          Text(
-            'Aucun affilié dans votre réseau',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.grey.shade600,
-              fontSize: 16,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-        ],
+  Widget _buildBody() {
+    if (_isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.prosocGreen),
       );
     }
 
-    final actifs = _membres
-        .where((m) => m['statutAffilie'] == true || m['statut'] == true)
-        .length;
-    final enAttente = _membres.where((m) {
-      final statutDossier = (m['statutDossier'] ?? '').toString().toLowerCase();
-      return statutDossier.contains('attente');
-    }).length;
-
-    return Column(
-      children: [
-        // Statistiques
-        Container(
-          margin: const EdgeInsets.all(16),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.prosocGreen.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildStat('Total', _membres.length.toString()),
-              _buildStat('Actifs', actifs.toString()),
-              _buildStat('En attente', enAttente.toString()),
-            ],
-          ),
-        ),
-        // Liste des membres
-        Expanded(
-          child: ListView.builder(
-            controller: _scrollController,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemCount: _membres.length + (_isLoadingMore ? 1 : 0),
-            itemBuilder: (context, index) {
-              if (_isLoadingMore && index == _membres.length) {
-                return const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Center(
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: AppColors.prosocGreen,
-                    ),
+    if (_membres.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: () => _loadAffilies(reset: true, search: _activeSearch),
+        color: AppColors.prosocGreen,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            const SizedBox(height: 80),
+            Icon(Icons.people_outline, size: 64, color: Colors.grey.shade300),
+            const SizedBox(height: 16),
+            Text(
+              _activeSearch != null
+                  ? 'Aucun affilié trouvé pour « $_activeSearch ».'
+                  : 'Aucun affilié dans votre réseau',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey.shade600,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            if (_errorMessage != null) ...[
+              const SizedBox(height: 16),
+              Center(
+                child: TextButton(
+                  onPressed: () => _loadAffilies(
+                    reset: true,
+                    search: _activeSearch,
                   ),
-                );
-              }
-
-              final membre = _membres[index];
-              return _buildMemberCard(membre);
-            },
-          ),
+                  child: const Text('Réessayer'),
+                ),
+              ),
+            ],
+          ],
         ),
-      ],
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => _loadAffilies(reset: true, search: _activeSearch),
+      color: AppColors.prosocGreen,
+      child: ListView.builder(
+        controller: _scrollController,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
+        itemCount: _membres.length + (_isLoadingMore ? 1 : 0),
+        itemBuilder: (context, index) {
+          if (_isLoadingMore && index == _membres.length) {
+            return const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Center(
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: AppColors.prosocGreen,
+                ),
+              ),
+            );
+          }
+
+          final membre = _membres[index];
+          return _buildMemberCard(membre);
+        },
+      ),
     );
   }
 
   bool _isSoloAdhesion(String typeAdhesion) {
     return typeAdhesion.toLowerCase().contains('solo');
-  }
-
-  Widget _buildStat(String label, String value) {
-    return Column(
-      children: [
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.bold,
-            color: AppColors.prosocGreen,
-          ),
-        ),
-        Text(
-          label,
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-        ),
-      ],
-    );
   }
 
   Widget _buildMemberCard(Map<String, dynamic> membre) {
@@ -385,14 +404,11 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
           MaterialPageRoute(
             builder: (context) => AffiliateDetailsScreen(
               affilieId: affilieId,
-              preview: RecentAffilieModel(
-                idAffilie: affilieId,
-                nom: membre['nom'],
-                prenom: membre['prenom'],
-                telephone: membre['phone'] ?? membre['telephone'],
-                dateAdhesion: membre['dateCreation'],
-                typeAdhesion: membre['typeAdhesion'] ?? 'N/A',
-              ),
+              preview: RecentAffilieModel.fromJson({
+                ...membre,
+                'idAffilie': affilieId,
+                'affilieId': affilieId,
+              }),
             ),
           ),
         );
@@ -549,6 +565,8 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                     affilieId: affilieId,
                     affilieNom: nom,
                     affiliePrenom: prenom,
+                    affilieTelephone:
+                        telephone.trim().isNotEmpty ? telephone : null,
                   );
                 },
                 onAntecedents: () {
@@ -557,6 +575,18 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                     affilieId: affilieId,
                     affilieNom: nom,
                     affiliePrenom: prenom,
+                  );
+                },
+                onArrieres: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ArrieresAffilieScreen(
+                        affilieId: affilieId,
+                        affilieNom: nom,
+                        affiliePrenom: prenom,
+                      ),
+                    ),
                   );
                 },
               ),

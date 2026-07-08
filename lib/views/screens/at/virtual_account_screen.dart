@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/currency_formatter.dart';
 import '../../../config/colors.dart';
@@ -83,10 +84,21 @@ class _VirtualAccountScreenState extends State<VirtualAccountScreen> {
       } else {
         setState(() {
           if (!silent || _walletData == null) {
+            if (kDebugMode) {
+              debugPrint(
+                '[VirtualAccount/wallet] API error statusCode=${response.statusCode} message="${response.message}"',
+              );
+            }
+
+            if (response.statusCode == 404) {
+              _walletError =
+                  'Vous n’avez pas de wallet virtuel. Veuillez contacter votre superviseur.';
+            } else {
             _walletError = ApiErrorHelper.messageForWalletVirtuelError(
               statusCode: response.statusCode,
               serverMessage: response.message,
             );
+            }
             _walletErrorStatusCode = response.statusCode;
           }
           _isLoadingWallet = false;

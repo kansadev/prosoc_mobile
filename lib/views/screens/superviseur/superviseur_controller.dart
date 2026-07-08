@@ -10,6 +10,7 @@ class SuperviseurController extends ChangeNotifier {
   StatsSuperviseur? kpis;
   SuperviseurIndicateursPerformance? indicateurs;
   DashboardSuperviseurModel? dashboard;
+  SuperviseurHierarchieModel? hierarchie;
   bool isLoading = false;
   bool hasLoaded = false;
   String? errorMessage;
@@ -34,6 +35,7 @@ class SuperviseurController extends ChangeNotifier {
         ApiService.getDashboardSuperviseurKpis(superviseurId),
         ApiService.getDashboardSuperviseurIndicateursPerformance(superviseurId),
         ApiService.getDashboardSuperviseur(superviseurId),
+        ApiService.getSuperviseurHierarchie(superviseurId),
       ]);
 
       final kpisResponse = results[0] as ApiResponse<StatsSuperviseur>;
@@ -41,15 +43,21 @@ class SuperviseurController extends ChangeNotifier {
           results[1] as ApiResponse<SuperviseurIndicateursPerformance>;
       final dashboardResponse =
           results[2] as ApiResponse<DashboardSuperviseurModel>;
+      final hierarchieResponse =
+          results[3] as ApiResponse<SuperviseurHierarchieModel>;
 
       if (kpisResponse.success) kpis = kpisResponse.data;
       if (indicateursResponse.success) {
         indicateurs = indicateursResponse.data;
       }
       if (dashboardResponse.success) dashboard = dashboardResponse.data;
+      if (hierarchieResponse.success) hierarchie = hierarchieResponse.data;
 
-      if (!kpisResponse.success && !dashboardResponse.success) {
-        errorMessage = kpisResponse.message ??
+      if (!kpisResponse.success &&
+          !dashboardResponse.success &&
+          !hierarchieResponse.success) {
+        errorMessage = hierarchieResponse.message ??
+            kpisResponse.message ??
             dashboardResponse.message ??
             'Impossible de charger les données superviseur.';
       }

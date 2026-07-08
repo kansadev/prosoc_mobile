@@ -83,16 +83,24 @@ class _ProsocAppState extends State<ProsocApp> {
   /// Déterminer quel écran principal afficher en fonction du rôle
   Widget _buildMainScreen() {
     // Déterminer le rôle
-    final isSuperviseur = _userRole.toLowerCase().contains('superviseur');
-    final isPercepteur = _userRole.toLowerCase().contains('percepteur');
-    final isAgentAT = _userRole.toLowerCase().contains('agent') && 
-                     _userRole.toLowerCase().contains('at');
-    final isAdherent = _userRole.toLowerCase().contains('adhérent') ||
-                       _userRole.toLowerCase().contains('affilié') ||
-                       _userRole.toLowerCase().contains('affilie') ||
-                       _userRole.toLowerCase().contains('adherent');
+    final lowerRole = _userRole.toLowerCase();
+    final isChefEquipe = lowerRole.contains('chef') &&
+        (lowerRole.contains('equipe') || lowerRole.contains('équipe'));
+
+    final isSuperviseur = lowerRole.contains('superviseur');
+    final isPercepteur = lowerRole.contains('percepteur');
+    final isAdherent = lowerRole.contains('adhérent') ||
+        lowerRole.contains('affilié') ||
+        lowerRole.contains('affilie') ||
+        lowerRole.contains('adherent');
     
-    if (isSuperviseur) {
+    if (isChefEquipe) {
+      return MainScreen(
+        controller: _controller,
+        onLogout: _handleLogout,
+        enableChefEquipeFeatures: true,
+      );
+    } else if (isSuperviseur) {
       return MainSuperviseurScreen(onLogout: _handleLogout);
     } else if (isPercepteur) {
       return MainPercepteurScreen(onLogout: _handleLogout);
@@ -105,6 +113,7 @@ class _ProsocAppState extends State<ProsocApp> {
   }
 
   void _handleLogout() {
+    _controller.setIndex(0);
     setState(() {
       _userRole = '';
       _showLogin = true;

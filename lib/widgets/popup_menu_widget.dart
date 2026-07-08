@@ -35,6 +35,8 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
   final VoidCallback? onDependants;
   final VoidCallback? onSouscription;
   final VoidCallback? onAntecedents;
+  final VoidCallback? onArrieres;
+  final Color? iconColor;
 
   const AffiliatePopupMenuWidget({
     super.key,
@@ -44,12 +46,14 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
     this.onDependants,
     this.onSouscription,
     this.onAntecedents,
+    this.onArrieres,
+    this.iconColor,
   });
 
   @override
   Widget build(BuildContext context) {
     return PopupMenuButton<String>(
-      icon: const Icon(Icons.more_vert, color: AppColors.textPrimary),
+      icon: Icon(Icons.more_vert, color: iconColor ?? AppColors.textPrimary),
       onSelected: (value) {
         switch (value) {
           case 'collecte':
@@ -69,6 +73,9 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
             break;
           case 'antecedents':
             onAntecedents?.call();
+            break;
+          case 'arrieres':
+            onArrieres?.call();
             break;
         }
       },
@@ -118,6 +125,13 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
             icon: Icons.health_and_safety_rounded,
             label: 'Ajouter un antécédent',
           ),
+
+        if (onArrieres != null)
+          PopupMenuItemWidget(
+            value: 'arrieres',
+            icon: Icons.history_toggle_off_rounded,
+            label: 'Voir les arriérés',
+          ),
       ],
     );
   }
@@ -133,6 +147,7 @@ AppBar createAppBarWithPopupMenu({
   VoidCallback? onDependants,
   VoidCallback? onSouscription,
   VoidCallback? onAntecedents,
+  VoidCallback? onArrieres,
   bool automaticallyImplyLeading = true,
   Widget? leading,
 }) {
@@ -148,6 +163,7 @@ AppBar createAppBarWithPopupMenu({
         onDependants: onDependants,
         onSouscription: onSouscription,
         onAntecedents: onAntecedents,
+        onArrieres: onArrieres,
       ),
       const SizedBox(width: 8),
       ...?actions,

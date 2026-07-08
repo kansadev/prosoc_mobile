@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../../config/colors.dart';
 import '../../../models/dashboard_superviseur_model.dart';
 import 'superviseur_controller.dart';
+import 'widgets/superviseur_recharge_wallet_sheet.dart';
 
 class SuperviseurTeamScreen extends StatefulWidget {
   final SuperviseurController controller;
@@ -37,12 +38,20 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
   }
 
   List<SuperviseurAgentPerformance> get _agents {
+    final hierarchie = widget.controller.hierarchie;
+    if (hierarchie != null) {
+      final fromHierarchie = hierarchie.allAgents;
+      if (fromHierarchie.isNotEmpty) return fromHierarchie;
+    }
+
     final kpis = widget.controller.kpis;
     if (kpis?.agentsSupervises.isNotEmpty == true) {
       return kpis!.agentsSupervises;
     }
     return widget.controller.dashboard?.agentsEquipe ?? const [];
   }
+
+  SuperviseurHierarchieModel? get _hierarchie => widget.controller.hierarchie;
 
   void _syncAgents() {
     _applyFilter();
@@ -77,12 +86,7 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
         surfaceTintColor: Colors.white,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.refresh),
-            onPressed: () => widget.controller.load(force: true),
-          ),
-        ],
+        
       ),
       body: Column(
         children: [
@@ -118,21 +122,30 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
     }
 
     if (_filtered.isEmpty && _agents.isEmpty) {
+      final hierarchie = _hierarchie;
       return RefreshIndicator(
         color: AppColors.prosocGreen,
         onRefresh: () => widget.controller.load(force: true),
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
           children: [
-            SizedBox(height: 120),
-            Icon(Icons.groups_outlined, size: 64, color: Colors.grey),
-            SizedBox(height: 12),
-            Center(
-              child: Text(
-                errorMessage ?? 'Aucun agent dans votre équipe',
-                textAlign: TextAlign.center,
+            if (hierarchie != null) ...[
+              _buildHierarchieSummary(hierarchie),
+              const SizedBox(height: 16),
+              ...hierarchie.sousSuperviseurs.map(_buildSousSuperviseurCard),
+            ],
+            if (hierarchie == null || hierarchie.sousSuperviseurs.isEmpty) ...[
+              const SizedBox(height: 80),
+              const Icon(Icons.groups_outlined, size: 64, color: Colors.grey),
+              const SizedBox(height: 12),
+              Center(
+                child: Text(
+                  errorMessage ?? 'Aucun agent dans votre équipe',
+                  textAlign: TextAlign.center,
+                ),
               ),
-            ),
+            ],
           ],
         ),
       );
@@ -147,9 +160,175 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
       onRefresh: () => widget.controller.load(force: true),
       child: ListView.separated(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-        itemCount: _filtered.length,
+        itemCount: _listItemCount(),
         separatorBuilder: (_, __) => const SizedBox(height: 10),
-        itemBuilder: (context, index) => _buildAgentCard(_filtered[index]),
+        itemBuilder: (context, index) => _buildListItem(index),
+      ),
+    );
+  }
+
+  int _listItemCount() {
+    var count = _filtered.length;
+    if (_hierarchie != null) count += 1;
+    return count;
+  }
+
+  Widget _buildListItem(int index) {
+    if (_hierarchie != null) {
+      if (index == 0) return _buildHierarchieSummary(_hierarchie!);
+      return _buildAgentCard(_filtered[index - 1]);
+    }
+    return _buildAgentCard(_filtered[index]);
+  }
+
+  Widget _buildHierarchieSummary(SuperviseurHierarchieModel hierarchie) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: AppColors.primaryGradient,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.prosocGreen.withValues(alpha: 0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            hierarchie.nomSuperviseur,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Niveau hiérarchique ${hierarchie.niveauHierarchique}',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.9),
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _summaryMetric(
+                  '${hierarchie.totalAgentsDansHierarchie}',
+                  'Agents',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _summaryMetric(
+                  hierarchie.formattedMontantHierarchie,
+                  'Montant total',
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _summaryMetric(String value, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.15),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            value,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 16,
+            ),
+          ),
+          Text(
+            label,
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSousSuperviseurCard(SuperviseurHierarchieModel sous) {
+    final initial =
+        sous.nomSuperviseur.isNotEmpty ? sous.nomSuperviseur[0].toUpperCase() : 'S';
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: AppColors.prosocGreen.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 22,
+            backgroundColor: AppColors.prosocGreen.withValues(alpha: 0.12),
+            child: Text(
+              initial,
+              style: const TextStyle(
+                color: AppColors.prosocGreen,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  sous.nomSuperviseur,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  'Sous-superviseur · Niveau ${sous.niveauHierarchique}',
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${sous.totalAgentsDansHierarchie} agent(s)',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 12,
+                ),
+              ),
+              Text(
+                sous.formattedMontantHierarchie,
+                style: TextStyle(color: Colors.grey[600], fontSize: 11),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -242,9 +421,40 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
               style: TextStyle(color: Colors.grey[500], fontSize: 12),
             ),
           ],
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: agent.agentId > 0
+                  ? () => _openRechargeWallet(agent)
+                  : null,
+              icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
+              label: const Text('Recharger compte virtuel'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.prosocGreen,
+                side: BorderSide(
+                  color: AppColors.prosocGreen.withValues(alpha: 0.4),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  Future<void> _openRechargeWallet(SuperviseurAgentPerformance agent) async {
+    final recharged = await SuperviseurRechargeWalletSheet.show(
+      context,
+      agentId: agent.agentId,
+      agentNom: agent.nomAgent,
+    );
+    if (!mounted || !recharged) return;
+    await widget.controller.load(force: true);
   }
 
   Widget _metricChip(String label, String value) {

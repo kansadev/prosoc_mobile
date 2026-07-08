@@ -75,3 +75,44 @@ class WalletVirtuelAgentModel {
         deviseSymbole: deviseSymbole,
       );
 }
+
+/// Réponse POST /api/WalletVirtuelAgent/{id}/ajouter-solde
+class WalletVirtuelAjouterSoldeResult {
+  final WalletVirtuelAgentModel wallet;
+  final double ancienSolde;
+  final double montantAjoute;
+  final double nouveauSolde;
+
+  WalletVirtuelAjouterSoldeResult({
+    required this.wallet,
+    required this.ancienSolde,
+    required this.montantAjoute,
+    required this.nouveauSolde,
+  });
+
+  factory WalletVirtuelAjouterSoldeResult.fromJson(Map<String, dynamic> json) {
+    final walletRaw = json['wallet'] ?? json['Wallet'];
+    final walletMap = walletRaw is Map<String, dynamic>
+        ? walletRaw
+        : walletRaw is Map
+            ? Map<String, dynamic>.from(walletRaw)
+            : json;
+
+    return WalletVirtuelAjouterSoldeResult(
+      wallet: WalletVirtuelAgentModel.fromJson(walletMap),
+      ancienSolde: _virtuelDouble(json['ancienSolde'] ?? json['AncienSolde']),
+      montantAjoute:
+          _virtuelDouble(json['montantAjoute'] ?? json['MontantAjoute']),
+      nouveauSolde:
+          _virtuelDouble(json['nouveauSolde'] ?? json['NouveauSolde']),
+    );
+  }
+
+  String formattedNouveauSolde(WalletVirtuelAgentModel wallet) =>
+      CurrencyFormatter.format(
+        amount: nouveauSolde,
+        deviseId: wallet.deviseId,
+        deviseCode: wallet.deviseCode,
+        deviseSymbole: wallet.deviseSymbole,
+      );
+}

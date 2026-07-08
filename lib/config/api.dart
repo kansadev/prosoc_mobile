@@ -14,6 +14,7 @@ import '../models/dashboard_agent_model.dart';
 import '../models/dashboard_agent_graphs_model.dart';
 import '../models/dashboard_superviseur_model.dart';
 import '../models/dashboard_percepteur_model.dart';
+import '../models/chef_equipe_model.dart';
 import '../models/dashboard_affilie_model.dart';
 import '../models/frais_model.dart';
 import '../models/recent_affilie_model.dart';
@@ -27,6 +28,7 @@ import '../models/devise_model.dart';
 import '../models/retrait_agent_model.dart';
 import '../models/retrait_agent_periode_model.dart';
 import '../models/retrait_agent_verifier_solde_model.dart';
+import '../models/arriere_affilie_model.dart';
 
 // ============================================
 // CONFIGURATION API PROSOC
@@ -183,7 +185,7 @@ class ApiService {
         // Vérifier si le rôle est autorisé
         if (!authUser.isRoleAutorise) {
           return ApiResponse.error(
-            'Accès refusé: Votre rôle "${authUser.nomRole}" n\'est pas autorisé à accéder à cette application.\nRôles autorisés: Agent (AT), Adhérent, Affilié, Percepteur, Superviseur.',
+            'Accès refusé: Votre rôle "${authUser.nomRole}" n\'est pas autorisé à accéder à cette application.\nRôles autorisés: Agent (AT), Adhérent, Affilié, Percepteur, Superviseur, Chef d\'équipe.',
             statusCode: 403,
           );
         }
@@ -474,6 +476,63 @@ class ApiService {
       } else {
         return _errorResponse(response, context: context);
       }
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  /// POST /api/WalletVirtuelAgent/{id}/ajouter-solde — Recharge compte virtuel agent
+  static Future<ApiResponse<WalletVirtuelAjouterSoldeResult>>
+      ajouterSoldeWalletVirtuelAgent(
+    int idWalletVirtuelAgent, {
+    required double montant,
+    String? observation,
+  }) async {
+    final context = 'WalletVirtuelAgent/$idWalletVirtuelAgent/ajouter-solde';
+    final body = <String, dynamic>{
+      'montant': montant,
+      'observation': observation?.trim() ?? '',
+    };
+
+    try {
+      if (kDebugMode) {
+        ApiErrorHelper.logRequest(context, body);
+      }
+
+      final response = await _withAuthRetry(
+        () => http.post(
+          Uri.parse(
+            '${ApiConfig.baseUrl}/api/WalletVirtuelAgent/$idWalletVirtuelAgent/ajouter-solde',
+          ),
+          headers: isAuthenticated
+              ? ApiConfig.authHeaders(_token!)
+              : ApiConfig.headers,
+          body: jsonEncode(body),
+        ),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) {
+          final map = decoded is Map<String, dynamic>
+              ? decoded
+              : Map<String, dynamic>.from(decoded);
+          return ApiResponse.success(
+            WalletVirtuelAjouterSoldeResult.fromJson(map),
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.error(
+          'Réponse recharge compte virtuel invalide',
+          statusCode: response.statusCode,
+        );
+      }
+
+      return _errorResponse<WalletVirtuelAjouterSoldeResult>(
+        response,
+        context: context,
+        requestBody: body,
+      );
     } catch (e, stackTrace) {
       return _errorFromException(e, stackTrace, context);
     }
@@ -947,6 +1006,41 @@ class ApiService {
     return ApiResponse.success(parsed, statusCode: response.statusCode);
   }
 
+  /// GET /api/Superviseur/hierarchie/{superviseurId} — Hiérarchie équipe
+  static Future<ApiResponse<SuperviseurHierarchieModel>> getSuperviseurHierarchie(
+    int superviseurId,
+  ) async {
+    final context = 'Superviseur/hierarchie/$superviseurId';
+    try {
+      final response = await _httpGet(
+        Uri.parse(
+          '${ApiConfig.baseUrl}/api/Superviseur/hierarchie/$superviseurId',
+        ),
+        context: context,
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map) {
+          return ApiResponse.error(
+            'Réponse hiérarchie superviseur invalide',
+            statusCode: response.statusCode,
+          );
+        }
+        final map = decoded is Map<String, dynamic>
+            ? decoded
+            : Map<String, dynamic>.from(decoded);
+        return ApiResponse.success(
+          SuperviseurHierarchieModel.fromJson(map),
+          statusCode: response.statusCode,
+        );
+      }
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
   /// GET /api/Agents/by-superviseur/{superviseurId} — Agents supervisés
   static Future<ApiResponse<List<AgentModel>>> getAgentsBySuperviseur(
     int superviseurId,
@@ -1115,6 +1209,153 @@ class ApiService {
             .toList();
         return ApiResponse.success(agents, statusCode: response.statusCode);
       }
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  /// GET /api/DashboardChefEquipe/kpis — KPIs Chef d'équipe
+  static Future<ApiResponse<ChefEquipeKpisDto>> getChefEquipeKpis() async {
+    const context = 'DashboardChefEquipe/kpis';
+    try {
+      final response = await _httpGet(
+        Uri.parse('${ApiConfig.baseUrl}/api/DashboardChefEquipe/kpis'),
+        context: context,
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map) {
+          return ApiResponse.error(
+            'Réponse KPIs Chef d\'équipe invalide',
+            statusCode: response.statusCode,
+          );
+        }
+        final map = decoded is Map<String, dynamic>
+            ? decoded
+            : Map<String, dynamic>.from(decoded);
+        return ApiResponse.success(
+          ChefEquipeKpisDto.fromJson(map),
+          statusCode: response.statusCode,
+        );
+      }
+
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  /// GET /api/DashboardChefEquipe/agents — Agents AT (résumé) de la zone
+  static Future<ApiResponse<List<ChefEquipeAgentResumeDto>>>
+      getChefEquipeAgents() async {
+    const context = 'DashboardChefEquipe/agents';
+    try {
+      final response = await _httpGet(
+        Uri.parse('${ApiConfig.baseUrl}/api/DashboardChefEquipe/agents'),
+        context: context,
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        final rows = decoded is List
+            ? decoded
+            : decoded is Map
+                ? PaginatedResponseHelper.extractRows(decoded)
+                : const [];
+
+        final agents = rows
+            .whereType<Map>()
+            .map((row) =>
+                ChefEquipeAgentResumeDto.fromJson(Map<String, dynamic>.from(row)))
+            .toList();
+
+        return ApiResponse.success(agents, statusCode: response.statusCode);
+      }
+
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  /// GET /api/DashboardChefEquipe/agents/{agentId}/mouvements-wallet?limit=20
+  static Future<ApiResponse<AgentCommissionsResumeDto>>
+      getChefEquipeMouvementsWallet(
+    int agentId, {
+    int limit = 20,
+  }) async {
+    final context = 'DashboardChefEquipe/agents/$agentId/mouvements-wallet';
+    try {
+      final query = limit > 0 ? '?limit=$limit' : '';
+      final response = await _httpGet(
+        Uri.parse(
+          '${ApiConfig.baseUrl}/api/DashboardChefEquipe/agents/$agentId/mouvements-wallet$query',
+        ),
+        context: context,
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is! Map) {
+          return ApiResponse.error(
+            'Réponse mouvements wallet Chef d\'équipe invalide',
+            statusCode: response.statusCode,
+          );
+        }
+        final map = decoded is Map<String, dynamic>
+            ? decoded
+            : Map<String, dynamic>.from(decoded);
+        return ApiResponse.success(
+          AgentCommissionsResumeDto.fromJson(map),
+          statusCode: response.statusCode,
+        );
+      }
+
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  /// GET /api/DashboardChefEquipe/agents/{agentId}/collectes?limit=50
+  static Future<ApiResponse<List<ChefEquipeCollecteResumeDto>>>
+      getChefEquipeCollectes(
+    int agentId, {
+    int limit = 50,
+  }) async {
+    final context = 'DashboardChefEquipe/agents/$agentId/collectes';
+    try {
+      final query = limit > 0 ? '?limit=$limit' : '';
+      final response = await _httpGet(
+        Uri.parse(
+          '${ApiConfig.baseUrl}/api/DashboardChefEquipe/agents/$agentId/collectes$query',
+        ),
+        context: context,
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        final rows = decoded is List
+            ? decoded
+            : decoded is Map
+                ? PaginatedResponseHelper.extractRows(decoded)
+                : const [];
+
+        final collectes = rows
+            .whereType<Map>()
+            .map((row) => ChefEquipeCollecteResumeDto.fromJson(
+                  Map<String, dynamic>.from(row),
+                ))
+            .toList();
+
+        return ApiResponse.success(
+          collectes,
+          statusCode: response.statusCode,
+        );
+      }
+
       return _errorResponse(response, context: context);
     } catch (e, stackTrace) {
       return _errorFromException(e, stackTrace, context);
@@ -3087,49 +3328,28 @@ class ApiService {
   }
 
   /// POST /api/SouscriptionPrestation?affilieId= — souscription + collecte associée.
-  static Future<ApiResponse<Map<String, dynamic>>> createSouscriptionPrestation({
+  static Future<ApiResponse<SouscriptionPrestationCreateResult>>
+      createSouscriptionPrestation({
     required int affilieId,
-    required int prestationId,
-    required DateTime dateSouscription,
-    required bool statut,
-    required int agentId,
-    required double montant,
-    required int mois,
-    required int annee,
-    required int deviseId,
-    required String modePaiement,
-    required String statutPaiement,
-    String? referencePaiement,
-    String? observation,
-    bool collecteStatut = true,
+    required SouscriptionPrestationCreateRequest request,
   }) async {
-    final ref = _nullableTrimmed(referencePaiement);
-    final obs = _nullableTrimmed(observation);
-
-    final body = <String, dynamic>{
-      'prestationId': prestationId,
-      'dateSouscription': dateSouscription.toUtc().toIso8601String(),
-      'statut': statut,
-      'collecte': <String, dynamic>{
-        'agentId': agentId,
-        'montant': montant,
-        'mois': mois,
-        'annee': annee,
-        'deviseId': deviseId,
-        'modePaiement': modePaiement,
-        'montantRecu': montant,
-        'montantAttendu': montant,
-        'statutPaiement': statutPaiement,
-        'statut': collecteStatut,
-        'referencePaiement': ref,
-        'observation': obs,
-      },
-    };
-
-    return _post<Map<String, dynamic>>(
+    final response = await _post<Map<String, dynamic>>(
       '/api/SouscriptionPrestation?affilieId=$affilieId',
-      body,
+      request.toJson(),
       logContext: 'SouscriptionPrestation/create',
+    );
+
+    if (!response.success || response.data == null) {
+      return ApiResponse(
+        success: false,
+        message: response.message,
+        statusCode: response.statusCode,
+      );
+    }
+
+    return ApiResponse.success(
+      SouscriptionPrestationCreateResult.fromJson(response.data!),
+      statusCode: response.statusCode,
     );
   }
 
@@ -3286,6 +3506,66 @@ class ApiService {
     }
 
     return ApiResponse.success(parsed, statusCode: response.statusCode);
+  }
+
+  /// GET /api/arrieres-affilie/affilie/{affilieId} - Arriérés d'un affilié
+  static Future<ApiResponse<List<ArriereAffilieModel>>> getArrieresAffilie(
+    int affilieId,
+  ) async {
+    return _fetchArrieresAffilie(
+      path: '/api/arrieres-affilie/affilie/$affilieId',
+      context: 'arrieres-affilie/affilie/$affilieId',
+    );
+  }
+
+  /// GET /api/arrieres-affilie/mes-arrieres - Arriérés de l'affilié connecté
+  static Future<ApiResponse<List<ArriereAffilieModel>>> getMesArrieresAffilie() async {
+    return _fetchArrieresAffilie(
+      path: '/api/arrieres-affilie/mes-arrieres',
+      context: 'arrieres-affilie/mes-arrieres',
+    );
+  }
+
+  static Future<ApiResponse<List<ArriereAffilieModel>>> _fetchArrieresAffilie({
+    required String path,
+    required String context,
+  }) async {
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}$path'),
+        headers: isAuthenticated
+            ? ApiConfig.authHeaders(_token!)
+            : ApiConfig.headers,
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        final rows = decoded is List
+            ? decoded
+            : PaginatedResponseHelper.extractRows(decoded);
+        final parsed = <ArriereAffilieModel>[];
+        for (final item in rows) {
+          if (item is! Map) continue;
+          try {
+            final map = item is Map<String, dynamic>
+                ? item
+                : Map<String, dynamic>.from(item);
+            parsed.add(ArriereAffilieModel.fromJson(map));
+          } catch (e, stackTrace) {
+            ApiErrorHelper.logException(
+              'ArriereAffilie/fromJson',
+              e,
+              stackTrace,
+            );
+          }
+        }
+        return ApiResponse.success(parsed, statusCode: response.statusCode);
+      }
+
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
   }
 
   /// POST /api/Antecedent - Créer un antécédent
