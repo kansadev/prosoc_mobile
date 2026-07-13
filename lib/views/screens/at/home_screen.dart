@@ -13,6 +13,7 @@ import '../../../models/recent_affilie_model.dart';
 import '../../../utils/api_error_helper.dart';
 import '../../../utils/wallet_agent_loader.dart';
 import '../../widgets/common_widgets.dart';
+import '../../widgets/prosoc_shimmer_loading.dart';
 import 'new_adhesion_screen.dart';
 import 'my_network_screen.dart';
 import 'dashboard_screen.dart';
@@ -313,14 +314,7 @@ String _getGreeting() {
 
   Widget _buildMainCard() {
     if (_isLoadingWallet) {
-      return const Padding(
-        padding: EdgeInsets.all(20),
-        child: Center(
-          child: CircularProgressIndicator(
-            color: AppColors.prosocGreen,
-          ),
-        ),
-      );
+      return ProsocHomeShimmer.walletCard(context);
     }
 
     final wallet = _walletsByDevise[_selectedDeviseId] ?? _walletAgent;
@@ -343,22 +337,7 @@ String _getGreeting() {
 
   Widget _buildMonthlyKpisStrip() {
     if (_isLoadingSummary && _monthlyKpis == null) {
-      return const Padding(
-        padding: EdgeInsets.fromLTRB(20, 0, 20, 8),
-        child: SizedBox(
-          height: 72,
-          child: Center(
-            child: SizedBox(
-              width: 22,
-              height: 22,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: AppColors.prosocGreen,
-              ),
-            ),
-          ),
-        ),
-      );
+      return ProsocHomeShimmer.kpiStrip(context);
     }
 
     final kpis = _monthlyKpis;
@@ -527,12 +506,15 @@ String _getGreeting() {
 
   Widget _buildRecentActivity(BuildContext context) {
     if (_isLoadingSummary && _recentAffiliates.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(20),
-        child: Center(
-          child: CircularProgressIndicator(
-            color: AppColors.prosocGreen,
-          ),
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ProsocShimmer.box(context, height: 22, width: 180, radius: 6),
+            const SizedBox(height: 16),
+            ProsocHomeShimmer.activityList(context, itemCount: 3),
+          ],
         ),
       );
     }

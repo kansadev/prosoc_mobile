@@ -6,6 +6,7 @@ import '../../../widgets/tab_load_gate.dart';
 import '../at/virtual_account_screen.dart';
 import '../at/wallet_screen.dart';
 import 'home_percepteur_screen.dart';
+import 'percepteur_transactions_screen.dart';
 import 'profile_percepteur_screen.dart';
 
 // ============================================
@@ -42,7 +43,7 @@ class _MainPercepteurScreenState extends State<MainPercepteurScreen> {
             currentIndex: _currentIndex,
             onIndexChanged: _goToTab,
             onOpenWallet: () => _goToTab(1),
-            onOpenVirtualAccount: () => _goToTab(2),
+            onOpenVirtualAccount: () => _goToTab(3),
           ),
           TabLoadGate(
             tabIndex: 1,
@@ -51,6 +52,13 @@ class _MainPercepteurScreenState extends State<MainPercepteurScreen> {
           ),
           TabLoadGate(
             tabIndex: 2,
+            currentIndex: _currentIndex,
+            child: const PercepteurTransactionsScreen(
+              embeddedInNavigation: true,
+            ),
+          ),
+          TabLoadGate(
+            tabIndex: 3,
             currentIndex: _currentIndex,
             child: const VirtualAccountScreen(),
           ),
@@ -77,6 +85,11 @@ class _MainPercepteurScreenState extends State<MainPercepteurScreen> {
             icon: Icon(Icons.account_balance_wallet_outlined),
             activeIcon: Icon(Icons.account_balance_wallet),
             label: 'Wallet',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.receipt_long_outlined),
+            activeIcon: Icon(Icons.receipt_long),
+            label: 'Transactions',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.credit_card_outlined),

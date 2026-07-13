@@ -517,6 +517,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                         affiliePrenom: prenom,
                         affilieTelephone:
                             telephone.isNotEmpty ? telephone : null,
+                        allowVirtualAccount: true,
                       ),
                     ),
                   );
@@ -531,6 +532,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                         affiliePrenom: prenom,
                         affilieTelephone:
                             telephone.isNotEmpty ? telephone : null,
+                        allowVirtualAccount: true,
                       ),
                     ),
                   );
@@ -545,6 +547,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                         affiliePrenom: prenom,
                         affilieTelephone:
                             telephone.isNotEmpty ? telephone : null,
+                        allowVirtualAccount: true,
                       ),
                     ),
                   );
@@ -567,6 +570,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                     affiliePrenom: prenom,
                     affilieTelephone:
                         telephone.trim().isNotEmpty ? telephone : null,
+                    allowVirtualAccount: true,
                   );
                 },
                 onAntecedents: () {
@@ -585,6 +589,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                         affilieId: affilieId,
                         affilieNom: nom,
                         affiliePrenom: prenom,
+                        allowVirtualAccount: true,
                       ),
                     ),
                   );

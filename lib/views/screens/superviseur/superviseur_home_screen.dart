@@ -8,8 +8,10 @@ import '../../../utils/api_error_helper.dart';
 import '../../../utils/wallet_agent_loader.dart';
 import '../at/new_adhesion_screen.dart';
 import 'superviseur_controller.dart';
+import 'superviseur_affectation_screen.dart';
 import 'superviseur_top_agents_screen.dart';
 import 'widgets/superviseur_wallet_overview_flip_card.dart';
+import '../../widgets/prosoc_shimmer_loading.dart';
 
 class SuperviseurHomeScreen extends StatefulWidget {
   final SuperviseurController controller;
@@ -236,6 +238,8 @@ class _SuperviseurHomeScreenState extends State<SuperviseurHomeScreen> {
                           onOpenWallet: widget.onOpenWallet,
                           kpis: kpis,
                         )
+                      : isLoading && kpis == null
+                      ? ProsocHomeShimmer.overviewCard(context)
                       : _buildOverviewCard(kpis),
                 ),
                 const SizedBox(height: 20),
@@ -270,13 +274,9 @@ class _SuperviseurHomeScreenState extends State<SuperviseurHomeScreen> {
                 ),
                 const SizedBox(height: 24),
                 if (isLoading)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(24),
-                      child: CircularProgressIndicator(
-                        color: AppColors.prosocGreen,
-                      ),
-                    ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: ProsocHomeShimmer.statsGrid(context),
                   )
                 else ...[
                   Padding(
@@ -426,10 +426,17 @@ class _SuperviseurHomeScreenState extends State<SuperviseurHomeScreen> {
         const SizedBox(width: 12),
         Expanded(
           child: _actionTile(
-            icon: Icons.people_outline,
-            label: 'Mon réseau',
+            icon: Icons.person_add_alt_1_outlined,
+            label: 'Affectation',
             color: const Color(0xFF2196F3),
-            onTap: widget.onOpenNetwork,
+            onTap: () {
+              Navigator.push<void>(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const SuperviseurAffectationScreen(),
+                ),
+              );
+            },
           ),
         ),
         const SizedBox(width: 12),

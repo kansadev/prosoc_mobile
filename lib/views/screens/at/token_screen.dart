@@ -56,6 +56,8 @@ class _TokenScreenState extends State<TokenScreen>
     return rows.where((d) => d.agentId == agentId).toList();
   }
 
+  bool get _showValidatorActions => false;
+
   Future<void> _loadAll({bool showLoader = true}) async {
     if (!mounted) return;
 
@@ -125,8 +127,13 @@ class _TokenScreenState extends State<TokenScreen>
 
       if (!mounted) return;
 
-      if (response.success) {
-        _showSnack('Jeton généré avec succès');
+      if (response.success && response.data != null) {
+        final jeton = response.data!.jetonCode;
+        _showSnack(
+          jeton != null && jeton.isNotEmpty
+              ? 'Jeton généré : $jeton'
+              : 'Jeton généré avec succès',
+        );
         await _loadAll(showLoader: false);
       } else {
         _showSnack(
@@ -174,10 +181,11 @@ class _TokenScreenState extends State<TokenScreen>
         _showSnack('Jeton utilisé avec succès');
         await _loadAll(showLoader: false);
       } else {
-        _showSnack(
-          response.message ?? 'Erreur lors de l\'utilisation du jeton',
-          isError: true,
+        final message = ApiErrorHelper.messageForUtiliserJetonRetraitError(
+          statusCode: response.statusCode,
+          serverMessage: response.message,
         );
+        _showSnack(message, isError: true);
       }
     } catch (e, stackTrace) {
       ApiErrorHelper.logException('TokenScreen.utiliserJeton', e, stackTrace);
@@ -389,7 +397,7 @@ class _TokenScreenState extends State<TokenScreen>
                 ),
               ),
             ],
-            if (tab == _JetonTab.enAttente) ...[
+            if (tab == _JetonTab.enAttente && _showValidatorActions) ...[
               const SizedBox(height: 14),
               SizedBox(
                 width: double.infinity,
@@ -464,26 +472,28 @@ class _TokenScreenState extends State<TokenScreen>
                   ],
                 ),
               ),
-              const SizedBox(height: 12),
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton.icon(
-                  onPressed: isBusy ? null : () => _utiliserJeton(demande),
-                  icon: isBusy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.check_circle_outline_rounded),
-                  label: const Text('Utiliser le jeton'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.prosocGreen,
-                    side: const BorderSide(color: AppColors.prosocGreen),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
+              if (_showValidatorActions) ...[
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: isBusy ? null : () => _utiliserJeton(demande),
+                    icon: isBusy
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.check_circle_outline_rounded),
+                    label: const Text('Utiliser le jeton'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.prosocGreen,
+                      side: const BorderSide(color: AppColors.prosocGreen),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
                   ),
                 ),
-              ),
+              ],
             ],
             if (tab == _JetonTab.traitees && demande.dateTraitement != null)
               _infoRow(

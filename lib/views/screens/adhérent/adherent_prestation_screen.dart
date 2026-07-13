@@ -8,6 +8,7 @@ import '../../../utils/api_error_helper.dart';
 import '../../../utils/formatters.dart';
 import '../../widgets/dashboard_segment_tab_bar.dart';
 import '../../widgets/year_picker_sheet.dart';
+import '../../../widgets/souscription_bottom_sheet.dart';
 
 /// Souscriptions prestation affilié — GET /api/SouscriptionPrestation/by-affilie/{affilieId}.
 class AdherentPrestationScreen extends StatefulWidget {
@@ -204,7 +205,46 @@ class _AdherentPrestationScreenState extends State<AdherentPrestationScreen>
         ],
         children: [_buildRecentesTab(), _buildPeriodeTab()],
       ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: _openNouvelleSouscription,
+        backgroundColor: AppColors.prosocGreen,
+        icon: const Icon(Icons.add_rounded),
+        label: const Text('Souscrire'),
+      ),
     );
+  }
+
+  Future<void> _openNouvelleSouscription() async {
+    final affilieId = _affilieId;
+    if (affilieId == null || affilieId <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profil affilié introuvable.'),
+          backgroundColor: AppColors.errorColor,
+        ),
+      );
+      return;
+    }
+
+    final utilisateur = AuthService.currentUser?.utilisateur;
+    final nomComplet = utilisateur?.nomComplet ?? '';
+    final parts = nomComplet.trim().split(RegExp(r'\s+'));
+    final prenom = parts.isNotEmpty ? parts.first : '';
+    final nom = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+
+    final created = await SouscriptionBottomSheet.show(
+      context,
+      affilieId: affilieId,
+      affilieNom: nom,
+      affiliePrenom: prenom,
+      affilieTelephone: utilisateur?.telephone,
+      allowVirtualAccount: false,
+    );
+
+    if (created == true && mounted) {
+      await _loadSouscriptions();
+    }
   }
 
   Widget _buildRecentesTab() {

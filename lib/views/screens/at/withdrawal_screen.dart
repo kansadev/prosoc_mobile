@@ -7,7 +7,6 @@ import '../../../models/wallet_agent_model.dart';
 import '../../../services/auth_service.dart';
 import '../../../utils/api_error_helper.dart';
 import '../../../utils/wallet_agent_loader.dart';
-import '../../../utils/withdrawal_window_helper.dart';
 import '../../widgets/wallet_devise_switch.dart';
 import 'retrait_historique_screen.dart';
 
@@ -36,6 +35,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
   bool _isLoadingWallets = true;
   bool _isLoadingPeriode = true;
   String? _serverMessage;
+  String? _periodeError;
   bool _isSuccess = false;
 
   RetraitAgentPeriodeCourante? _periodeCourante;
@@ -51,10 +51,38 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
     'Mobile Money',
   ];
 
-  bool get _windowOpen =>
-      _periodeCourante?.estPeriodeAutorisee ?? WithdrawalWindowHelper.isOpen();
+  bool get _windowOpen => _periodeCourante?.estPeriodeAutorisee == true;
 
   bool get _isRetraitTotal => _periodeCourante?.isRetraitTotal ?? false;
+
+  String get _periodeApiMessage {
+    final periode = _periodeCourante;
+    if (periode == null) return _periodeError ?? '';
+    if (periode.message.trim().isNotEmpty) return periode.message.trim();
+    if (periode.periodeInfo.trim().isNotEmpty) return periode.periodeInfo.trim();
+    return '';
+  }
+
+  List<String> get _periodeApiDetails {
+    final periode = _periodeCourante;
+    if (periode == null) return const [];
+
+    final main = _periodeApiMessage;
+    final details = <String>[];
+
+    void addIfDistinct(String value) {
+      final trimmed = value.trim();
+      if (trimmed.isEmpty || trimmed == main || details.contains(trimmed)) {
+        return;
+      }
+      details.add(trimmed);
+    }
+
+    addIfDistinct(periode.periodeInfo);
+    addIfDistinct(periode.fenetreActive);
+    addIfDistinct(periode.typeRetraitAutorise);
+    return details;
+  }
 
   List<int> get _orderedDeviseIds {
     final ids = _availableDeviseIds.toList();
@@ -98,7 +126,10 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
   }
 
   Future<void> _loadPeriodeCourante() async {
-    setState(() => _isLoadingPeriode = true);
+    setState(() {
+      _isLoadingPeriode = true;
+      _periodeError = null;
+    });
 
     try {
       final response = await ApiService.getRetraitAgentPeriodeCourante();
@@ -107,6 +138,12 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
       setState(() {
         if (response.success && response.data != null) {
           _periodeCourante = response.data;
+          _periodeError = null;
+        } else {
+          _periodeCourante = null;
+          _periodeError = response.message?.trim().isNotEmpty == true
+              ? response.message!.trim()
+              : ApiErrorHelper.userFacingMessage(statusCode: response.statusCode);
         }
         _isLoadingPeriode = false;
       });
@@ -119,7 +156,11 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
         false,
       );
       if (!mounted) return;
-      setState(() => _isLoadingPeriode = false);
+      setState(() {
+        _periodeCourante = null;
+        _periodeError = ApiErrorHelper.userFacingNetwork();
+        _isLoadingPeriode = false;
+      });
     }
   }
 
@@ -236,9 +277,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
   Future<void> _submitWithdrawal() async {
     if (!_windowOpen) {
       setState(() {
-        _serverMessage = _periodeCourante?.message.isNotEmpty == true
-            ? _periodeCourante!.message
-            : WithdrawalWindowHelper.statusDescription();
+        _serverMessage = _periodeApiMessage;
         _isSuccess = false;
       });
       return;
@@ -337,28 +376,34 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: theme.scaffoldBackgroundColor,
       appBar: AppBar(
-        title: const Text(
+        title: Text(
           'Demande de retrait',
           style: TextStyle(
-            color: AppColors.textPrimary,
+            color: theme.colorScheme.onSurface,
             fontWeight: FontWeight.w600,
           ),
         ),
+        backgroundColor: isDark ? theme.appBarTheme.backgroundColor : Colors.white,
+        foregroundColor: theme.colorScheme.onSurface,
+        surfaceTintColor: Colors.transparent,
         leading: IconButton(
-          icon: const Icon(
+          icon: Icon(
             Icons.arrow_back_ios_rounded,
-            color: AppColors.textPrimary,
+            color: theme.colorScheme.onSurface,
           ),
           onPressed: () => Navigator.pop(context),
         ),
         actions: [
           PopupMenuButton<String>(
-            icon: const Icon(
+            icon: Icon(
               Icons.more_vert_rounded,
-              color: AppColors.textPrimary,
+              color: theme.colorScheme.onSurface,
             ),
             tooltip: 'Menu',
             onSelected: (value) {
@@ -387,11 +432,11 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
         ],
         elevation: 0,
       ),
-      body: _isSuccess ? _buildSuccessView() : _buildFormView(),
+      body: _isSuccess ? _buildSuccessView(isDark) : _buildFormView(isDark),
     );
   }
 
-  Widget _buildSuccessView() {
+  Widget _buildSuccessView(bool isDark) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -417,17 +462,16 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
               style: TextStyle(
                 fontSize: 22,
                 fontWeight: FontWeight.bold,
-                color: AppColors.textPrimary,
               ),
             ),
             const SizedBox(height: 12),
             Text(
               'Votre demande de retrait a été enregistrée. '
-              'Vous pourrez générer un jeton depuis l\'écran Jeton.',
+              'Présentez-vous au percepteur avec votre jeton une fois validé.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 15,
-                color: Colors.grey.shade700,
+                color: isDark ? Colors.white70 : Colors.grey.shade700,
                 height: 1.4,
               ),
             ),
@@ -456,7 +500,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
     );
   }
 
-  Widget _buildFormView() {
+  Widget _buildFormView(bool isDark) {
     final wallet = _selectedWallet;
     final canWithdraw = _windowOpen &&
         !_isLoading &&
@@ -464,8 +508,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
         wallet != null &&
         wallet.soldeDisponible > 0;
     final currencyLabel = wallet?.currencyLabel ?? 'devise';
-    // Retrait autorisé => le client choisit librement le montant (dans la limite du solde disponible).
-    final montantReadOnly = false;
+    final montantReadOnly = _isRetraitTotal;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
@@ -801,20 +844,56 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
               ),
             ),
             SizedBox(width: 12),
-            Text('Vérification de la période de retrait…'),
+            Text('Chargement de la période de retrait…'),
           ],
         ),
       );
     }
 
-    final periode = _periodeCourante;
+    if (_periodeCourante == null) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: AppColors.errorColor.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: AppColors.errorColor.withValues(alpha: 0.25),
+          ),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              color: AppColors.errorColor,
+              size: 24,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _periodeError ??
+                    'Impossible de charger la période de retrait.',
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.grey.shade800,
+                  height: 1.35,
+                ),
+              ),
+            ),
+            TextButton(
+              onPressed: _loadPeriodeCourante,
+              child: const Text('Réessayer'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final periode = _periodeCourante!;
     final open = _windowOpen;
     final color = open ? AppColors.prosocGreen : AppColors.warningColor;
-    final title = periode?.statusLabel ?? WithdrawalWindowHelper.statusLabel();
-    final description = periode?.message.isNotEmpty == true
-        ? periode!.message
-        : WithdrawalWindowHelper.statusDescription();
-    final hint = periode == null ? WithdrawalWindowHelper.nextWindowHint() : '';
+    final mainMessage = _periodeApiMessage;
+    final details = _periodeApiDetails;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -836,59 +915,24 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 15,
-                    color: color,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  description,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey.shade800,
-                    height: 1.35,
-                  ),
-                ),
-                if (periode != null) ...[
-                  const SizedBox(height: 8),
+                if (mainMessage.isNotEmpty)
                   Text(
-                    periode.fenetresDescription,
+                    mainMessage,
                     style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade700,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: color,
+                      height: 1.35,
                     ),
                   ),
-                  if (open && periode.activeWindowLabel.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      'Fenêtre active : ${periode.activeWindowLabel}',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: color,
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 4),
+                for (final line in details) ...[
+                  if (mainMessage.isNotEmpty) const SizedBox(height: 6),
                   Text(
-                    periode.typeRetraitLabel,
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade700,
-                    ),
-                  ),
-                ] else if (hint.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    hint,
+                    line,
                     style: TextStyle(
                       fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                      color: color,
+                      color: Colors.grey.shade800,
+                      height: 1.35,
                     ),
                   ),
                 ],

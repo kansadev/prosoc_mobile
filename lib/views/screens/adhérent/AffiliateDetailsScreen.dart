@@ -1668,6 +1668,7 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
           affilieNom: widget.preview?.nom ?? '',
           affiliePrenom: widget.preview?.prenom ?? '',
           nombreDependants: _dependantsTotal,
+          allowVirtualAccount: true,
         ),
       ),
     );
@@ -1681,6 +1682,7 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
           affilieId: widget.affilieId,
           affilieNom: widget.preview?.nom ?? '',
           affiliePrenom: widget.preview?.prenom ?? '',
+          allowVirtualAccount: true,
         ),
       ),
     );
@@ -1700,6 +1702,7 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
           affiliePrenom: widget.preview?.prenom ?? '',
           affilieTelephone: telephone,
           nombreDependants: _dependantsTotal,
+          allowVirtualAccount: true,
         ),
       ),
     ).then((_) {
@@ -1722,6 +1725,7 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
       affiliePrenom: widget.preview?.prenom ?? '',
       affilieTelephone: telephone,
       nombreDependants: _dependantsTotal,
+      allowVirtualAccount: true,
     );
 
     if (paid == true && mounted) {
@@ -1737,6 +1741,7 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
           affilieId: widget.affilieId,
           affilieNom: widget.preview?.nom ?? '',
           affiliePrenom: widget.preview?.prenom ?? '',
+          allowVirtualAccount: true,
         ),
       ),
     ).then((paid) {

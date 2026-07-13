@@ -13,9 +13,15 @@ import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_souscription_sc
 import 'package:prosoc/widgets/popup_menu_widget.dart';
 import 'package:prosoc/widgets/souscription_bottom_sheet.dart';
 
-/// Sélection d'un affilié (GET /api/Affilie) puis encaissement via [PayerContributionScreen].
+/// Sélection d'un affilié (GET /api/Affilie) puis encaissement ou souscription.
 class PercepteurEncaissementScreen extends StatefulWidget {
-  const PercepteurEncaissementScreen({super.key});
+  /// Si `true`, la sélection d'un affilié ouvre directement la souscription.
+  final bool souscriptionOnly;
+
+  const PercepteurEncaissementScreen({
+    super.key,
+    this.souscriptionOnly = false,
+  });
 
   @override
   State<PercepteurEncaissementScreen> createState() =>
@@ -163,6 +169,7 @@ class _PercepteurEncaissementScreenState
           affiliePrenom: ctx.prenom,
           affilieTelephone: ctx.telephone,
           screenTitle: 'Encaisser une cotisation',
+          allowVirtualAccount: true,
         ),
       ),
     );
@@ -181,6 +188,7 @@ class _PercepteurEncaissementScreenState
           affiliePrenom: ctx.prenom,
           affilieTelephone: ctx.telephone,
           screenTitle: 'Encaisser un frais',
+          allowVirtualAccount: true,
         ),
       ),
     );
@@ -199,6 +207,7 @@ class _PercepteurEncaissementScreenState
           affiliePrenom: ctx.prenom,
           affilieTelephone: ctx.telephone,
           screenTitle: 'Encaisser une souscription',
+          allowVirtualAccount: true,
         ),
       ),
     );
@@ -214,6 +223,7 @@ class _PercepteurEncaissementScreenState
       affilieNom: ctx.nom,
       affiliePrenom: ctx.prenom,
       affilieTelephone: ctx.telephone,
+      allowVirtualAccount: true,
     );
   }
 
@@ -238,9 +248,11 @@ class _PercepteurEncaissementScreenState
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        title: const Text(
-          'Encaisser',
-          style: TextStyle(
+        title: Text(
+          widget.souscriptionOnly
+              ? 'Souscrire à une prestation'
+              : 'Encaisser',
+          style: const TextStyle(
             fontWeight: FontWeight.w700,
             fontSize: 20,
             color: AppColors.textPrimary,
@@ -258,7 +270,9 @@ class _PercepteurEncaissementScreenState
             child: TextField(
               controller: _searchController,
               decoration: InputDecoration(
-                hintText: 'Rechercher un affilié (nom, matricule…)',
+                hintText: widget.souscriptionOnly
+                    ? 'Rechercher un affilié pour souscrire…'
+                    : 'Rechercher un affilié (nom, matricule…)',
                 prefixIcon: const Icon(Icons.search_rounded),
                 suffixIcon: _searchController.text.isNotEmpty
                     ? IconButton(
@@ -368,68 +382,80 @@ class _PercepteurEncaissementScreenState
           return Material(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    backgroundColor:
-                        AppColors.prosocGreen.withValues(alpha: 0.12),
-                    child: Text(
-                      initials.isNotEmpty ? initials : '?',
-                      style: const TextStyle(
-                        color: AppColors.prosocGreen,
-                        fontWeight: FontWeight.bold,
+            child: InkWell(
+              onTap: widget.souscriptionOnly
+                  ? () => _openSouscriptionBottomSheet(membre)
+                  : null,
+              borderRadius: BorderRadius.circular(16),
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      backgroundColor:
+                          AppColors.prosocGreen.withValues(alpha: 0.12),
+                      child: Text(
+                        initials.isNotEmpty ? initials : '?',
+                        style: const TextStyle(
+                          color: AppColors.prosocGreen,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          '$prenom $nom'.trim(),
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                          ),
-                        ),
-                        if (matricule.isNotEmpty)
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            matricule,
-                            style: TextStyle(
-                              color: Colors.grey.shade600,
-                              fontSize: 13,
+                            '$prenom $nom'.trim(),
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 15,
                             ),
                           ),
-                        if (phone.isNotEmpty)
-                          Text(
-                            phone,
-                            style: TextStyle(
-                              color: Colors.grey.shade500,
-                              fontSize: 12,
+                          if (matricule.isNotEmpty)
+                            Text(
+                              matricule,
+                              style: TextStyle(
+                                color: Colors.grey.shade600,
+                                fontSize: 13,
+                              ),
                             ),
-                          ),
-                        if (typeAdhesion.isNotEmpty)
-                          Text(
-                            typeAdhesion,
-                            style: TextStyle(
-                              color: Colors.grey.shade500,
-                              fontSize: 12,
+                          if (phone.isNotEmpty)
+                            Text(
+                              phone,
+                              style: TextStyle(
+                                color: Colors.grey.shade500,
+                                fontSize: 12,
+                              ),
                             ),
-                          ),
-                      ],
+                          if (typeAdhesion.isNotEmpty)
+                            Text(
+                              typeAdhesion,
+                              style: TextStyle(
+                                color: Colors.grey.shade500,
+                                fontSize: 12,
+                              ),
+                            ),
+                        ],
+                      ),
                     ),
-                  ),
-                  AffiliatePopupMenuWidget(
-                    iconColor: AppColors.prosocGreen,
-                    onCollecte: () => _openPayerCotisation(membre),
-                    onPayerFrais: () => _openPayerFrais(membre),
-                    onPayerSouscription: () => _openPayerSouscription(membre),
-                    onSouscription: () => _openSouscriptionBottomSheet(membre),
-                  ),
-                ],
+                    if (widget.souscriptionOnly)
+                      Icon(
+                        Icons.medical_services_outlined,
+                        color: AppColors.prosocGreen.withValues(alpha: 0.8),
+                      )
+                    else
+                      AffiliatePopupMenuWidget(
+                        iconColor: AppColors.prosocGreen,
+                        onCollecte: () => _openPayerCotisation(membre),
+                        onPayerFrais: () => _openPayerFrais(membre),
+                        onPayerSouscription: () => _openPayerSouscription(membre),
+                        onSouscription: () => _openSouscriptionBottomSheet(membre),
+                      ),
+                  ],
+                ),
               ),
             ),
           );

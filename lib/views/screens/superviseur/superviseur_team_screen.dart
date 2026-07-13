@@ -3,7 +3,10 @@ import 'package:flutter/material.dart';
 import '../../../config/colors.dart';
 import '../../../models/dashboard_superviseur_model.dart';
 import 'superviseur_controller.dart';
+import 'superviseur_agent_details_screen.dart';
 import 'widgets/superviseur_recharge_wallet_sheet.dart';
+import '../../widgets/prosoc_resource_error_view.dart';
+import '../../widgets/prosoc_shimmer_loading.dart';
 
 class SuperviseurTeamScreen extends StatefulWidget {
   final SuperviseurController controller;
@@ -116,12 +119,32 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
 
   Widget _buildBody(bool isLoading, String? errorMessage) {
     if (isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.prosocGreen),
+      return const ProsocLoadingShimmer.list(itemCount: 5);
+    }
+
+    final hasAgents = _agents.isNotEmpty;
+    final hasError = errorMessage != null && !hasAgents;
+
+    if (hasError) {
+      return RefreshIndicator(
+        color: AppColors.prosocGreen,
+        onRefresh: () => widget.controller.load(force: true),
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+          children: [
+            SizedBox(height: MediaQuery.of(context).size.height * 0.12),
+            ProsocResourceErrorView(
+              message: errorMessage,
+              statusCode: widget.controller.errorStatusCode,
+              onRetry: () => widget.controller.load(force: true),
+            ),
+          ],
+        ),
       );
     }
 
-    if (_filtered.isEmpty && _agents.isEmpty) {
+    if (_filtered.isEmpty && !hasAgents) {
       final hierarchie = _hierarchie;
       return RefreshIndicator(
         color: AppColors.prosocGreen,
@@ -139,9 +162,9 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
               const SizedBox(height: 80),
               const Icon(Icons.groups_outlined, size: 64, color: Colors.grey),
               const SizedBox(height: 12),
-              Center(
+              const Center(
                 child: Text(
-                  errorMessage ?? 'Aucun agent dans votre équipe',
+                  'Aucun agent dans votre équipe',
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -337,7 +360,10 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
     final initial =
         agent.nomAgent.isNotEmpty ? agent.nomAgent[0].toUpperCase() : 'A';
 
-    return Container(
+    return InkWell(
+      onTap: agent.agentId > 0 ? () => _openAgentDetails(agent) : null,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -422,27 +448,60 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
             ),
           ],
           const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: agent.agentId > 0
-                  ? () => _openRechargeWallet(agent)
-                  : null,
-              icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
-              label: const Text('Recharger compte virtuel'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.prosocGreen,
-                side: BorderSide(
-                  color: AppColors.prosocGreen.withValues(alpha: 0.4),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: agent.agentId > 0
+                      ? () => _openAgentDetails(agent)
+                      : null,
+                  icon: const Icon(Icons.info_outline, size: 18),
+                  label: const Text('Voir détails'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.textPrimary,
+                    side: BorderSide(color: Colors.grey.shade300),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: agent.agentId > 0
+                      ? () => _openRechargeWallet(agent)
+                      : null,
+                  icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
+                  label: const Text('Recharger'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.prosocGreen,
+                    side: BorderSide(
+                      color: AppColors.prosocGreen.withValues(alpha: 0.4),
+                    ),
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
+      ),
+    ),
+    );
+  }
+
+  void _openAgentDetails(SuperviseurAgentPerformance agent) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SuperviseurAgentDetailsScreen(
+          agentId: agent.agentId,
+          agentNom: agent.nomAgent,
+        ),
       ),
     );
   }

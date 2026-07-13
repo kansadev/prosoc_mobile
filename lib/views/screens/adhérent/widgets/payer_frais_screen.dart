@@ -4,6 +4,7 @@ import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/adhesion_with_affilie_model.dart';
 import 'package:prosoc/models/frais_model.dart';
 import 'package:prosoc/models/wallet_agent_model.dart';
+import 'package:prosoc/utils/affilie_payment_modes.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/collecte_agent_resolver.dart';
 import 'package:prosoc/utils/collecte_montant_helper.dart';
@@ -24,6 +25,8 @@ class PayerFraisScreen extends StatefulWidget {
   final String screenTitle;
   final int? initialFraisId;
   final double? initialMontant;
+  /// Adhérent : Mobile Money / Carte. Agent ou percepteur : inclut compte virtuel.
+  final bool allowVirtualAccount;
 
   const PayerFraisScreen({
     super.key,
@@ -35,6 +38,7 @@ class PayerFraisScreen extends StatefulWidget {
     this.screenTitle = 'Payer un frais',
     this.initialFraisId,
     this.initialMontant,
+    this.allowVirtualAccount = false,
   });
 
   @override
@@ -42,18 +46,17 @@ class PayerFraisScreen extends StatefulWidget {
 }
 
 class _PayerFraisScreenState extends State<PayerFraisScreen> {
-  static const Map<String, String> _modesPaiement = {
-    'VIRTUAL_ACCOUNT': 'Compte virtuel',
-    'MOBILE_MONEY': 'Mobile money',
-    'CARTE_BANCAIRE': 'Carte',
-  };
+  Map<String, String> get _modesPaiement =>
+      AffiliePaymentModes.modesFor(
+        allowVirtualAccount: widget.allowVirtualAccount,
+      );
 
   List<Frais> _frais = [];
   bool _isLoadingFrais = false;
   String? _fraisError;
 
   int? _selectedFraisId;
-  String? _selectedModePaiement = 'VIRTUAL_ACCOUNT';
+  late String? _selectedModePaiement;
   String? _selectedDevise;
   int? _selectedDeviseId;
   int? _agentId;
@@ -65,15 +68,18 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
   final TextEditingController _telephonePaiementController =
       TextEditingController();
 
-  bool get _isMobileMoneyPayment => _selectedModePaiement == 'MOBILE_MONEY';
+  bool get _isMobileMoneyPayment =>
+      AffiliePaymentModes.isMobileMoney(_selectedModePaiement);
 
   bool get _isElectronicPayment =>
-      _selectedModePaiement == 'MOBILE_MONEY' ||
-      _selectedModePaiement == 'CARTE_BANCAIRE';
+      AffiliePaymentModes.isElectronic(_selectedModePaiement);
 
   @override
   void initState() {
     super.initState();
+    _selectedModePaiement = AffiliePaymentModes.defaultModeFor(
+      allowVirtualAccount: widget.allowVirtualAccount,
+    );
     final tel = widget.affilieTelephone?.trim();
     if (tel != null && tel.isNotEmpty) {
       _telephonePaiementController.text = tel;

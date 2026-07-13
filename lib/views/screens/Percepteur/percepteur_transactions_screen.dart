@@ -13,7 +13,13 @@ import '../../widgets/dashboard_segment_tab_bar.dart';
 // GET /api/DashboardPercepteur/evolution-transactions
 // ============================================
 class PercepteurTransactionsScreen extends StatefulWidget {
-  const PercepteurTransactionsScreen({super.key});
+  /// Masque le bouton retour lorsque l'écran est un onglet de navigation.
+  final bool embeddedInNavigation;
+
+  const PercepteurTransactionsScreen({
+    super.key,
+    this.embeddedInNavigation = false,
+  });
 
   @override
   State<PercepteurTransactionsScreen> createState() =>
@@ -148,10 +154,13 @@ class _PercepteurTransactionsScreenState
     return Scaffold(
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
-        leading: IconButton(
-          onPressed: () => Navigator.pop(context),
-          icon: const Icon(Icons.arrow_back_ios_rounded, size: 20),
-        ),
+        automaticallyImplyLeading: !widget.embeddedInNavigation,
+        leading: widget.embeddedInNavigation
+            ? null
+            : IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.arrow_back_ios_rounded, size: 20),
+              ),
         title: const Text(
           'Transactions',
           style: TextStyle(fontWeight: FontWeight.w700),

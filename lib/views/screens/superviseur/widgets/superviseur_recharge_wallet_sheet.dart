@@ -6,6 +6,7 @@ import '../../../../config/colors.dart';
 import '../../../../models/wallet_virtuel_agent_model.dart';
 import '../../../../utils/api_error_helper.dart';
 import '../../../widgets/prosoc_message_dialog.dart';
+import '../../../widgets/prosoc_resource_error_view.dart';
 
 /// Bottom sheet — recharge du compte virtuel d'un agent supervisé.
 class SuperviseurRechargeWalletSheet extends StatefulWidget {
@@ -50,6 +51,7 @@ class _SuperviseurRechargeWalletSheetState
   bool _isLoadingWallet = true;
   bool _isSubmitting = false;
   String? _walletError;
+  int? _walletErrorStatusCode;
 
   @override
   void initState() {
@@ -68,6 +70,7 @@ class _SuperviseurRechargeWalletSheetState
     setState(() {
       _isLoadingWallet = true;
       _walletError = null;
+      _walletErrorStatusCode = null;
     });
 
     final response = await ApiService.getWalletVirtuelAgent(widget.agentId);
@@ -83,9 +86,11 @@ class _SuperviseurRechargeWalletSheetState
 
     setState(() {
       _isLoadingWallet = false;
-      _walletError = ApiErrorHelper.messageForWalletVirtuelError(
+      _walletErrorStatusCode = response.statusCode;
+      _walletError = ApiErrorHelper.messageForWalletVirtuelRechargeError(
         statusCode: response.statusCode,
         serverMessage: response.message,
+        agentNom: widget.agentNom,
       );
     });
   }
@@ -98,8 +103,11 @@ class _SuperviseurRechargeWalletSheetState
       await ProsocMessageDialog.show(
         context,
         variant: ProsocMessageVariant.error,
-        title: 'Compte introuvable',
-        message: 'Impossible de recharger : compte virtuel non disponible.',
+        title: 'Compte virtuel indisponible',
+        message: ApiErrorHelper.messageForWalletVirtuelRechargeError(
+          statusCode: _walletErrorStatusCode ?? 404,
+          agentNom: widget.agentNom,
+        ),
       );
       return;
     }
@@ -167,17 +175,19 @@ class _SuperviseurRechargeWalletSheetState
   @override
   Widget build(BuildContext context) {
     final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final maxHeight = MediaQuery.sizeOf(context).height * 0.92;
 
     return Padding(
       padding: EdgeInsets.only(bottom: bottomInset),
       child: Container(
+        constraints: BoxConstraints(maxHeight: maxHeight),
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
         child: SafeArea(
           top: false,
-          child: Padding(
+          child: SingleChildScrollView(
             padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -228,22 +238,38 @@ class _SuperviseurRechargeWalletSheetState
   }
 
   Widget _buildWalletError() {
+    final isNotFound = _walletErrorStatusCode == 404;
+
     return Column(
       children: [
-        Icon(Icons.account_balance_wallet_outlined,
-            size: 48, color: Colors.grey.shade400),
-        const SizedBox(height: 12),
-        Text(
-          _walletError!,
-          textAlign: TextAlign.center,
-          style: TextStyle(color: Colors.grey.shade700),
+        ProsocResourceErrorView(
+          compact: true,
+          message: _walletError!,
+          statusCode: _walletErrorStatusCode,
+          icon: isNotFound
+              ? Icons.account_balance_wallet_outlined
+              : null,
+          onRetry: isNotFound ? null : _loadWallet,
+          retryLabel: 'Réessayer',
         ),
-        const SizedBox(height: 16),
-        OutlinedButton.icon(
-          onPressed: _loadWallet,
-          icon: const Icon(Icons.refresh),
-          label: const Text('Réessayer'),
-        ),
+        if (isNotFound) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Contactez l\'administrateur pour activer le compte virtuel '
+            'de ${widget.agentNom}.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 12,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Fermer'),
+          ),
+        ],
       ],
     );
   }
@@ -319,7 +345,8 @@ class _SuperviseurRechargeWalletSheetState
           const SizedBox(height: 12),
           TextFormField(
             controller: _observationController,
-            maxLines: 2,
+            maxLines: 1,
+            minLines: 1,
             textCapitalization: TextCapitalization.sentences,
             decoration: InputDecoration(
               labelText: 'Observation (optionnel)',

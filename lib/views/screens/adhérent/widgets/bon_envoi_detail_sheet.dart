@@ -82,6 +82,15 @@ class BonEnvoiDetailSheet extends StatelessWidget {
                     'Utilisation',
                     AppFormatters.formatDate(bon.dateUtilisation),
                   ),
+                if (bon.hasJetonLie) ...[
+                  _row(
+                    'Jeton médical',
+                    bon.jetonMedicalCode.isNotEmpty
+                        ? bon.jetonMedicalCode
+                        : '#${bon.jetonMedicalId}',
+                    color: AppColors.prosocGreen,
+                  ),
+                ],
                 const SizedBox(height: 20),
                 Center(
                   child: BonEnvoiQrView(

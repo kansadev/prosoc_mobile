@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../config/colors.dart';
 import '../../services/auth_service.dart';
+import 'auth/adherent_register_screen.dart';
 import '../../utils/api_error_helper.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -15,8 +15,6 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  static const String _googleLogoAsset = 'assets/svg/logo_google.svg';
-
   final _formKey = GlobalKey<FormState>();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -64,16 +62,6 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
-  }
-
-  void _onGoogleSignIn() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Text('Connexion Google — bientôt disponible'),
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
   }
 
   @override
@@ -273,62 +261,6 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
               ),
             ),
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(child: Divider(color: Colors.grey.shade300)),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Text(
-                    'ou',
-                    style: TextStyle(
-                      color: Colors.grey.shade500,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                Expanded(child: Divider(color: Colors.grey.shade300)),
-              ],
-            ),
-            const SizedBox(height: 24),
-            _buildGoogleButton(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildGoogleButton() {
-    return SizedBox(
-      height: 52,
-      child: OutlinedButton(
-        onPressed: _isLoading ? null : _onGoogleSignIn,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.textPrimary,
-          backgroundColor: Colors.white,
-          side: BorderSide(color: Colors.grey.shade300),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SvgPicture.asset(
-              _googleLogoAsset,
-              width: 24,
-              height: 24,
-              semanticsLabel: 'Google',
-            ),
-            const SizedBox(width: 12),
-            const Text(
-              'Continuer avec Google',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
           ],
         ),
       ),
@@ -379,7 +311,13 @@ class _LoginScreenState extends State<LoginScreen> {
           style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
         ),
         TextButton(
-          onPressed: () {},
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const AdherentRegisterScreen(),
+              ),
+            );
+          },
           style: TextButton.styleFrom(
             foregroundColor: AppColors.prosocGreen,
           ),

@@ -76,7 +76,7 @@ class WalletVirtuelAgentModel {
       );
 }
 
-/// Réponse POST /api/WalletVirtuelAgent/{id}/ajouter-solde
+/// Réponse PUT /api/WalletVirtuelAgent/{id}/ajouter-solde
 class WalletVirtuelAjouterSoldeResult {
   final WalletVirtuelAgentModel wallet;
   final double ancienSolde;

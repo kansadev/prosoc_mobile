@@ -4,6 +4,7 @@ import 'package:prosoc/config/api.dart';
 import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/prestation_model.dart';
 import 'package:prosoc/models/souscription_prestation_model.dart';
+import 'package:prosoc/utils/affilie_payment_modes.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/collecte_agent_resolver.dart';
 import 'package:prosoc/utils/collecte_montant_helper.dart';
@@ -17,6 +18,8 @@ class SouscriptionBottomSheet extends StatefulWidget {
   final String affilieNom;
   final String affiliePrenom;
   final String? affilieTelephone;
+  /// Adhérent : Mobile Money / Carte uniquement. Agent/percepteur : inclut compte virtuel.
+  final bool allowVirtualAccount;
 
   const SouscriptionBottomSheet({
     super.key,
@@ -24,6 +27,7 @@ class SouscriptionBottomSheet extends StatefulWidget {
     required this.affilieNom,
     required this.affiliePrenom,
     this.affilieTelephone,
+    this.allowVirtualAccount = false,
   });
 
   static Future<bool?> show(
@@ -32,6 +36,7 @@ class SouscriptionBottomSheet extends StatefulWidget {
     String affilieNom = '',
     String affiliePrenom = '',
     String? affilieTelephone,
+    bool allowVirtualAccount = false,
   }) {
     return showModalBottomSheet<bool>(
       context: context,
@@ -46,6 +51,7 @@ class SouscriptionBottomSheet extends StatefulWidget {
           affilieNom: affilieNom,
           affiliePrenom: affiliePrenom,
           affilieTelephone: affilieTelephone,
+          allowVirtualAccount: allowVirtualAccount,
         ),
       ),
     );
@@ -56,11 +62,10 @@ class SouscriptionBottomSheet extends StatefulWidget {
 }
 
 class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
-  static const Map<String, String> _modesPaiement = {
-    'VIRTUAL_ACCOUNT': 'Compte virtuel',
-    'MOBILE_MONEY': 'Mobile money',
-    'CARTE_BANCAIRE': 'Carte',
-  };
+  Map<String, String> get _modesPaiement =>
+      AffiliePaymentModes.modesFor(
+        allowVirtualAccount: widget.allowVirtualAccount,
+      );
 
   final _formKey = GlobalKey<FormState>();
   final _montantController = TextEditingController();
@@ -72,18 +77,21 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
   bool _isSubmitting = false;
   Prestation? _selectedPrestation;
   int? _agentId;
-  String? _selectedModePaiement = 'VIRTUAL_ACCOUNT';
+  String? _selectedModePaiement;
   double? _montantAttendu;
 
-  bool get _isMobileMoneyPayment => _selectedModePaiement == 'MOBILE_MONEY';
+  bool get _isMobileMoneyPayment =>
+      AffiliePaymentModes.isMobileMoney(_selectedModePaiement);
 
   bool get _isElectronicPayment =>
-      _selectedModePaiement == 'MOBILE_MONEY' ||
-      _selectedModePaiement == 'CARTE_BANCAIRE';
+      AffiliePaymentModes.isElectronic(_selectedModePaiement);
 
   @override
   void initState() {
     super.initState();
+    _selectedModePaiement = AffiliePaymentModes.defaultModeFor(
+      allowVirtualAccount: widget.allowVirtualAccount,
+    );
     final tel = widget.affilieTelephone?.trim();
     if (tel != null && tel.isNotEmpty) {
       _telephonePaiementController.text = tel;

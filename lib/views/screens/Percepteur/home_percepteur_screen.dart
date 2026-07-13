@@ -12,9 +12,11 @@ import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/wallet_agent_loader.dart';
 import 'package:prosoc/views/screens/at/new_adhesion_screen.dart';
 import 'dashboard_percepteur_screen.dart';
+import 'percepteur_encaissement_choice_sheet.dart';
 import 'percepteur_encaissement_screen.dart';
-import 'percepteur_transactions_screen.dart';
+import 'percepteur_retraits_screen.dart';
 import 'widgets/percepteur_wallet_overview_flip_card.dart';
+import '../../widgets/prosoc_shimmer_loading.dart';
 
 // ============================================
 // ÉCRAN D'ACCUEIL PERCEPTEUR
@@ -218,9 +220,7 @@ class _HomePercepteurScreenState extends State<HomePercepteurScreen> {
 
   Widget _buildBody() {
     if (_isLoading && _dashboard == null) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.prosocGreen),
-      );
+      return ProsocHomeShimmer.percepteur();
     }
 
     if (_errorMessage != null && _dashboard == null) {
@@ -603,11 +603,32 @@ class _HomePercepteurScreenState extends State<HomePercepteurScreen> {
         title: 'Encaisser',
         icon: Icons.add_circle,
         color: AppColors.prosocGreen,
+        onTap: () => PercepteurEncaissementChoiceSheet.show(context),
+      ),
+      _QuickService(
+        title: 'Souscription',
+        icon: Icons.medical_services_outlined,
+        color: Colors.purple,
         onTap: () {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => const PercepteurEncaissementScreen(),
+              builder: (context) => const PercepteurEncaissementScreen(
+                souscriptionOnly: true,
+              ),
+            ),
+          );
+        },
+      ),
+      _QuickService(
+        title: 'Retraits',
+        icon: Icons.pending_actions_outlined,
+        color: const Color(0xFFE65100),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const PercepteurRetraitsScreen(),
             ),
           );
         },
@@ -638,19 +659,6 @@ class _HomePercepteurScreenState extends State<HomePercepteurScreen> {
             context,
             MaterialPageRoute(
               builder: (context) => const DashboardPercepteurScreen(),
-            ),
-          );
-        },
-      ),
-      _QuickService(
-        title: 'Transactions',
-        icon: Icons.receipt_long_outlined,
-        color: Colors.orange,
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const PercepteurTransactionsScreen(),
             ),
           );
         },
@@ -716,11 +724,9 @@ class _HomePercepteurScreenState extends State<HomePercepteurScreen> {
 
   Widget _buildRecentActivity(BuildContext context) {
     if (_isLoadingTransactions && _transactions.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 24),
-        child: Center(
-          child: CircularProgressIndicator(color: AppColors.prosocGreen),
-        ),
+      return ProsocHomeShimmer.activityList(
+        context,
+        itemCount: 3,
       );
     }
 

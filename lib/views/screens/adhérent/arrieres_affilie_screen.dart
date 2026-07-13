@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:prosoc/config/api.dart';
 import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/arriere_affilie_model.dart';
+import 'package:prosoc/models/penalite_affilie_model.dart';
 import 'package:prosoc/services/auth_service.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/arriere_payment_navigator.dart';
+import 'package:prosoc/utils/cotisation_montant_helper.dart';
 import 'package:prosoc/utils/formatters.dart';
 import 'package:prosoc/views/widgets/prosoc_resource_error_view.dart';
 
@@ -17,6 +19,8 @@ class ArrieresAffilieScreen extends StatefulWidget {
   final String? affilieTelephone;
   final int? agentId;
   final int nombreDependants;
+  /// Agent ou percepteur : inclut compte virtuel pour l'encaissement.
+  final bool allowVirtualAccount;
 
   const ArrieresAffilieScreen({
     super.key,
@@ -27,6 +31,7 @@ class ArrieresAffilieScreen extends StatefulWidget {
     this.affilieTelephone,
     this.agentId,
     this.nombreDependants = 0,
+    this.allowVirtualAccount = false,
   });
 
   /// Arriérés de l'affilié connecté (`/api/arrieres-affilie/mes-arrieres`).
@@ -52,6 +57,7 @@ class ArrieresAffilieScreen extends StatefulWidget {
 
 class _ArrieresAffilieScreenState extends State<ArrieresAffilieScreen> {
   List<ArriereAffilieModel> _arrieres = [];
+  List<PenaliteAffilieModel> _penalites = [];
   bool _isLoading = true;
   String? _errorMessage;
   int? _errorStatusCode;
@@ -85,14 +91,32 @@ class _ArrieresAffilieScreenState extends State<ArrieresAffilieScreen> {
     });
 
     try {
-      final response = widget.useMesArrieres
-          ? await ApiService.getMesArrieresAffilie()
-          : await ApiService.getArrieresAffilie(widget.affilieId);
+      final arrieresFuture = widget.useMesArrieres
+          ? ApiService.getMesArrieresAffilie()
+          : ApiService.getArrieresAffilie(widget.affilieId);
+      final penalitesFuture = widget.useMesArrieres
+          ? ApiService.getMesPenalitesAffilie()
+          : Future.value(ApiResponse.success(const <PenaliteAffilieModel>[]));
+
+      final results = await Future.wait([arrieresFuture, penalitesFuture]);
+      final response = results[0] as ApiResponse<List<ArriereAffilieModel>>;
+      var penalitesResponse =
+          results[1] as ApiResponse<List<PenaliteAffilieModel>>;
+
       if (!mounted) return;
 
       if (response.success && response.data != null) {
+        var penalites = penalitesResponse.success
+            ? (penalitesResponse.data ?? [])
+            : <PenaliteAffilieModel>[];
+
+        if (!widget.useMesArrieres) {
+          penalites = await _loadPenalitesPourArrieres(response.data!);
+        }
+
         setState(() {
           _arrieres = response.data!;
+          _penalites = penalites;
           _isLoading = false;
         });
         return;
@@ -114,11 +138,53 @@ class _ArrieresAffilieScreenState extends State<ArrieresAffilieScreen> {
     }
   }
 
+  Future<List<PenaliteAffilieModel>> _loadPenalitesPourArrieres(
+    List<ArriereAffilieModel> arrieres,
+  ) async {
+    final impayes = arrieres.where((arriere) => arriere.estImpaye).toList();
+    if (impayes.isEmpty) return const [];
+
+    final responses = await Future.wait(
+      impayes.map(
+        (arriere) => ApiService.getPenalitesByArriere(arriere.idArrieresAffilie),
+      ),
+    );
+
+    final penalites = <PenaliteAffilieModel>[];
+    for (final response in responses) {
+      if (response.success && response.data != null) {
+        penalites.addAll(
+          response.data!.where((penalite) => penalite.estPayable),
+        );
+      }
+    }
+    return penalites;
+  }
+
+  List<PenaliteAffilieModel> _penalitesPourArriere(int arrieresAffilieId) {
+    return CotisationMontantHelper.penalitesPourArriere(
+      _penalites,
+      arrieresAffilieId,
+    );
+  }
+
+  double _resteAvecPenalites(ArriereAffilieModel arriere) {
+    return CotisationMontantHelper.resteArriereAvecPenalites(
+      restAPayer: arriere.restAPayer,
+      montantAttendu: arriere.montantAttendu,
+      penalites: _penalites,
+      arrieresAffilieId: arriere.idArrieresAffilie,
+    );
+  }
+
   int get _impayesCount => _arrieres.where((a) => a.estImpaye).length;
 
   double get _totalResteAPayer => _arrieres
       .where((a) => a.estImpaye)
-      .fold<double>(0, (sum, a) => sum + a.restAPayer);
+      .fold<double>(0, (sum, a) => sum + _resteAvecPenalites(a));
+
+  double get _totalPenalitesDues =>
+      CotisationMontantHelper.montantPenalitesDues(_penalites);
 
   Future<void> _payerArriere(ArriereAffilieModel arriere) async {
     final affilieId = _effectiveAffilieId > 0
@@ -143,6 +209,7 @@ class _ArrieresAffilieScreenState extends State<ArrieresAffilieScreen> {
       affilieTelephone: widget.affilieTelephone,
       agentId: widget.agentId,
       nombreDependants: widget.nombreDependants,
+      allowVirtualAccount: widget.allowVirtualAccount,
     );
 
     if (paid == true && mounted) {
@@ -259,7 +326,8 @@ class _ArrieresAffilieScreenState extends State<ArrieresAffilieScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '${_arrieres.length} obligation${_arrieres.length > 1 ? 's' : ''} au total',
+                  '${_arrieres.length} obligation${_arrieres.length > 1 ? 's' : ''} au total'
+                  '${_totalPenalitesDues > 0 ? ' · pénalités incluses' : ''}',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.88),
                     fontSize: 12,
@@ -294,6 +362,11 @@ class _ArrieresAffilieScreenState extends State<ArrieresAffilieScreen> {
     final isImpaye = arriere.estImpaye;
     final statusColor =
         isImpaye ? AppColors.warningColor : AppColors.prosocGreen;
+    final penalitesArriere = _penalitesPourArriere(arriere.idArrieresAffilie);
+    final resteTotal = _resteAvecPenalites(arriere);
+    final penalitesLabel = CotisationMontantHelper.libellePenalites(
+      penalites: penalitesArriere,
+    );
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -369,11 +442,24 @@ class _ArrieresAffilieScreenState extends State<ArrieresAffilieScreen> {
               ),
               _amountColumn(
                 'Reste',
-                AppFormatters.formatCurrencyDollar(arriere.restAPayer),
+                AppFormatters.formatCurrencyDollar(
+                  penalitesArriere.isNotEmpty ? resteTotal : arriere.restAPayer,
+                ),
                 highlight: isImpaye,
               ),
             ],
           ),
+          if (penalitesLabel != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              penalitesLabel,
+              style: TextStyle(
+                fontSize: 11,
+                color: AppColors.warningColor.withValues(alpha: 0.9),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
           if (arriere.dateEcheance != null) ...[
             const SizedBox(height: 8),
             Text(
@@ -397,7 +483,7 @@ class _ArrieresAffilieScreenState extends State<ArrieresAffilieScreen> {
                 ),
                 icon: const Icon(Icons.payments_outlined, size: 18),
                 label: Text(
-                  'Payer ${AppFormatters.formatCurrencyDollar(arriere.restAPayer)}',
+                  'Payer ${AppFormatters.formatCurrencyDollar(resteTotal)}',
                 ),
               ),
             ),

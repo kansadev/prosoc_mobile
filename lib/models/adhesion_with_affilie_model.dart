@@ -14,6 +14,8 @@ class AdhesionApiValues {
   static const typeCollecteSouscriptionCollecte = 'Souscription';
   static const statutDossierComplet = 'COMPLET';
   static const statutDossierEnAttente = 'En Attente';
+  /// Adhésion en ligne (accès libre) — spec PROCESSUS.
+  static const statutDossierEnLigne = 'EN ATTENTE';
 }
 
 class AdhesionWithAffilieRequest {
@@ -40,7 +42,7 @@ class AdhesionWithAffilieRequest {
   final bool affilieStatut;
   final String? statutDossier;
   final int typeAdhesionId;
-  final int agentId;
+  final int? agentId;
   final bool adhesionStatut;
   final List<CollecteRequest>? collectes;
   final List<DependantRequest>? dependants;
@@ -70,7 +72,7 @@ class AdhesionWithAffilieRequest {
     required this.affilieStatut,
     this.statutDossier,
     required this.typeAdhesionId,
-    required this.agentId,
+    this.agentId,
     required this.adhesionStatut,
     this.collectes,
     this.dependants,
@@ -87,7 +89,6 @@ class AdhesionWithAffilieRequest {
       'provinceResidence': provinceResidence,
       'affilieStatut': affilieStatut,
       'typeAdhesionId': typeAdhesionId,
-      'agentId': agentId,
       'adhesionStatut': adhesionStatut,
       'collectes': (collectes ?? const <CollecteRequest>[])
           .map((c) => c.toJson())
@@ -121,6 +122,7 @@ class AdhesionWithAffilieRequest {
       payload['carteIdentiteContentType'] = carteIdentiteContentType;
     }
     if (statutDossier != null) payload['statutDossier'] = statutDossier;
+    if (agentId != null) payload['agentId'] = agentId;
 
     return payload;
   }

@@ -5,9 +5,11 @@ import '../../../models/wallet_agent_model.dart';
 import '../../../utils/api_error_helper.dart';
 import '../../../utils/wallet_agent_loader.dart';
 import 'withdrawal_screen.dart';
-import 'token_screen.dart';
+import '../Percepteur/percepteur_retraits_screen.dart';
 import 'wallet_mouvements_screen.dart';
 import 'collecte_historique_screen.dart';
+import 'my_network_screen.dart';
+import '../Percepteur/percepteur_transactions_screen.dart';
 import '../../widgets/prosoc_resource_error_view.dart';
 import '../../widgets/wallet_devise_switch.dart';
 
@@ -42,6 +44,8 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   bool get _hasAnyWallet => _availableDeviseIds.isNotEmpty;
+
+  bool get _isPercepteur => AuthService.isPercepteur;
 
   @override
   void initState() {
@@ -128,9 +132,14 @@ class _WalletScreenState extends State<WalletScreen> {
   }
 
   List<Widget> _walletSlivers(BuildContext context) => [
-        SliverToBoxAdapter(
-          child: _buildHeader(context),
-        ),
+        if (!_isPercepteur)
+          SliverToBoxAdapter(
+            child: _buildHeader(context),
+          ),
+        if (_isPercepteur)
+          const SliverToBoxAdapter(
+            child: SizedBox(height: 8),
+          ),
         SliverToBoxAdapter(
           child: _buildWalletCard(),
         ),
@@ -145,26 +154,74 @@ class _WalletScreenState extends State<WalletScreen> {
         ),
       ];
 
+  PreferredSizeWidget? _buildAppBar() {
+    if (!_isPercepteur) return null;
+
+    return AppBar(
+      title: const Text(
+        'Mon Wallet',
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          color: AppColors.textPrimary,
+        ),
+      ),
+      backgroundColor: Colors.white,
+      surfaceTintColor: Colors.white,
+      elevation: 0,
+      foregroundColor: AppColors.textPrimary,
+      actions: [
+        IconButton(
+          tooltip: 'Historique',
+          onPressed: _openHistorique,
+          icon: const Icon(Icons.history_rounded),
+        ),
+      ],
+    );
+  }
+
+  void _openHistorique() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => _isPercepteur
+            ? const PercepteurTransactionsScreen()
+            : const CollecteHistoriqueScreen(),
+      ),
+    );
+  }
+
+  void _openMonReseau() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const MyNetworkScreen(),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final body = SafeArea(
+      child: _criticalErrorMessage != null
+          ? _buildRefreshableBody([
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: _buildErrorView(),
+              ),
+            ])
+          : _isLoading && !_hasAnyWallet
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.prosocGreen,
+                  ),
+                )
+              : _buildRefreshableBody(_walletSlivers(context)),
+    );
+
     return Scaffold(
       backgroundColor: Colors.white,
-      body: SafeArea(
-        child: _criticalErrorMessage != null
-            ? _buildRefreshableBody([
-                SliverFillRemaining(
-                  hasScrollBody: false,
-                  child: _buildErrorView(),
-                ),
-              ])
-            : _isLoading && !_hasAnyWallet
-                ? const Center(
-                    child: CircularProgressIndicator(
-                      color: AppColors.prosocGreen,
-                    ),
-                  )
-                : _buildRefreshableBody(_walletSlivers(context)),
-      ),
+      appBar: _buildAppBar(),
+      body: body,
     );
   }
 
@@ -325,52 +382,83 @@ class _WalletScreenState extends State<WalletScreen> {
             ),
           ),
           const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: [
-              _buildActionButton(
-                icon: Icons.account_balance_wallet,
-                label: 'Retrait',
-                color: AppColors.prosocGreen,
-                onTap: () => _openWithdrawalScreen(context),
-              ),
-              _buildActionButton(
-                icon: Icons.generating_tokens_rounded,
-                label: 'Jeton',
-                color: AppColors.prosocGreen,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const TokenScreen()),
-                  );
-                },
-              ),
-              _buildActionButton(
-                icon: Icons.sync_alt_rounded,
-                label: 'Mouvement',
-                color: AppColors.prosocGreen,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (context) => const WalletMovementsScreen()),
-                  );
-                },
-              ),
-              _buildActionButton(
-                icon: Icons.history_rounded,
-                label: 'Historique',
-                color: AppColors.prosocGreen,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const CollecteHistoriqueScreen(),
-                    ),
-                  );
-                },
-              ),
-            ],
-          ),
+          if (_isPercepteur)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildActionButton(
+                  icon: Icons.pending_actions_outlined,
+                  label: 'Retraits agents',
+                  color: const Color(0xFFE65100),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const PercepteurRetraitsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                if (AuthService.isAgentTerrain)
+                  _buildActionButton(
+                    icon: Icons.account_balance_wallet,
+                    label: 'Ma demande',
+                    color: AppColors.prosocGreen,
+                    onTap: () => _openWithdrawalScreen(context),
+                  ),
+                _buildActionButton(
+                  icon: Icons.sync_alt_rounded,
+                  label: 'Mouvement',
+                  color: AppColors.prosocGreen,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const WalletMovementsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _buildActionButton(
+                  icon: Icons.people_outline,
+                  label: 'Mon réseau',
+                  color: AppColors.prosocGreen,
+                  onTap: _openMonReseau,
+                ),
+              ],
+            )
+          else ...[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _buildActionButton(
+                  icon: Icons.account_balance_wallet,
+                  label: 'Retrait',
+                  color: AppColors.prosocGreen,
+                  onTap: () => _openWithdrawalScreen(context),
+                ),
+                _buildActionButton(
+                  icon: Icons.sync_alt_rounded,
+                  label: 'Mouvement',
+                  color: AppColors.prosocGreen,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const WalletMovementsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _buildActionButton(
+                  icon: Icons.history_rounded,
+                  label: 'Historique',
+                  color: AppColors.prosocGreen,
+                  onTap: _openHistorique,
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

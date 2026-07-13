@@ -65,8 +65,12 @@ class DemandeBonEnvoiModel {
       statutDemande: json['statutDemande']?.toString() ?? '',
       bonEnvoiId: _asInt(json['bonEnvoiId']),
       bonEnvoiNumero: json['bonEnvoiNumero']?.toString() ?? '',
-      jetonMedicalId: _asInt(json['jetonMedicalId']),
-      jetonMedicalCode: json['jetonMedicalCode']?.toString() ?? '',
+      jetonMedicalId: _asInt(
+        json['jetonMedicalId'] ?? json['JetonMedicalId'],
+      ),
+      jetonMedicalCode: json['jetonMedicalCode']?.toString() ??
+          json['JetonMedicalCode']?.toString() ??
+          '',
       qrCodePayload: json['qrCodePayload']?.toString() ?? '',
       qrCodeImageBase64: json['qrCodeImageBase64']?.toString() ?? '',
       dateCreation: _parseDate(json['dateCreation']),
@@ -74,6 +78,28 @@ class DemandeBonEnvoiModel {
       statut: _asBool(json['statut'], defaultValue: true),
     );
   }
+
+  bool get isEnAttente {
+    final s = statutDemande.trim().toUpperCase();
+    return s.contains('ATTENTE') || s.contains('PENDING') || s.isEmpty;
+  }
+
+  bool get isValidee {
+    final s = statutDemande.trim().toUpperCase();
+    return s.contains('VALID') || s.contains('APPROUV') || hasCoupleBonJeton;
+  }
+
+  bool get isTraitee {
+    final s = statutDemande.trim().toUpperCase();
+    return s.contains('TRAIT') ||
+        s.contains('UTILIS') ||
+        s.contains('CLOTUR');
+  }
+
+  bool get hasCoupleBonJeton => bonEnvoiId > 0 && jetonMedicalId > 0;
+
+  bool get hasQr =>
+      qrCodeImageBase64.trim().isNotEmpty || qrCodePayload.trim().isNotEmpty;
 
   static int _asInt(dynamic value, [int fallback = 0]) {
     if (value is int) return value;

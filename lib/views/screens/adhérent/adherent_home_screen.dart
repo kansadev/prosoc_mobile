@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
-import 'package:shimmer/shimmer.dart';
 
 import '../../../config/api.dart';
 import '../../../config/colors.dart';
 import '../../../models/dashboard_affilie_model.dart';
 import '../../../models/arriere_affilie_model.dart';
+import '../../../models/penalite_affilie_model.dart';
 import '../../../services/auth_service.dart';
 import '../../../utils/api_error_helper.dart';
+import '../../../utils/cotisation_montant_helper.dart';
 import '../../../utils/formatters.dart';
 import '../../widgets/adherent_cotisations_chart.dart';
+import '../../widgets/prosoc_shimmer_loading.dart';
 import '../../widgets/year_picker_sheet.dart';
+import '../../../widgets/souscription_bottom_sheet.dart';
 import 'arrieres_affilie_screen.dart';
 
 /// Accueil / dashboard affilié — données `/api/DashboardAffilie/resume/{affilieId}`.
@@ -34,6 +37,7 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
   List<DashboardAffilieCotisation> _cotisationsRecentes = [];
   List<DashboardAffilieCotisation> _cotisationsPeriode = [];
   List<ArriereAffilieModel> _mesArrieres = [];
+  List<PenaliteAffilieModel> _mesPenalites = [];
   bool _isLoading = true;
   bool _loadingCotisations = false;
   bool _loadingArrieres = false;
@@ -76,6 +80,7 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           mois: _filterMois,
         ),
         ApiService.getMesArrieresAffilie(),
+        ApiService.getMesPenalitesAffilie(),
       ]);
 
       if (!mounted) return;
@@ -88,6 +93,8 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           results[2] as ApiResponse<List<DashboardAffilieCotisation>>;
       final arrieresResponse =
           results[3] as ApiResponse<List<ArriereAffilieModel>>;
+      final penalitesResponse =
+          results[4] as ApiResponse<List<PenaliteAffilieModel>>;
 
       if (resumeResponse.success && resumeResponse.data != null) {
         setState(() {
@@ -101,6 +108,9 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           _mesArrieres = arrieresResponse.success
               ? (arrieresResponse.data ?? [])
               : _mesArrieres;
+          _mesPenalites = penalitesResponse.success
+              ? (penalitesResponse.data ?? [])
+              : _mesPenalites;
           _errorMessage = null;
           _isLoading = false;
           _loadingCotisations = false;
@@ -191,7 +201,17 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
 
   double get _arrieresTotalReste => _mesArrieres
       .where((arriere) => arriere.estImpaye)
-      .fold<double>(0, (sum, arriere) => sum + arriere.restAPayer);
+      .fold<double>(
+        0,
+        (sum, arriere) =>
+            sum +
+            CotisationMontantHelper.resteArriereAvecPenalites(
+              restAPayer: arriere.restAPayer,
+              montantAttendu: arriere.montantAttendu,
+              penalites: _mesPenalites,
+              arrieresAffilieId: arriere.idArrieresAffilie,
+            ),
+      );
 
   void _openMesArrieres() {
     final names = _splitDisplayName();
@@ -258,11 +278,7 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
 
   Widget _buildBody() {
     if (_isLoading && _data == null) {
-      return ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(20),
-        children: [_buildShimmer()],
-      );
+      return ProsocHomeShimmer.adherent();
     }
 
     if (_errorMessage != null && _data == null) {
@@ -486,11 +502,7 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
               ),
             ),
             if (_loadingCotisations)
-              const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
+              prosocLoadingInline(size: 18),
           ],
         ),
         const SizedBox(height: 8),
@@ -692,56 +704,101 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
   }
 
   Widget _buildQuickActions() {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _quickAction(
-            Icons.add_circle_outline,
-            'Payer',
-            AppColors.prosocGreen,
-            widget.onPayCotisation,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _quickAction(
+                Icons.add_circle_outline,
+                'Payer',
+                AppColors.prosocGreen,
+                widget.onPayCotisation,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _quickAction(
+                Icons.medical_services_outlined,
+                'Souscription',
+                Colors.purple,
+                _openSouscriptionPrestation,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _quickAction(
-            Icons.receipt_long_outlined,
-            'Demande Bon',
-            Colors.blue,
-            widget.onOpenDemandeBon,
-          ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _quickAction(
-            Icons.people,
-            'Dépendants',
-            Colors.orange,
-            () => widget.onOpenDependants?.call(),
-          ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _quickAction(
+                Icons.receipt_long_outlined,
+                'Demande Bon',
+                Colors.blue,
+                widget.onOpenDemandeBon,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _quickAction(
+                Icons.people,
+                'Dépendants',
+                Colors.orange,
+                () => widget.onOpenDependants?.call(),
+              ),
+            ),
+          ],
         ),
       ],
     );
   }
 
-  Widget _buildArrieresSection() {
-    if (_loadingArrieres && _mesArrieres.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.grey.shade200),
-        ),
-        child: const Center(
-          child: SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          ),
+  Future<void> _openSouscriptionPrestation() async {
+    final affilieId = AuthService.affilieId;
+    if (affilieId == null || affilieId <= 0) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profil affilié introuvable.'),
+          backgroundColor: AppColors.errorColor,
         ),
       );
+      return;
+    }
+
+    final info = _data?.informations;
+    final nomComplet = info?.nomComplet ??
+        AuthService.currentUser?.utilisateur.nomComplet ??
+        '';
+    final (prenom, nom) = _splitNomComplet(nomComplet);
+    final telephone = info?.telephone.isNotEmpty == true
+        ? info!.telephone
+        : AuthService.currentUser?.utilisateur.telephone;
+
+    final created = await SouscriptionBottomSheet.show(
+      context,
+      affilieId: affilieId,
+      affilieNom: nom,
+      affiliePrenom: prenom,
+      affilieTelephone: telephone,
+      allowVirtualAccount: false,
+    );
+
+    if (created == true && mounted) {
+      await _loadDashboard(silent: _data != null);
+    }
+  }
+
+  (String prenom, String nom) _splitNomComplet(String nomComplet) {
+    final parts = nomComplet.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty) return ('', '');
+    if (parts.length == 1) return (parts.first, '');
+    return (parts.first, parts.sublist(1).join(' '));
+  }
+
+  Widget _buildArrieresSection() {
+    if (_loadingArrieres && _mesArrieres.isEmpty) {
+      return ProsocHomeShimmer.sectionCard(context);
     }
 
     final impayes = _arrieresImpayesCount;
@@ -1011,48 +1068,6 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
               backgroundColor: AppColors.prosocGreen,
             ),
             child: const Text('Réessayer'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildShimmer() {
-    return Shimmer.fromColors(
-      baseColor: Colors.grey.shade300,
-      highlightColor: Colors.grey.shade100,
-      child: Column(
-        children: [
-          Container(
-            height: 140,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(16),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Container(
-                  height: 90,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Container(
-                  height: 90,
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                ),
-              ),
-            ],
           ),
         ],
       ),

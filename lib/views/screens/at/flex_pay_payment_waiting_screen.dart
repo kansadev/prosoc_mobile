@@ -4,13 +4,13 @@ import 'package:flutter/material.dart';
 
 import '../../../config/colors.dart';
 import '../../../models/adhesion_with_affilie_model.dart';
+import '../../../services/flex_pay_signalr_service.dart';
 import '../../../utils/formatters.dart';
 
 /// Page dédiée pendant la validation FlexPay (Mobile Money, etc.).
 ///
-/// TODO(SignalR) : s'abonner au hub temps réel avec [idCollecteEnAttente]
-/// pour fermer automatiquement cet écran en cas de succès ou d'échec.
-/// Le polling HTTP a été retiré — en attendant, l'agent confirme manuellement.
+/// SignalR : via [FlexPaySignalRService] (no-op tant que `signalr_netcore`
+/// n'est pas intégré). L'agent confirme manuellement en attendant.
 class FlexPayPaymentWaitingScreen extends StatefulWidget {
   const FlexPayPaymentWaitingScreen({
     super.key,
@@ -35,12 +35,29 @@ class _FlexPayPaymentWaitingScreenState
   void initState() {
     super.initState();
     _scheduleExpiryCheck();
+    _connectSignalR();
   }
 
   @override
   void dispose() {
     _expiryTimer?.cancel();
+    FlexPaySignalRService.instance.disconnect();
     super.dispose();
+  }
+
+  Future<void> _connectSignalR() async {
+    final collecteId = widget.payment.idCollecteEnAttente;
+    if (collecteId == null || collecteId.isEmpty) return;
+
+    await FlexPaySignalRService.instance.connect(
+      idCollecteEnAttente: collecteId,
+      onUpdated: (update) {
+        if (!mounted) return;
+        if (update.success) {
+          _onManualPaymentConfirmed();
+        }
+      },
+    );
   }
 
   void _scheduleExpiryCheck() {

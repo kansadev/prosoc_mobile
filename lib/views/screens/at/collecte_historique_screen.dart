@@ -10,6 +10,7 @@ import 'package:prosoc/utils/formatters.dart';
 import 'package:prosoc/views/widgets/dashboard_segment_tab_bar.dart';
 import 'package:prosoc/views/widgets/empty_state_widget.dart';
 import 'package:prosoc/views/widgets/prosoc_resource_error_view.dart';
+import 'package:prosoc/views/widgets/prosoc_shimmer_loading.dart';
 
 /// Historique des collectes agent.
 /// - `GET /api/Collecte/by-agent/{agentId}` (onglet Tous)
@@ -192,9 +193,7 @@ class _CollecteHistoriqueScreenState extends State<CollecteHistoriqueScreen>
 
   Widget _buildBody() {
     if (_isLoading && _collectes.isEmpty) {
-      return const Center(
-        child: CircularProgressIndicator(color: AppColors.prosocGreen),
-      );
+      return const ProsocLoadingShimmer.list(itemCount: 6);
     }
 
     if (_error != null && _collectes.isEmpty) {
@@ -244,14 +243,7 @@ class _CollecteHistoriqueScreenState extends State<CollecteHistoriqueScreen>
             left: 0,
             right: 0,
             child: Center(
-              child: SizedBox(
-                width: 24,
-                height: 24,
-                child: CircularProgressIndicator(
-                  color: AppColors.prosocGreen,
-                  strokeWidth: 2.5,
-                ),
-              ),
+              child: ProsocLoadingShimmer.inline(size: 28),
             ),
           ),
       ],
@@ -286,25 +278,28 @@ class _CollecteCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final statutColor = _statutColor(collecte.statutPaiement);
     final date = collecte.dateCollecte ?? collecte.dateCreation;
+    const tileColor = Colors.white;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: tileColor,
+      clipBehavior: Clip.antiAlias,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        side: BorderSide(color: Colors.grey.shade200),
       ),
       child: Theme(
-        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        data: Theme.of(context).copyWith(
+          dividerColor: Colors.transparent,
+          splashColor: AppColors.prosocGreen.withValues(alpha: 0.08),
+          highlightColor: AppColors.prosocGreen.withValues(alpha: 0.04),
+        ),
         child: ExpansionTile(
+          backgroundColor: tileColor,
+          collapsedBackgroundColor: tileColor,
           tilePadding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          iconColor: AppColors.prosocGreen,
+          collapsedIconColor: Colors.grey.shade600,
           title: Row(
             children: [
               Expanded(

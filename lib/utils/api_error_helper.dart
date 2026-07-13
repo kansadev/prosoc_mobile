@@ -135,6 +135,32 @@ class ApiErrorHelper {
     );
   }
 
+  /// Recharge compte virtuel d'un agent (superviseur).
+  static String messageForWalletVirtuelRechargeError({
+    int? statusCode,
+    String? serverMessage,
+    String? agentNom,
+  }) {
+    final agentLabel = agentNom?.trim().isNotEmpty == true
+        ? agentNom!.trim()
+        : 'cet agent';
+
+    if (statusCode == 404) {
+      return 'L\'agent $agentLabel n\'a pas encore de compte virtuel. '
+          'La recharge n\'est pas possible tant que ce compte n\'a pas été '
+          'créé par l\'administration Prosoc.';
+    }
+
+    final fromServer = _usableBusinessDetail(serverMessage);
+    if (fromServer != null) return fromServer;
+
+    return messageForApiFailure(
+      statusCode: statusCode,
+      serverDetail: serverMessage,
+      fallback: 'Impossible de charger le compte virtuel de $agentLabel.',
+    );
+  }
+
   static String messageForWalletMouvementsError({
     int? statusCode,
     String? serverMessage,
@@ -145,6 +171,86 @@ class ApiErrorHelper {
       notFoundMessage: 'Aucun mouvement disponible pour le moment.',
       fallback: 'Impossible de charger les mouvements.',
     );
+  }
+
+  /// Paiement jeton retrait agent — POST /api/RetraitAgent/utiliser-jeton
+  static String messageForUtiliserJetonRetraitError({
+    int? statusCode,
+    String? serverMessage,
+  }) {
+    final fromServer = _usableBusinessDetail(serverMessage);
+    if (fromServer != null) return fromServer;
+
+    switch (statusCode) {
+      case 403:
+        return 'Paiement refusé : votre compte n\'est pas habilité à valider '
+            'ce jeton de retrait au guichet. '
+            'Vérifiez que le rôle caissier est bien activé sur votre profil, '
+            'ou contactez l\'administrateur Prosoc.';
+      case 404:
+        return 'Jeton introuvable. Il a peut-être déjà été utilisé ou annulé.';
+      case 409:
+        return 'Ce jeton a déjà été payé ou la demande n\'est plus éligible.';
+      case 400:
+        return 'Données du jeton invalides. Vérifiez le code et réessayez.';
+      case 401:
+        return userFacingMessage(statusCode: 401);
+      default:
+        return messageForApiFailure(
+          statusCode: statusCode,
+          serverDetail: serverMessage,
+          fallback: 'Impossible de valider le paiement du jeton.',
+        );
+    }
+  }
+
+  /// Équipe superviseur — KPIs, hiérarchie, dashboard.
+  static String messageForSuperviseurTeamError({
+    int? statusCode,
+    String? serverMessage,
+  }) {
+    if (_isSuperviseurCommuneConfigurationError(serverMessage)) {
+      return 'Votre compte superviseur n\'est pas encore rattaché à une commune. '
+          'La liste d\'équipe est indisponible tant que cette affectation '
+          'n\'a pas été configurée par l\'administration. '
+          'Contactez le support Prosoc.';
+    }
+
+    final fromServer = _usableBusinessDetail(serverMessage);
+    if (fromServer != null) return fromServer;
+
+    switch (statusCode) {
+      case 403:
+        return 'Vous n\'avez pas accès aux données de cette équipe.';
+      case 404:
+        return 'Aucune équipe trouvée pour votre profil superviseur.';
+      default:
+        return messageForApiFailure(
+          statusCode: statusCode,
+          serverDetail: serverMessage,
+          fallback: 'Impossible de charger votre équipe.',
+        );
+    }
+  }
+
+  static bool _isSuperviseurCommuneConfigurationError(String? serverMessage) {
+    if (serverMessage == null || serverMessage.trim().isEmpty) return false;
+    final normalized = serverMessage.toLowerCase();
+    return normalized.contains('non titulaire d\'une commune') ||
+        normalized.contains('hierarchie legacy') ||
+        normalized.contains('superviseurid n\'est plus support');
+  }
+
+  /// Détail serveur exploitable (hors messages génériques HTTP / 500).
+  static String? _usableBusinessDetail(String? serverMessage) {
+    if (serverMessage == null || serverMessage.trim().isEmpty) return null;
+    final trimmed = serverMessage.trim();
+    if (isOpaqueServerDetail(trimmed)) return null;
+    if (isGenericHttpProblemTitle(trimmed)) return null;
+    if (trimmed.startsWith('Erreur serveur (')) return null;
+    const genericAuth = {'non autorisé', 'action non autorisée.', 'forbidden'};
+    if (genericAuth.contains(trimmed.toLowerCase())) return null;
+    return trimmed;
   }
 
   /// Extrait les messages métier d'une réponse JSON d'erreur API.

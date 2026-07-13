@@ -14,6 +14,7 @@ class SuperviseurController extends ChangeNotifier {
   bool isLoading = false;
   bool hasLoaded = false;
   String? errorMessage;
+  int? errorStatusCode;
 
   Future<void> load({bool force = false}) async {
     if (isLoading) return;
@@ -28,6 +29,7 @@ class SuperviseurController extends ChangeNotifier {
 
     isLoading = true;
     errorMessage = null;
+    errorStatusCode = null;
     notifyListeners();
 
     try {
@@ -53,13 +55,34 @@ class SuperviseurController extends ChangeNotifier {
       if (dashboardResponse.success) dashboard = dashboardResponse.data;
       if (hierarchieResponse.success) hierarchie = hierarchieResponse.data;
 
-      if (!kpisResponse.success &&
-          !dashboardResponse.success &&
-          !hierarchieResponse.success) {
-        errorMessage = hierarchieResponse.message ??
-            kpisResponse.message ??
-            dashboardResponse.message ??
-            'Impossible de charger les données superviseur.';
+      final hasAnyData = kpis != null || dashboard != null || hierarchie != null;
+      if (!hasAnyData) {
+        final failed = [
+          kpisResponse,
+          dashboardResponse,
+          hierarchieResponse,
+        ].where((r) => !r.success).toList();
+
+        if (failed.isNotEmpty) {
+          final primary = failed.firstWhere(
+            (r) => r == hierarchieResponse,
+            orElse: () => failed.first,
+          );
+          final rawMessage = [
+            hierarchieResponse.message,
+            kpisResponse.message,
+            dashboardResponse.message,
+          ].whereType<String>().firstWhere(
+                (m) => m.trim().isNotEmpty,
+                orElse: () => 'Impossible de charger les données superviseur.',
+              );
+
+          errorStatusCode = primary.statusCode;
+          errorMessage = ApiErrorHelper.messageForSuperviseurTeamError(
+            statusCode: primary.statusCode,
+            serverMessage: rawMessage,
+          );
+        }
       }
 
       hasLoaded = true;

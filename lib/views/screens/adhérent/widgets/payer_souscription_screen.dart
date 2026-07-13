@@ -5,6 +5,7 @@ import 'package:prosoc/models/adhesion_with_affilie_model.dart';
 import 'package:prosoc/models/prestation_model.dart';
 import 'package:prosoc/models/souscription_prestation_model.dart';
 import 'package:prosoc/models/wallet_agent_model.dart';
+import 'package:prosoc/utils/affilie_payment_modes.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/collecte_agent_resolver.dart';
 import 'package:prosoc/utils/collecte_montant_helper.dart';
@@ -24,6 +25,8 @@ class PayerSouscriptionScreen extends StatefulWidget {
   final String screenTitle;
   final int? initialSouscriptionPrestationId;
   final double? initialMontant;
+  /// Adhérent : Mobile Money / Carte. Agent ou percepteur : inclut compte virtuel.
+  final bool allowVirtualAccount;
 
   const PayerSouscriptionScreen({
     super.key,
@@ -35,6 +38,7 @@ class PayerSouscriptionScreen extends StatefulWidget {
     this.screenTitle = 'Payer une souscription',
     this.initialSouscriptionPrestationId,
     this.initialMontant,
+    this.allowVirtualAccount = false,
   });
 
   @override
@@ -43,11 +47,10 @@ class PayerSouscriptionScreen extends StatefulWidget {
 }
 
 class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
-  static const Map<String, String> _modesPaiement = {
-    'VIRTUAL_ACCOUNT': 'Compte virtuel',
-    'MOBILE_MONEY': 'Mobile money',
-    'CARTE_BANCAIRE': 'Carte',
-  };
+  Map<String, String> get _modesPaiement =>
+      AffiliePaymentModes.modesFor(
+        allowVirtualAccount: widget.allowVirtualAccount,
+      );
 
   List<SouscriptionPrestationModel> _souscriptions = [];
   Map<int, Prestation> _prestationsById = {};
@@ -55,7 +58,7 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
   String? _souscriptionsError;
 
   int? _selectedSouscriptionId;
-  String? _selectedModePaiement = 'VIRTUAL_ACCOUNT';
+  late String? _selectedModePaiement;
   String? _selectedDevise;
   int? _selectedDeviseId;
   int? _agentId;
@@ -67,15 +70,18 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
   final TextEditingController _telephonePaiementController =
       TextEditingController();
 
-  bool get _isMobileMoneyPayment => _selectedModePaiement == 'MOBILE_MONEY';
+  bool get _isMobileMoneyPayment =>
+      AffiliePaymentModes.isMobileMoney(_selectedModePaiement);
 
   bool get _isElectronicPayment =>
-      _selectedModePaiement == 'MOBILE_MONEY' ||
-      _selectedModePaiement == 'CARTE_BANCAIRE';
+      AffiliePaymentModes.isElectronic(_selectedModePaiement);
 
   @override
   void initState() {
     super.initState();
+    _selectedModePaiement = AffiliePaymentModes.defaultModeFor(
+      allowVirtualAccount: widget.allowVirtualAccount,
+    );
     final tel = widget.affilieTelephone?.trim();
     if (tel != null && tel.isNotEmpty) {
       _telephonePaiementController.text = tel;

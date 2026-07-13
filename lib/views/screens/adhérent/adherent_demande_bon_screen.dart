@@ -268,7 +268,21 @@ class _AdherentDemandeBonScreenState extends State<AdherentDemandeBonScreen>
           ? elig!.message
           : 'Vous n\'êtes pas éligible à une demande de bon.';
     }
+    if (!_souscriptions.any((s) => s.statut && s.prestationId > 0)) {
+      return 'Aucune souscription active. Souscrivez à une prestation '
+          'avant de demander un bon.';
+    }
     return '';
+  }
+
+  bool get _afficherBanniereEligibilite => _messageEligibilite.isNotEmpty;
+
+  Widget _buildEligibiliteHeader() {
+    if (!_afficherBanniereEligibilite) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+      child: _eligibiliteBanner(_messageEligibilite),
+    );
   }
 
   Future<void> _openCreateForm() async {
@@ -446,49 +460,143 @@ class _AdherentDemandeBonScreenState extends State<AdherentDemandeBonScreen>
     }
 
     if (_demandes.isEmpty) {
-      final msgElig = _messageEligibilite;
-      return EmptyStateScrollable(
-        icon: Icons.assignment_outlined,
-        title: 'Aucune demande',
-        subtitle: 'Vos demandes de bon enregistrées apparaîtront ici.',
-        header: msgElig.isNotEmpty
-            ? Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: _eligibiliteBanner(msgElig),
-              )
-            : null,
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
+        children: [
+          _buildEligibiliteHeader(),
+          SizedBox(
+            height: MediaQuery.sizeOf(context).height * 0.35,
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.assignment_outlined,
+                    size: 56,
+                    color: Colors.grey.shade400,
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Aucune demande',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 16,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Vos demandes de bon enregistrées apparaîtront ici.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
       );
     }
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
-      children: _demandes.map(_buildDemandeCard).toList(),
+      children: [
+        _buildEligibiliteHeader(),
+        if (!_afficherBanniereEligibilite) _workflowInfoBanner(),
+        ..._demandes.map(_buildDemandeCard),
+      ],
     );
   }
 
-  Widget _eligibiliteBanner(String text) {
+  Widget _workflowInfoBanner() {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 12, top: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.orange.withValues(alpha: 0.1),
+        color: Colors.blue.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.orange.withValues(alpha: 0.35)),
+        border: Border.all(color: Colors.blue.withValues(alpha: 0.2)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline, size: 20, color: Colors.orange.shade800),
+          Icon(Icons.info_outline, size: 20, color: Colors.blue.shade700),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              text,
+              'Après validation par un agent, un bon d\'envoi et un jeton médical '
+              'liés sont générés ensemble.',
               style: TextStyle(
-                fontSize: 13,
+                fontSize: 12,
                 height: 1.4,
                 color: Colors.grey.shade800,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _eligibiliteBanner(String text) {
+    final isDossierIncomplet = text.toLowerCase().contains('incomplet');
+    final accent = isDossierIncomplet
+        ? AppColors.warningColor
+        : Colors.orange.shade800;
+    final bg = isDossierIncomplet
+        ? AppColors.warningColor.withValues(alpha: 0.1)
+        : Colors.orange.withValues(alpha: 0.1);
+    final border = isDossierIncomplet
+        ? AppColors.warningColor.withValues(alpha: 0.35)
+        : Colors.orange.withValues(alpha: 0.35);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            isDossierIncomplet
+                ? Icons.folder_off_outlined
+                : Icons.info_outline,
+            size: 20,
+            color: accent,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (isDossierIncomplet) ...[
+                  Text(
+                    'Dossier incomplet',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: accent,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+                Text(
+                  text,
+                  style: TextStyle(
+                    fontSize: 13,
+                    height: 1.4,
+                    color: Colors.grey.shade800,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -576,6 +684,8 @@ class _AdherentDemandeBonScreenState extends State<AdherentDemandeBonScreen>
                           [
                             if (b.dateEmission != null)
                               'Émis ${AppFormatters.formatDate(b.dateEmission)}',
+                            if (b.hasJetonLie && b.jetonMedicalCode.isNotEmpty)
+                              'Jeton ${b.jetonMedicalCode}',
                             if (b.dateUtilisation != null)
                               'Utilisé ${AppFormatters.formatDate(b.dateUtilisation)}',
                           ].where((s) => s.isNotEmpty).join(' · '),
@@ -719,6 +829,16 @@ class _AdherentDemandeBonScreenState extends State<AdherentDemandeBonScreen>
               ].where((s) => s.isNotEmpty).join(' · '),
               style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
             ),
+            if (d.hasCoupleBonJeton && d.hasQr) ...[
+              const SizedBox(height: 12),
+              Center(
+                child: BonEnvoiQrView(
+                  qrCodeImageBase64: d.qrCodeImageBase64,
+                  qrCodePayload: d.qrCodePayload,
+                  size: 120,
+                ),
+              ),
+            ],
           ],
         ),
       ),

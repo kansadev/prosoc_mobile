@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'config/app_environment.dart';
 import 'config/theme.dart';
 import 'views/widgets/prosoc_date_picker.dart';
 import 'controllers/main_controller.dart';
@@ -151,7 +152,9 @@ void main() async {
 
   // Initialiser les données de locale pour intl
   await initializeDateFormatting('fr_FR', null);
-  
+
+  AppEnvironmentConfig.logIfDebug();
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,

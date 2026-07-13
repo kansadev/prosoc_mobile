@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../../../../config/colors.dart';
 import '../../../../models/dashboard_percepteur_model.dart';
 import '../../../../models/wallet_agent_model.dart';
+import '../../../widgets/prosoc_shimmer_loading.dart';
 import '../../../widgets/wallet_devise_switch.dart';
 
 /// Carte recto-verso : recto = wallet agent, verso = vue d'ensemble percepteur.
@@ -123,9 +124,7 @@ class _PercepteurWalletOverviewFlipCardState
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: widget.isLoadingWallet && widget.wallet == null
-                ? const Center(
-                    child: CircularProgressIndicator(color: Colors.white),
-                  )
+                ? ProsocHomeShimmer.walletOnPrimary(context)
                 : Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [

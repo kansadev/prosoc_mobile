@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:prosoc/config/api.dart';
 import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/adhesion_with_affilie_model.dart';
+import 'package:prosoc/models/penalite_affilie_model.dart';
+import 'package:prosoc/utils/affilie_payment_modes.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/collecte_agent_resolver.dart';
 import 'package:prosoc/utils/collecte_montant_helper.dart';
@@ -20,11 +22,14 @@ class PayerContributionScreen extends StatefulWidget {
   final String affiliePrenom;
   final int nombreDependants;
   final int? initialTarifId;
+  final int? initialArrieresAffilieId;
   final double? initialMontant;
   final String? affilieTelephone;
   /// Agent territorial explicite (encaissement AT / percepteur).
   final int? agentId;
   final String screenTitle;
+  /// Adhérent : Mobile Money / Carte. Agent ou percepteur : inclut compte virtuel.
+  final bool allowVirtualAccount;
 
   const PayerContributionScreen({
     super.key,
@@ -33,10 +38,12 @@ class PayerContributionScreen extends StatefulWidget {
     required this.affiliePrenom,
     this.nombreDependants = 0,
     this.initialTarifId,
+    this.initialArrieresAffilieId,
     this.initialMontant,
     this.affilieTelephone,
     this.agentId,
     this.screenTitle = 'Payer une cotisation',
+    this.allowVirtualAccount = false,
   });
 
   @override
@@ -45,13 +52,12 @@ class PayerContributionScreen extends StatefulWidget {
 
 class _PayerContributionScreenState extends State<PayerContributionScreen>
     with TickerProviderStateMixin {
-  static const Map<String, String> _modesPaiement = {
-    'VIRTUAL_ACCOUNT': 'Compte virtuel',
-    'MOBILE_MONEY': 'Mobile money',
-    'CARTE_BANCAIRE': 'Carte',
-  };
+  Map<String, String> get _modesPaiement =>
+      AffiliePaymentModes.modesFor(
+        allowVirtualAccount: widget.allowVirtualAccount,
+      );
 
-  String? _selectedModePaiement = 'VIRTUAL_ACCOUNT';
+  late String? _selectedModePaiement;
   int? _selectedTarifId;
   List<Map<String, dynamic>> _tarifs = [];
   bool _isLoadingTarifs = false;
@@ -64,17 +70,19 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
   int _nombreDependantsEffectif = 0;
   int? _agentId;
   double? _montantAttendu;
+  List<PenaliteAffilieModel> _penalites = [];
+  bool _isLoadingPenalites = false;
 
   final TextEditingController _montantController = TextEditingController();
   final TextEditingController _observationController = TextEditingController();
   final TextEditingController _telephonePaiementController =
       TextEditingController();
 
-  bool get _isMobileMoneyPayment => _selectedModePaiement == 'MOBILE_MONEY';
+  bool get _isMobileMoneyPayment =>
+      AffiliePaymentModes.isMobileMoney(_selectedModePaiement);
 
   bool get _isElectronicPayment =>
-      _selectedModePaiement == 'MOBILE_MONEY' ||
-      _selectedModePaiement == 'CARTE_BANCAIRE';
+      AffiliePaymentModes.isElectronic(_selectedModePaiement);
 
   /// Référence auto pour Mobile Money / Carte (non affichée à l'utilisateur).
   String _referencePaiementElectronique(DateTime now) {
@@ -89,6 +97,9 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
   @override
   void initState() {
     super.initState();
+    _selectedModePaiement = AffiliePaymentModes.defaultModeFor(
+      allowVirtualAccount: widget.allowVirtualAccount,
+    );
     final tel = widget.affilieTelephone?.trim();
     if (tel != null && tel.isNotEmpty) {
       _telephonePaiementController.text = tel;
@@ -97,6 +108,7 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
     _initializeAnimations();
     _loadAgentId();
     _loadNombreDependants();
+    _loadPenalites();
     _loadTarifs();
     _loadDevises();
   }
@@ -151,12 +163,63 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
     if (tarif == null || montantUnitaire == null || montantUnitaire <= 0) {
       return null;
     }
-    return CotisationMontantHelper.libelleCalcul(
+    return CotisationMontantHelper.libelleCalculComplet(
       tarifUnitaire: montantUnitaire,
       typeAdhesionLibelle: _typeAdhesionLibelleFromTarif(tarif),
       nombreDependants: _nombreDependantsEffectif,
+      penalites: _penalites,
       deviseCode: _selectedDevise,
     );
+  }
+
+  Future<void> _loadPenalites() async {
+    final arriereId = widget.initialArrieresAffilieId;
+    if (arriereId == null || arriereId <= 0) return;
+
+    setState(() => _isLoadingPenalites = true);
+
+    try {
+      final response = await ApiService.getPenalitesByArriere(arriereId);
+      if (!mounted) return;
+
+      if (response.success && response.data != null) {
+        setState(() {
+          _penalites = response.data!
+              .where((penalite) => penalite.estPayable)
+              .toList();
+        });
+        final selectedTarifId = _selectedTarifId;
+        if (selectedTarifId != null) {
+          _applyTarifSelection(selectedTarifId);
+        } else if (widget.initialMontant != null && widget.initialMontant! > 0) {
+          _applyMontantAvecPenalites(widget.initialMontant!);
+        }
+      }
+    } catch (e, stackTrace) {
+      ApiErrorHelper.logException(
+        'Contribution/penalites',
+        e,
+        stackTrace,
+        false,
+      );
+    } finally {
+      if (mounted) setState(() => _isLoadingPenalites = false);
+    }
+  }
+
+  void _applyMontantAvecPenalites(double montantCotisation) {
+    final montantEffectif = CotisationMontantHelper.montantTotalAvecPenalites(
+          montantCotisation: montantCotisation,
+          penalites: _penalites,
+        ) ??
+        montantCotisation;
+
+    setState(() {
+      _montantAttendu = montantEffectif;
+      if (montantEffectif > 0) {
+        _montantController.text = montantEffectif.toString();
+      }
+    });
   }
 
   String _tarifLabel(Map<String, dynamic> tarif) {
@@ -322,9 +385,14 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
       nombreDependants: _nombreDependantsEffectif,
     );
     final montantOverride = widget.initialMontant;
-    final montantEffectif = (montantOverride != null && montantOverride > 0)
+    final montantBase = (montantOverride != null && montantOverride > 0)
         ? montantOverride
         : (montantTotal ?? montantTarif);
+    final montantEffectif = CotisationMontantHelper.montantTotalAvecPenalites(
+          montantCotisation: montantBase,
+          penalites: _penalites,
+        ) ??
+        montantBase;
 
     setState(() {
       _selectedTarifId = tarifId;
@@ -631,6 +699,28 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
                     ),
                   ],
                 ),
+              ] else if (_isLoadingPenalites) ...[
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.grey.shade500,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Calcul des pénalités…',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                  ],
+                ),
               ] else if (_montantCalculLibelle != null) ...[
                 const SizedBox(height: 8),
                 Text(
@@ -918,7 +1008,16 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
     }
 
     final montantRecu = double.tryParse(_montantController.text);
-    final montantAttendu = _montantAttendu ??
+    final montantAttendu = CotisationMontantHelper.montantTotalAvecPenalites(
+          montantCotisation: _montantAttendu ??
+              CotisationMontantHelper.montantTotal(
+                tarifUnitaire: _doubleFrom(selectedTarif['montant']),
+                typeAdhesionLibelle: _typeAdhesionLibelleFromTarif(selectedTarif),
+                nombreDependants: _nombreDependantsEffectif,
+              ),
+          penalites: _penalites,
+        ) ??
+        _montantAttendu ??
         CotisationMontantHelper.montantTotal(
           tarifUnitaire: _doubleFrom(selectedTarif['montant']),
           typeAdhesionLibelle: _typeAdhesionLibelleFromTarif(selectedTarif),

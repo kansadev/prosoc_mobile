@@ -70,6 +70,11 @@ class DemandeRetraitAgentModel {
         hasJeton && !s.contains('TRAIT');
   }
 
+  bool get isRejetee {
+    final s = statutDemande.trim().toUpperCase();
+    return s.contains('REJET');
+  }
+
   String get formattedMontant => CurrencyFormatter.format(
         amount: montantDemande,
         deviseId: deviseId,
@@ -122,6 +127,54 @@ DateTime? _retraitDate(dynamic value) {
   final raw = value.toString().trim();
   if (raw.isEmpty) return null;
   return DateTime.tryParse(raw);
+}
+
+/// Réponse POST valider-et-generer-jeton / POST création demande
+class RetraitWorkflowResultModel {
+  final bool succes;
+  final String message;
+  final int? demandeId;
+  final int? jetonId;
+  final String? jetonCode;
+  final double? montantRetrait;
+  final String? typeRetrait;
+  final DateTime? dateEmission;
+  final DateTime? dateExpiration;
+
+  RetraitWorkflowResultModel({
+    required this.succes,
+    required this.message,
+    this.demandeId,
+    this.jetonId,
+    this.jetonCode,
+    this.montantRetrait,
+    this.typeRetrait,
+    this.dateEmission,
+    this.dateExpiration,
+  });
+
+  factory RetraitWorkflowResultModel.fromJson(Map<String, dynamic> json) {
+    return RetraitWorkflowResultModel(
+      succes: json['succes'] == true || json['Succes'] == true,
+      message: (json['message'] ?? json['Message'] ?? '').toString(),
+      demandeId: _retraitNullableInt(json['demandeId'] ?? json['DemandeId']),
+      jetonId: _retraitNullableInt(json['jetonId'] ?? json['JetonId']),
+      jetonCode: (json['jetonCode'] ?? json['JetonCode'])?.toString(),
+      montantRetrait:
+          _retraitDouble(json['montantRetrait'] ?? json['MontantRetrait']),
+      typeRetrait: json['typeRetrait']?.toString(),
+      dateEmission: _retraitDate(json['dateEmission'] ?? json['DateEmission']),
+      dateExpiration:
+          _retraitDate(json['dateExpiration'] ?? json['DateExpiration']),
+    );
+  }
+}
+
+int? _retraitNullableInt(dynamic value) {
+  if (value == null) return null;
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  return int.tryParse(value.toString());
 }
 
 // ============================================

@@ -14,6 +14,8 @@ class BonEnvoiModel {
   final DateTime? dateModification;
   final String qrCodePayload;
   final String qrCodeImageBase64;
+  final int? jetonMedicalId;
+  final String jetonMedicalCode;
 
   BonEnvoiModel({
     required this.idBonEnvoi,
@@ -30,6 +32,8 @@ class BonEnvoiModel {
     this.dateModification,
     required this.qrCodePayload,
     required this.qrCodeImageBase64,
+    this.jetonMedicalId,
+    this.jetonMedicalCode = '',
   });
 
   factory BonEnvoiModel.fromJson(Map<String, dynamic> json) {
@@ -48,10 +52,26 @@ class BonEnvoiModel {
       dateModification: _parseDate(json['dateModification']),
       qrCodePayload: json['qrCodePayload']?.toString() ?? '',
       qrCodeImageBase64: json['qrCodeImageBase64']?.toString() ?? '',
+      jetonMedicalId: _asNullableInt(
+        json['jetonMedicalId'] ?? json['JetonMedicalId'],
+      ),
+      jetonMedicalCode: json['jetonMedicalCode']?.toString() ??
+          json['JetonMedicalCode']?.toString() ??
+          '',
     );
   }
 
+  bool get hasJetonLie =>
+      (jetonMedicalId != null && jetonMedicalId! > 0) ||
+      jetonMedicalCode.trim().isNotEmpty;
+
   String get statutLabel => estUtilise ? 'Utilisé' : 'Disponible';
+
+  static int? _asNullableInt(dynamic value) {
+    if (value == null) return null;
+    final parsed = _asInt(value, -1);
+    return parsed >= 0 ? parsed : null;
+  }
 
   static int _asInt(dynamic value, [int fallback = 0]) {
     if (value is int) return value;

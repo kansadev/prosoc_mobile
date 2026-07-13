@@ -18,6 +18,7 @@ class ArrierePaymentNavigator {
     String? affilieTelephone,
     int? agentId,
     int nombreDependants = 0,
+    bool allowVirtualAccount = false,
   }) {
     if (!arriere.estImpaye) return Future.value(null);
 
@@ -39,6 +40,7 @@ class ArrierePaymentNavigator {
               initialFraisId: arriere.fraisId,
               initialMontant: montant,
               screenTitle: 'Payer un frais',
+              allowVirtualAccount: allowVirtualAccount,
             ),
           ),
         );
@@ -56,8 +58,10 @@ class ArrierePaymentNavigator {
               agentId: agentId,
               nombreDependants: nombreDependants,
               initialTarifId: tarifId,
+              initialArrieresAffilieId: arriere.idArrieresAffilie,
               initialMontant: montant,
               screenTitle: 'Payer une cotisation',
+              allowVirtualAccount: allowVirtualAccount,
             ),
           ),
         );
@@ -74,6 +78,7 @@ class ArrierePaymentNavigator {
               initialSouscriptionPrestationId: arriere.souscriptionPrestationId,
               initialMontant: montant,
               screenTitle: 'Payer une souscription',
+              allowVirtualAccount: allowVirtualAccount,
             ),
           ),
         );
