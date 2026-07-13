@@ -1,0 +1,13 @@
+# Copiez ce fichier vers android/key.properties et renseignez vos valeurs.
+# Ne commitez jamais key.properties ni le fichier .jks.
+#
+# Génération du keystore (PowerShell, depuis la racine du projet) :
+#   keytool -genkey -v -keystore android/app/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+#
+# Build release signé :
+#   flutter build appbundle --release
+
+storePassword=VOTRE_MOT_DE_PASSE_KEYSTORE
+keyPassword=VOTRE_MOT_DE_PASSE_CLE
+keyAlias=upload
+storeFile=app/upload-keystore.jks

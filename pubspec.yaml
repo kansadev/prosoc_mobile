@@ -71,6 +71,7 @@ dev_dependencies:
 
   # Générateur d'icônes d'application
   flutter_launcher_icons: ^0.14.4
+  rename: ^3.1.0
 
 flutter_launcher_icons:
   android: "launcher_icon"

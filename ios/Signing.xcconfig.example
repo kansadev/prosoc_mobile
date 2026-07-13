@@ -1,0 +1,8 @@
+// Copiez ce fichier vers ios/Signing.xcconfig et renseignez votre équipe Apple.
+// Ne commitez jamais ios/Signing.xcconfig.
+//
+// Identifiant d'équipe : Apple Developer > Membership > Team ID
+// Bundle ID : doit correspondre à l'app enregistrée sur App Store Connect.
+
+DEVELOPMENT_TEAM=VOTRE_TEAM_ID_APPLE
+PRODUCT_BUNDLE_IDENTIFIER=com.prosoc.app
