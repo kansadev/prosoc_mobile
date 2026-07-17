@@ -11,11 +11,13 @@ import '../../../models/type_adhesion_model.dart';
 import '../../../utils/affilie_payment_modes.dart';
 import '../../../utils/api_error_helper.dart';
 import '../../../utils/email_utils.dart';
+import '../../../utils/paginated_response_helper.dart';
 import '../../../utils/phone_utils.dart';
 import '../../../utils/picked_image_data.dart';
 import '../../widgets/flex_pay_card_payment_bottom_sheet.dart';
 import '../../widgets/flex_pay_payment_error_dialog.dart';
 import '../../widgets/prosoc_date_picker.dart';
+import '../../widgets/prosoc_shimmer_loading.dart';
 import '../at/flex_pay_payment_waiting_screen.dart';
 import '../at/payment_webview_screen.dart';
 
@@ -118,26 +120,22 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
         return;
       }
 
-      final types = _extractList(results[0].data)
-          .whereType<Map>()
-          .map((j) => TypeAdhesion.fromJson(Map<String, dynamic>.from(j)))
+      final types = _parseCatalogMaps(results[0].data)
+          .map(TypeAdhesion.fromJson)
           .where((t) => t.statut)
           .toList();
 
-      final frais = _extractList(results[1].data)
-          .whereType<Map>()
-          .map((j) => Frais.fromJson(Map<String, dynamic>.from(j)))
-          .where((f) => f.statut && f.isPourAdhesion)
+      // getFrais() renvoie déjà List<Frais> (pas des Map).
+      final frais = _parseFraisList(results[1].data)
+          .where((f) => f.statut && !f.estSupprime && f.isPourAdhesion)
           .toList();
 
-      final prestations = _extractList(results[2].data)
-          .whereType<Map>()
-          .map((j) => Prestation.fromJson(Map<String, dynamic>.from(j)))
+      final prestations = _parseCatalogMaps(results[2].data)
+          .map(Prestation.fromJson)
           .toList();
 
-      final devises = _extractList(results[3].data)
-          .whereType<Map>()
-          .map((j) => Devise.fromJson(Map<String, dynamic>.from(j)))
+      final devises = _parseCatalogMaps(results[3].data)
+          .map(Devise.fromJson)
           .toList();
 
       setState(() {
@@ -162,10 +160,29 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
     }
   }
 
+  List<Map<String, dynamic>> _parseCatalogMaps(dynamic data) {
+    return _extractList(data)
+        .whereType<Map>()
+        .map((j) => Map<String, dynamic>.from(j))
+        .toList();
+  }
+
+  List<Frais> _parseFraisList(dynamic data) {
+    if (data is! List) return const [];
+    final parsed = <Frais>[];
+    for (final item in data) {
+      if (item is Frais) {
+        parsed.add(item);
+      } else if (item is Map) {
+        parsed.add(Frais.fromJson(Map<String, dynamic>.from(item)));
+      }
+    }
+    return parsed;
+  }
+
   List<dynamic> _extractList(dynamic data) {
     if (data is List) return data;
-    if (data is Map && data['data'] is List) return data['data'] as List;
-    return const [];
+    return PaginatedResponseHelper.extractRows(data);
   }
 
   void _goToStep(int step) {
@@ -187,6 +204,20 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
       }
     }
     if (_currentStep == 1) {
+      if (_isLoadingCatalog) {
+        _showSnack(
+          'Chargement des catalogues en cours. Patientez un instant.',
+          isError: true,
+        );
+        return;
+      }
+      if (_catalogError != null) {
+        _showSnack(
+          'Impossible de charger les catalogues. Réessayez.',
+          isError: true,
+        );
+        return;
+      }
       if (_selectedType == null ||
           _selectedFrais == null ||
           _selectedPrestation == null) {
@@ -493,56 +524,76 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
         foregroundColor: theme.colorScheme.onSurface,
         elevation: 0,
       ),
-      body: _isLoadingCatalog
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.prosocGreen),
-            )
-          : _catalogError != null
-              ? _buildCatalogError()
-              : Column(
-                  children: [
-                    _buildStepIndicator(isDark),
-                    Expanded(
-                      child: PageView(
-                        controller: _pageController,
-                        physics: const NeverScrollableScrollPhysics(),
-                        children: [
-                          _buildIdentityStep(isDark),
-                          _buildAdhesionStep(isDark),
-                          _buildDocumentsStep(isDark),
-                          _buildPaymentStep(isDark),
-                        ],
-                      ),
-                    ),
-                    _buildBottomBar(isDark),
-                  ],
-                ),
+      body: Column(
+        children: [
+          _buildStepIndicator(isDark),
+          Expanded(
+            child: PageView(
+              controller: _pageController,
+              physics: const NeverScrollableScrollPhysics(),
+              children: [
+                _buildIdentityStep(isDark),
+                _buildAdhesionStep(isDark),
+                _buildDocumentsStep(isDark),
+                _buildPaymentStep(isDark),
+              ],
+            ),
+          ),
+          _buildBottomBar(isDark),
+        ],
+      ),
     );
   }
 
-  Widget _buildCatalogError() {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.cloud_off, size: 48, color: AppColors.errorColor),
-            const SizedBox(height: 16),
-            Text(
-              _catalogError!,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 20),
-            FilledButton(
-              onPressed: _loadCatalogs,
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.prosocGreen,
-              ),
-              child: const Text('Réessayer'),
-            ),
-          ],
+  Widget _dropdownShimmer() {
+    return ProsocShimmer.wrap(
+      context,
+      child: Container(
+        height: 56,
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: ProsocShimmer.skeletonFill(context),
+          borderRadius: BorderRadius.circular(12),
         ),
+      ),
+    );
+  }
+
+  Widget _buildCatalogInlineError() {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.errorColor.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: AppColors.errorColor.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            _catalogError ??
+                'Impossible de charger les catalogues. Réessayez.',
+            style: TextStyle(color: Colors.grey.shade800, fontSize: 13),
+          ),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: _isLoadingCatalog ? null : _loadCatalogs,
+              icon: _isLoadingCatalog
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.refresh_rounded, size: 18),
+              label: Text(_isLoadingCatalog ? 'Chargement…' : 'Réessayer'),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -632,49 +683,161 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
+          if (_catalogError != null && !_isLoadingCatalog)
+            _buildCatalogInlineError(),
           _sectionTitle('Type d\'adhésion', isDark),
-          DropdownButtonFormField<TypeAdhesion>(
-            value: _selectedType,
-            decoration: _inputDecoration('Type d\'adhésion'),
-            items: _typeAdhesions
-                .map(
-                  (t) => DropdownMenuItem(
-                    value: t,
-                    child: Text(t.libelle),
-                  ),
-                )
-                .toList(),
-            onChanged: (v) => setState(() => _selectedType = v),
-          ),
+          if (_isLoadingCatalog)
+            _dropdownShimmer()
+          else
+            DropdownButtonFormField<TypeAdhesion>(
+              value: _selectedType,
+              decoration: _inputDecoration('Type d\'adhésion'),
+              items: _typeAdhesions
+                  .map(
+                    (t) => DropdownMenuItem(
+                      value: t,
+                      child: Text(t.libelle),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) => setState(() => _selectedType = v),
+            ),
           const SizedBox(height: 16),
           _sectionTitle('Frais d\'adhésion', isDark),
-          DropdownButtonFormField<Frais>(
-            value: _selectedFrais,
-            decoration: _inputDecoration('Frais'),
-            items: _fraisAdhesion
-                .map(
-                  (f) => DropdownMenuItem(
-                    value: f,
-                    child: Text('${f.libelle} — ${f.montant}'),
-                  ),
-                )
-                .toList(),
-            onChanged: (v) => setState(() => _selectedFrais = v),
-          ),
+          if (_isLoadingCatalog)
+            _dropdownShimmer()
+          else if (_fraisAdhesion.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.warningColor.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AppColors.warningColor.withValues(alpha: 0.35),
+                ),
+              ),
+              child: const Text(
+                'Aucun frais d\'adhésion disponible pour le moment.',
+              ),
+            )
+          else
+            DropdownButtonFormField<Frais>(
+              value: _selectedFrais,
+              decoration: _inputDecoration('Frais'),
+              items: _fraisAdhesion
+                  .map(
+                    (f) => DropdownMenuItem(
+                      value: f,
+                      child: Text('${f.libelle} — ${f.montant}'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) => setState(() => _selectedFrais = v),
+            ),
           const SizedBox(height: 16),
           _sectionTitle('Prestation / cotisation', isDark),
-          DropdownButtonFormField<Prestation>(
-            value: _selectedPrestation,
-            decoration: _inputDecoration('Prestation'),
-            items: _prestations
-                .map(
-                  (p) => DropdownMenuItem(
-                    value: p,
-                    child: Text(p.nomPrestation),
+          if (_isLoadingCatalog)
+            _dropdownShimmer()
+          else ...[
+            DropdownButtonFormField<Prestation>(
+              value: _selectedPrestation,
+              isExpanded: true,
+              decoration: _inputDecoration('Prestation'),
+              items: _prestations
+                  .map(
+                    (p) => DropdownMenuItem(
+                      value: p,
+                      child: Text(
+                        _prestationLabel(p),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (v) => setState(() => _selectedPrestation = v),
+            ),
+            if (_selectedPrestation != null) ...[
+              const SizedBox(height: 12),
+              _montantPreviewTile(
+                label: 'Montant de la prestation',
+                montantText: _formatPrestationMontant(_selectedPrestation!),
+                isDark: isDark,
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _prestationLabel(Prestation p) {
+    final montant = _formatPrestationMontant(p);
+    if (montant == null) return p.nomPrestation;
+    return '${p.nomPrestation} — $montant';
+  }
+
+  String? _formatPrestationMontant(Prestation p) {
+    final montant = p.resolveMontant();
+    if (montant == null) return null;
+    final code = p.resolveDeviseCode();
+    final amount = montant == montant.roundToDouble()
+        ? montant.toStringAsFixed(0)
+        : montant.toStringAsFixed(2);
+    return code.isEmpty ? amount : '$amount $code';
+  }
+
+  Widget _montantPreviewTile({
+    required String label,
+    required String? montantText,
+    required bool isDark,
+  }) {
+    final hasMontant = montantText != null && montantText.isNotEmpty;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: hasMontant
+            ? AppColors.prosocGreen.withValues(alpha: isDark ? 0.18 : 0.08)
+            : AppColors.warningColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: hasMontant
+              ? AppColors.prosocGreen.withValues(alpha: 0.35)
+              : AppColors.warningColor.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            hasMontant ? Icons.payments_outlined : Icons.warning_amber_rounded,
+            color: hasMontant ? AppColors.prosocGreen : AppColors.warningColor,
+            size: 22,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white70 : Colors.grey.shade600,
                   ),
-                )
-                .toList(),
-            onChanged: (v) => setState(() => _selectedPrestation = v),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  hasMontant ? montantText : 'Montant non disponible',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: hasMontant
+                        ? (isDark ? Colors.white : AppColors.textPrimary)
+                        : AppColors.warningColor,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -734,7 +897,10 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
                 },
               ),
             ),
-            if (_devises.length > 1) ...[
+            if (_isLoadingCatalog) ...[
+              const SizedBox(height: 12),
+              _dropdownShimmer(),
+            ] else if (_devises.length > 1) ...[
               const SizedBox(height: 12),
               DropdownButtonFormField<Devise>(
                 value: _selectedDevise,

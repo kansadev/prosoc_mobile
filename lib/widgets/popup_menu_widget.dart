@@ -34,6 +34,7 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
   final VoidCallback? onPayerSouscription;
   final VoidCallback? onDependants;
   final VoidCallback? onSouscription;
+  final VoidCallback? onDemandeBon;
   final VoidCallback? onAntecedents;
   final VoidCallback? onArrieres;
   final Color? iconColor;
@@ -45,6 +46,7 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
     this.onPayerSouscription,
     this.onDependants,
     this.onSouscription,
+    this.onDemandeBon,
     this.onAntecedents,
     this.onArrieres,
     this.iconColor,
@@ -70,6 +72,9 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
             break;
           case 'souscription':
             onSouscription?.call();
+            break;
+          case 'demande_bon':
+            onDemandeBon?.call();
             break;
           case 'antecedents':
             onAntecedents?.call();
@@ -118,6 +123,13 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
             label: 'Souscrire à une prestation',
           ),
 
+        if (onDemandeBon != null)
+          PopupMenuItemWidget(
+            value: 'demande_bon',
+            icon: Icons.confirmation_number_outlined,
+            label: 'Demander un bon',
+          ),
+
         // Antécédents
         if (onAntecedents != null)
           PopupMenuItemWidget(
@@ -146,6 +158,7 @@ AppBar createAppBarWithPopupMenu({
   VoidCallback? onPayerSouscription,
   VoidCallback? onDependants,
   VoidCallback? onSouscription,
+  VoidCallback? onDemandeBon,
   VoidCallback? onAntecedents,
   VoidCallback? onArrieres,
   bool automaticallyImplyLeading = true,
@@ -162,6 +175,7 @@ AppBar createAppBarWithPopupMenu({
         onPayerSouscription: onPayerSouscription,
         onDependants: onDependants,
         onSouscription: onSouscription,
+        onDemandeBon: onDemandeBon,
         onAntecedents: onAntecedents,
         onArrieres: onArrieres,
       ),

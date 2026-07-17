@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:prosoc/config/api.dart';
 import 'package:prosoc/config/colors.dart';
+import 'package:prosoc/models/adhesion_with_affilie_model.dart';
 import 'package:prosoc/models/prestation_model.dart';
 import 'package:prosoc/models/souscription_prestation_model.dart';
 import 'package:prosoc/utils/affilie_payment_modes.dart';
@@ -10,9 +11,14 @@ import 'package:prosoc/utils/collecte_agent_resolver.dart';
 import 'package:prosoc/utils/collecte_montant_helper.dart';
 import 'package:prosoc/utils/currency_formatter.dart';
 import 'package:prosoc/utils/phone_utils.dart';
+import 'package:prosoc/views/screens/at/flex_pay_payment_waiting_screen.dart';
+import 'package:prosoc/views/screens/at/payment_webview_screen.dart';
+import 'package:prosoc/views/widgets/flex_pay_card_payment_bottom_sheet.dart';
+import 'package:prosoc/views/widgets/flex_pay_payment_error_dialog.dart';
 import 'package:prosoc/views/widgets/prosoc_message_dialog.dart';
 
-/// Formulaire de souscription — POST /api/SouscriptionPrestation (souscription + collecte).
+/// Formulaire de souscription — POST /api/SouscriptionPrestation
+/// (cash) ou POST /api/SouscriptionPrestation/paiement-electronique (MM/Carte).
 class SouscriptionBottomSheet extends StatefulWidget {
   final int affilieId;
   final String affilieNom;
@@ -283,6 +289,45 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
         ),
       );
 
+      if (_isElectronicPayment) {
+        final telephonePaiement = _isMobileMoneyPayment
+            ? PhoneUtils.normalizeDrcPhone(_telephonePaiementController.text)!
+            : PhoneUtils.normalizeDrcPhone(widget.affilieTelephone) ??
+                PhoneUtils.normalizeDrcPhone(
+                  _telephonePaiementController.text,
+                ) ??
+                '';
+
+        if (telephonePaiement.isEmpty) {
+          await _showError(PhoneUtils.invalidFormatMessage);
+          return;
+        }
+
+        final flexResponse =
+            await ApiService.createSouscriptionPrestationPaiementElectronique(
+          SouscriptionPrestationPaiementElectroniqueRequest(
+            affilieId: widget.affilieId,
+            modePaiement: modePaiement,
+            telephonePaiement: telephonePaiement,
+            devisePaiementId: deviseId,
+            achat: request,
+          ),
+        );
+
+        if (!mounted) return;
+
+        if (flexResponse.success && flexResponse.data != null) {
+          await _handleFlexPayResponse(flexResponse.data!);
+        } else {
+          await FlexPayPaymentErrorDialog.show(
+            context,
+            message: flexResponse.message,
+            statusCode: flexResponse.statusCode,
+          );
+        }
+        return;
+      }
+
       final response = await ApiService.createSouscriptionPrestation(
         affilieId: widget.affilieId,
         request: request,
@@ -317,6 +362,84 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
     } finally {
       if (mounted) setState(() => _isSubmitting = false);
     }
+  }
+
+  bool _hasFlexPayPaymentUrl(AdhesionElectronicPaymentResponse payment) {
+    final url = payment.paymentUrl?.trim() ?? '';
+    return url.isNotEmpty && url.toLowerCase() != 'null';
+  }
+
+  bool _shouldOpenPaymentWaitingPage(
+    AdhesionElectronicPaymentResponse payment,
+  ) {
+    if (!payment.flexPayAccepted) return false;
+    if (_isMobileMoneyPayment) return true;
+    return !_hasFlexPayPaymentUrl(payment);
+  }
+
+  Future<void> _handleFlexPayResponse(
+    AdhesionElectronicPaymentResponse payment,
+  ) async {
+    if (payment.flexPayAccepted && _shouldOpenPaymentWaitingPage(payment)) {
+      setState(() => _isSubmitting = false);
+      final result = await Navigator.of(context).push<bool>(
+        MaterialPageRoute(
+          builder: (_) => FlexPayPaymentWaitingScreen(
+            payment: payment,
+            isMobileMoney: _isMobileMoneyPayment,
+          ),
+        ),
+      );
+      if (result == true && mounted) {
+        Navigator.pop(context, true);
+      }
+      return;
+    }
+
+    if (payment.flexPayAccepted && _hasFlexPayPaymentUrl(payment)) {
+      setState(() => _isSubmitting = false);
+      await _showFlexPayCardPaymentBottomSheet(payment);
+      return;
+    }
+
+    setState(() => _isSubmitting = false);
+    await FlexPayPaymentErrorDialog.show(
+      context,
+      message: payment.message ?? 'Paiement non accepté par FlexPay.',
+    );
+  }
+
+  Future<void> _showFlexPayCardPaymentBottomSheet(
+    AdhesionElectronicPaymentResponse payment,
+  ) async {
+    final url = payment.paymentUrl?.trim() ?? '';
+    if (url.isEmpty || url.toLowerCase() == 'null') {
+      await FlexPayPaymentErrorDialog.show(
+        context,
+        message: 'Lien de paiement carte indisponible.',
+      );
+      return;
+    }
+
+    await FlexPayCardPaymentBottomSheet.show(
+      context,
+      payment: payment,
+      onPay: () async {
+        await PaymentWebViewScreen.open(context, url);
+        if (!mounted) return;
+        final result = await Navigator.of(context).push<bool>(
+          MaterialPageRoute(
+            builder: (_) => FlexPayPaymentWaitingScreen(
+              payment: payment,
+              isMobileMoney: false,
+            ),
+          ),
+        );
+        if (result == true && mounted) {
+          Navigator.pop(context, true);
+        }
+      },
+    );
   }
 
   Future<void> _showError(String message, {int? statusCode}) {

@@ -90,6 +90,14 @@ class BonEnvoiDetailSheet extends StatelessWidget {
                         : '#${bon.jetonMedicalId}',
                     color: AppColors.prosocGreen,
                   ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Présentez ce jeton au percepteur pour contrôle.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
                 ],
                 const SizedBox(height: 20),
                 Center(

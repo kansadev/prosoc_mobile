@@ -5,4 +5,4 @@
 // Bundle ID : doit correspondre à l'app enregistrée sur App Store Connect.
 
 DEVELOPMENT_TEAM=VOTRE_TEAM_ID_APPLE
-PRODUCT_BUNDLE_IDENTIFIER=com.prosoc.app
+PRODUCT_BUNDLE_IDENTIFIER=com.maash.prosoc

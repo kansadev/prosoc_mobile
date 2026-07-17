@@ -34,9 +34,18 @@ class Frais {
   /// Frais proposés lors d'une nouvelle adhésion.
   static const codesAdhesion = {'FRAIS_ADHESION', 'CARTE_MEMBRE'};
 
-  bool get isPourAdhesion => codesAdhesion.contains(code);
+  bool get isPourAdhesion {
+    final normalized = code.trim().toUpperCase().replaceAll(' ', '_');
+    return codesAdhesion.contains(normalized) ||
+        normalized.contains('ADHESION') ||
+        normalized.contains('CARTE_MEMBRE');
+  }
 
-  bool get isFraisAdhesion => code == 'FRAIS_ADHESION';
+  bool get isFraisAdhesion {
+    final normalized = code.trim().toUpperCase().replaceAll(' ', '_');
+    return normalized == 'FRAIS_ADHESION' ||
+        (normalized.contains('FRAIS') && normalized.contains('ADHESION'));
+  }
 
   factory Frais.fromJson(Map<String, dynamic> json) {
     return Frais(

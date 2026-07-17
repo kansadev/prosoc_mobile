@@ -7,9 +7,11 @@ import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/utils/affilie_id_helper.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/paginated_response_helper.dart';
+import 'package:prosoc/views/screens/adh%C3%A9rent/adherent_demande_bon_screen.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_contributionScreen.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_frais_screen.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_souscription_screen.dart';
+import 'package:prosoc/services/auth_service.dart';
 import 'package:prosoc/widgets/popup_menu_widget.dart';
 import 'package:prosoc/widgets/souscription_bottom_sheet.dart';
 
@@ -224,6 +226,23 @@ class _PercepteurEncaissementScreenState
       affiliePrenom: ctx.prenom,
       affilieTelephone: ctx.telephone,
       allowVirtualAccount: true,
+    );
+  }
+
+  void _openDemandeBon(Map<String, dynamic> membre) {
+    final ctx = _affilieContext(membre);
+    if (ctx == null) return;
+
+    final name = '${ctx.prenom} ${ctx.nom}'.trim();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AdherentDemandeBonScreen(
+          affilieId: ctx.affilieId,
+          agentId: AuthService.agentId,
+          affilieNomComplet: name.isNotEmpty ? name : null,
+        ),
+      ),
     );
   }
 
@@ -453,6 +472,7 @@ class _PercepteurEncaissementScreenState
                         onPayerFrais: () => _openPayerFrais(membre),
                         onPayerSouscription: () => _openPayerSouscription(membre),
                         onSouscription: () => _openSouscriptionBottomSheet(membre),
+                        onDemandeBon: () => _openDemandeBon(membre),
                       ),
                   ],
                 ),

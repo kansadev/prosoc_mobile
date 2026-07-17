@@ -48,12 +48,10 @@ class _BonEnvoiMedicalScreenState extends State<BonEnvoiMedicalScreen>
 
   int? get _agentId => AuthService.agentId;
 
-  Future<List<DemandeBonEnvoiModel>> _fetchStatut(String statut) async {
-    final response = await ApiService.getDemandesBonEnvoiByStatut(statut);
-    if (response.success && response.data != null) {
-      return response.data!;
-    }
-    return [];
+  Future<ApiResponse<List<DemandeBonEnvoiModel>>> _fetchStatut(
+    String statut,
+  ) {
+    return ApiService.getDemandesBonEnvoiByStatut(statut);
   }
 
   Future<void> _loadAll({bool showLoader = true}) async {
@@ -76,12 +74,29 @@ class _BonEnvoiMedicalScreenState extends State<BonEnvoiMedicalScreen>
 
       if (!mounted) return;
 
+      final failures = results.where((r) => !r.success).toList();
+      final allFailed = failures.length == results.length;
+
+      if (allFailed) {
+        final firstFailure = failures.first;
+        setState(() {
+          _errorMessage = firstFailure.message ??
+              ApiErrorHelper.userFacingMessage(
+                statusCode: firstFailure.statusCode,
+              );
+          _errorStatusCode = firstFailure.statusCode;
+          _isLoading = false;
+        });
+        return;
+      }
+
       setState(() {
-        _enAttente = results[0];
-        _validees = results[1];
-        _traitees = results[2];
+        _enAttente = results[0].success ? (results[0].data ?? []) : [];
+        _validees = results[1].success ? (results[1].data ?? []) : [];
+        _traitees = results[2].success ? (results[2].data ?? []) : [];
         _isLoading = false;
         _errorMessage = null;
+        _errorStatusCode = null;
       });
     } catch (e, stackTrace) {
       ApiErrorHelper.logException('BonEnvoiMedical', e, stackTrace, false);
@@ -122,11 +137,8 @@ class _BonEnvoiMedicalScreenState extends State<BonEnvoiMedicalScreen>
 
       if (response.success && response.data != null) {
         final result = response.data!;
-        _showSnack(
-          'Bon ${result.bonEnvoiNumero.isNotEmpty ? result.bonEnvoiNumero : ''} '
-          'et jeton ${result.jetonMedicalCode.isNotEmpty ? result.jetonMedicalCode : ''} '
-          'générés',
-        );
+        await _showJetonDemandeurDialog(result);
+        if (!mounted) return;
         await _loadAll(showLoader: false);
       } else {
         _showSnack(
@@ -285,6 +297,81 @@ class _BonEnvoiMedicalScreenState extends State<BonEnvoiMedicalScreen>
     if (value.trim().isEmpty) return;
     Clipboard.setData(ClipboardData(text: value));
     _showSnack('$label copié');
+  }
+
+  Future<void> _showJetonDemandeurDialog(DemandeBonEnvoiModel result) async {
+    final jeton = result.jetonMedicalCode.trim();
+    final bon = result.bonEnvoiNumero.trim();
+    if (!mounted) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Bon et jeton générés'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Le jeton est maintenant disponible chez le demandeur. '
+                'Contrôlez-le au guichet avant utilisation.',
+              ),
+              if (bon.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text('Bon', style: TextStyle(color: Colors.grey.shade600)),
+                const SizedBox(height: 4),
+                SelectableText(
+                  bon,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+              if (jeton.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text('Jeton', style: TextStyle(color: Colors.grey.shade600)),
+                const SizedBox(height: 4),
+                SelectableText(
+                  jeton,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 20,
+                    letterSpacing: 1.2,
+                    color: AppColors.prosocGreen,
+                  ),
+                ),
+              ] else
+                const Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: Text(
+                    'Jeton généré — le demandeur le verra dans son espace bons.',
+                  ),
+                ),
+            ],
+          ),
+          actions: [
+            if (jeton.isNotEmpty)
+              TextButton(
+                onPressed: () {
+                  Clipboard.setData(ClipboardData(text: jeton));
+                  Navigator.pop(ctx);
+                  _showSnack('Jeton copié');
+                },
+                child: const Text('Copier le jeton'),
+              ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.prosocGreen,
+              ),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override

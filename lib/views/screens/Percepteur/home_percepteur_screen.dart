@@ -11,10 +11,10 @@ import 'package:prosoc/services/auth_service.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/wallet_agent_loader.dart';
 import 'package:prosoc/views/screens/at/new_adhesion_screen.dart';
+import 'package:prosoc/views/screens/at/bon_envoi_medical_screen.dart';
 import 'dashboard_percepteur_screen.dart';
 import 'percepteur_encaissement_choice_sheet.dart';
 import 'percepteur_encaissement_screen.dart';
-import 'percepteur_retraits_screen.dart';
 import 'widgets/percepteur_wallet_overview_flip_card.dart';
 import '../../widgets/prosoc_shimmer_loading.dart';
 
@@ -215,7 +215,31 @@ class _HomePercepteurScreenState extends State<HomePercepteurScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(appBar: _buildHomeAppBar(context), body: _buildBody());
+    return Scaffold(
+      appBar: _buildHomeAppBar(context),
+      body: _buildBody(),
+      floatingActionButton: _hasAgentProfile
+          ? FloatingActionButton.extended(
+              onPressed: _openNouvelleAdhesion,
+              backgroundColor: AppColors.prosocGreen,
+              foregroundColor: Colors.white,
+              icon: const Icon(Icons.person_add_alt_1),
+              label: const Text('Adhésion'),
+            )
+          : null,
+    );
+  }
+
+  Future<void> _openNouvelleAdhesion() async {
+    final created = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const NewAdhesionScreen(),
+      ),
+    );
+    if (created == true && mounted) {
+      await _loadHomeData();
+    }
   }
 
   Widget _buildBody() {
@@ -621,35 +645,18 @@ class _HomePercepteurScreenState extends State<HomePercepteurScreen> {
         },
       ),
       _QuickService(
-        title: 'Retraits',
-        icon: Icons.pending_actions_outlined,
+        title: 'Valider bons',
+        icon: Icons.verified_outlined,
         color: const Color(0xFFE65100),
         onTap: () {
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) => const PercepteurRetraitsScreen(),
+              builder: (context) => const BonEnvoiMedicalScreen(),
             ),
           );
         },
       ),
-      if (_hasAgentProfile)
-        _QuickService(
-          title: 'Adhésion',
-          icon: Icons.person_add_alt_1,
-          color: Colors.teal,
-          onTap: () async {
-            final created = await Navigator.push<bool>(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const NewAdhesionScreen(),
-              ),
-            );
-            if (created == true && mounted) {
-              await _loadHomeData();
-            }
-          },
-        ),
       _QuickService(
         title: 'Dashboard',
         icon: Icons.dashboard,

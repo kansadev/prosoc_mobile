@@ -158,6 +158,32 @@ class SouscriptionPrestationCreateRequest {
       };
 }
 
+/// Corps POST /api/SouscriptionPrestation/paiement-electronique
+/// (création d'une **nouvelle** souscription + FlexPay).
+class SouscriptionPrestationPaiementElectroniqueRequest {
+  final int affilieId;
+  final String modePaiement;
+  final String telephonePaiement;
+  final int devisePaiementId;
+  final SouscriptionPrestationCreateRequest achat;
+
+  const SouscriptionPrestationPaiementElectroniqueRequest({
+    required this.affilieId,
+    required this.modePaiement,
+    required this.telephonePaiement,
+    required this.devisePaiementId,
+    required this.achat,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'affilieId': affilieId,
+        'modePaiement': modePaiement,
+        'telephonePaiement': telephonePaiement,
+        'devisePaiementId': devisePaiementId,
+        'achat': achat.toJson(),
+      };
+}
+
 /// Réponse POST /api/SouscriptionPrestation (extrait utile).
 class SouscriptionPrestationCreateResult {
   final Map<String, dynamic> raw;

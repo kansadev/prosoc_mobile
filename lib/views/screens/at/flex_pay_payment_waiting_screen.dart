@@ -1,16 +1,19 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import '../../../config/api.dart';
 import '../../../config/colors.dart';
 import '../../../models/adhesion_with_affilie_model.dart';
 import '../../../services/flex_pay_signalr_service.dart';
+import '../../../utils/api_error_helper.dart';
 import '../../../utils/formatters.dart';
 
-/// Page dédiée pendant la validation FlexPay (Mobile Money, etc.).
+/// Écran d'attente pendant la validation FlexPay (Mobile Money, carte, etc.).
 ///
-/// SignalR : via [FlexPaySignalRService] (no-op tant que `signalr_netcore`
-/// n'est pas intégré). L'agent confirme manuellement en attendant.
+/// Confirme le succès **uniquement** après `GET /api/FlexPay/verifier/{orderNumber}`
+/// (polling) ou événement SignalR de succès (si branché).
 class FlexPayPaymentWaitingScreen extends StatefulWidget {
   const FlexPayPaymentWaitingScreen({
     super.key,
@@ -28,21 +31,63 @@ class FlexPayPaymentWaitingScreen extends StatefulWidget {
 
 class _FlexPayPaymentWaitingScreenState
     extends State<FlexPayPaymentWaitingScreen> {
+  static const _pollInterval = Duration(seconds: 4);
+
   Timer? _expiryTimer;
+  Timer? _pollTimer;
   bool _isExpired = false;
+  bool _isChecking = false;
+  bool _isFinalizing = false;
+  bool _paymentFailed = false;
+  String? _statusHint;
+  FlexPayVerifierResult? _lastResult;
+
+  String? get _orderNumber {
+    final order = widget.payment.orderNumberFlexPay?.trim();
+    if (order != null && order.isNotEmpty) return order;
+    return null;
+  }
 
   @override
   void initState() {
     super.initState();
     _scheduleExpiryCheck();
     _connectSignalR();
+    _startPolling();
   }
 
   @override
   void dispose() {
     _expiryTimer?.cancel();
+    _pollTimer?.cancel();
     FlexPaySignalRService.instance.disconnect();
     super.dispose();
+  }
+
+  void _startPolling() {
+    if (_orderNumber == null) {
+      if (kDebugMode) {
+        debugPrint('[FlexPay] polling impossible — orderNumber manquant');
+      }
+      setState(() {
+        _statusHint =
+            'Numéro de commande FlexPay manquant — impossible de vérifier le paiement.';
+      });
+      return;
+    }
+
+    if (kDebugMode) {
+      debugPrint(
+        '[FlexPay] démarrage polling orderNumber=$_orderNumber '
+        '(toutes les ${_pollInterval.inSeconds}s)',
+      );
+    }
+
+    // Premier contrôle immédiat, puis intervalle.
+    unawaited(_checkPaymentStatus(showBusy: false));
+    _pollTimer = Timer.periodic(_pollInterval, (_) {
+      unawaited(_checkPaymentStatus(showBusy: false));
+    });
   }
 
   Future<void> _connectSignalR() async {
@@ -52,9 +97,12 @@ class _FlexPayPaymentWaitingScreenState
     await FlexPaySignalRService.instance.connect(
       idCollecteEnAttente: collecteId,
       onUpdated: (update) {
-        if (!mounted) return;
+        if (!mounted || _isFinalizing) return;
         if (update.success) {
-          _onManualPaymentConfirmed();
+          // SignalR accélère : on revalide quand même via l'API.
+          unawaited(_checkPaymentStatus(showBusy: true));
+        } else if (update.message != null && update.message!.isNotEmpty) {
+          setState(() => _statusHint = update.message);
         }
       },
     );
@@ -65,10 +113,11 @@ class _FlexPayPaymentWaitingScreenState
     if (expiresAt == null) return;
 
     void check() {
-      if (!mounted) return;
+      if (!mounted || _isFinalizing) return;
       if (DateTime.now().isAfter(expiresAt)) {
         setState(() => _isExpired = true);
         _expiryTimer?.cancel();
+        _pollTimer?.cancel();
       }
     }
 
@@ -76,8 +125,97 @@ class _FlexPayPaymentWaitingScreenState
     _expiryTimer = Timer.periodic(const Duration(seconds: 30), (_) => check());
   }
 
-  Future<void> _onManualPaymentConfirmed() async {
-    if (!mounted) return;
+  Future<void> _checkPaymentStatus({required bool showBusy}) async {
+    if (!mounted || _isFinalizing || _paymentFailed || _isExpired) return;
+    if (_isChecking) return;
+
+    final orderNumber = _orderNumber;
+    if (orderNumber == null) return;
+
+    setState(() {
+      _isChecking = true;
+      if (showBusy) {
+        _statusHint = 'Vérification du paiement…';
+      }
+    });
+
+    try {
+      final response = await ApiService.verifyFlexPayPayment(orderNumber);
+      if (!mounted || _isFinalizing) return;
+
+      if (!response.success || response.data == null) {
+        final msg = response.message?.trim();
+        setState(() {
+          _statusHint = (msg != null && msg.isNotEmpty)
+              ? msg
+              : 'En attente de confirmation FlexPay…';
+        });
+        return;
+      }
+
+      final result = response.data!;
+      if (kDebugMode) {
+        debugPrint(
+          '[FlexPay] poll résultat success=${result.success} '
+          'alreadyProcessed=${result.alreadyProcessed} '
+          'idAdhesion=${result.idAdhesion} idCollecte=${result.idCollecte} '
+          'finalized=${result.isPaymentFinalized} '
+          'failed=${result.isPaymentFailed} '
+          'message=${result.message}',
+        );
+      }
+
+      setState(() {
+        _lastResult = result;
+        final msg = result.message?.trim();
+        if (msg != null && msg.isNotEmpty) {
+          _statusHint = msg;
+        } else if (!result.isPaymentFinalized) {
+          _statusHint = 'Paiement en attente de confirmation…';
+        }
+      });
+
+      if (result.isPaymentFinalized) {
+        await _onPaymentConfirmedByApi(result);
+        return;
+      }
+
+      if (result.isPaymentFailed) {
+        _pollTimer?.cancel();
+        final msg = result.message?.trim();
+        setState(() {
+          _paymentFailed = true;
+          _statusHint = (msg != null && msg.isNotEmpty)
+              ? msg
+              : 'Le paiement a échoué ou n\'a pas pu être finalisé.';
+        });
+      }
+    } catch (e, st) {
+      ApiErrorHelper.logException('FlexPay/verifier (poll)', e, st);
+      if (!mounted) return;
+      setState(() {
+        _statusHint = 'Impossible de vérifier pour le moment. Nouvel essai…';
+      });
+    } finally {
+      if (mounted) {
+        setState(() => _isChecking = false);
+      }
+    }
+  }
+
+  Future<void> _onPaymentConfirmedByApi(FlexPayVerifierResult result) async {
+    if (_isFinalizing || !mounted) return;
+    _isFinalizing = true;
+    _pollTimer?.cancel();
+    _expiryTimer?.cancel();
+
+    final detail = <String>[];
+    if (result.idAdhesion != null) {
+      detail.add('Adhésion n° ${result.idAdhesion}');
+    }
+    if (result.idCollecte != null) {
+      detail.add('Collecte n° ${result.idCollecte}');
+    }
 
     await showDialog<void>(
       context: context,
@@ -88,10 +226,12 @@ class _FlexPayPaymentWaitingScreenState
           color: AppColors.prosocGreen,
           size: 64,
         ),
-        content: const Text(
-          'Paiement enregistré.\nL\'adhésion a été initiée.',
+        content: Text(
+          detail.isEmpty
+              ? 'Paiement confirmé.\nL\'opération a bien été finalisée.'
+              : 'Paiement confirmé.\n${detail.join('\n')}',
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
             color: AppColors.textPrimary,
@@ -122,8 +262,16 @@ class _FlexPayPaymentWaitingScreenState
     final payment = widget.payment;
     final message = payment.message?.trim();
     final statusFallback = widget.isMobileMoney
-        ? 'En attente de validation sur le téléphone de l\'affilié…'
+        ? 'En attente de validation sur le téléphone…'
         : 'En attente de confirmation du paiement…';
+
+    final headline = _paymentFailed
+        ? (_statusHint ?? 'Paiement échoué')
+        : _isExpired
+            ? 'Délai de paiement expiré. Relancez l\'opération si nécessaire.'
+            : (_statusHint?.isNotEmpty == true
+                ? _statusHint!
+                : (message?.isNotEmpty == true ? message! : statusFallback));
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -146,22 +294,31 @@ class _FlexPayPaymentWaitingScreenState
                     children: [
                       Padding(
                         padding: const EdgeInsets.symmetric(vertical: 24),
-                        child: Icon(
-                          _isExpired
-                              ? Icons.timer_off_outlined
-                              : Icons.sync,
-                          size: 72,
-                          color: _isExpired
-                              ? Colors.orange
-                              : AppColors.prosocGreen,
-                        ),
+                        child: _isChecking && !_paymentFailed && !_isExpired
+                            ? const SizedBox(
+                                width: 64,
+                                height: 64,
+                                child: CircularProgressIndicator(
+                                  color: AppColors.prosocGreen,
+                                  strokeWidth: 3,
+                                ),
+                              )
+                            : Icon(
+                                _paymentFailed
+                                    ? Icons.cancel_outlined
+                                    : _isExpired
+                                        ? Icons.timer_off_outlined
+                                        : Icons.sync,
+                                size: 72,
+                                color: _paymentFailed
+                                    ? Colors.red.shade400
+                                    : _isExpired
+                                        ? Colors.orange
+                                        : AppColors.prosocGreen,
+                              ),
                       ),
                       Text(
-                        _isExpired
-                            ? 'Délai de paiement expiré. Relancez l\'adhésion si nécessaire.'
-                            : (message?.isNotEmpty == true
-                                ? message!
-                                : statusFallback),
+                        headline,
                         textAlign: TextAlign.center,
                         style: const TextStyle(
                           fontSize: 16,
@@ -169,13 +326,13 @@ class _FlexPayPaymentWaitingScreenState
                           color: AppColors.textPrimary,
                         ),
                       ),
-                      if (!_isExpired) ...[
+                      if (!_isExpired && !_paymentFailed) ...[
                         const SizedBox(height: 12),
                         Text(
                           widget.isMobileMoney
-                              ? 'Demandez à l\'affilié de valider la demande '
-                                  'Mobile Money sur son téléphone.'
-                              : 'Finalisez le paiement sur l\'appareil de l\'affilié.',
+                              ? 'Validez la demande Mobile Money sur le téléphone, '
+                                  'puis attendez la confirmation automatique.'
+                              : 'Finalisez le paiement, puis attendez la confirmation automatique.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 14,
@@ -185,7 +342,9 @@ class _FlexPayPaymentWaitingScreenState
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          'La fermeture automatique sera disponible via SignalR.',
+                          _orderNumber == null
+                              ? 'Vérification impossible sans numéro de commande.'
+                              : 'Vérification automatique toutes les ${_pollInterval.inSeconds} s.',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: 12,
@@ -225,21 +384,33 @@ class _FlexPayPaymentWaitingScreenState
                           'Expire le',
                           AppFormatters.formatDateTime(payment.holdExpireAt),
                         ),
+                      if (_lastResult?.idAdhesion != null)
+                        _infoTile(
+                          Icons.badge_outlined,
+                          'Adhésion',
+                          '${_lastResult!.idAdhesion}',
+                        ),
                     ],
                   ),
                 ),
               ),
-              if (!_isExpired) ...[
+              if (!_isExpired && !_paymentFailed && _orderNumber != null) ...[
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _onManualPaymentConfirmed,
+                    onPressed: _isChecking
+                        ? null
+                        : () => _checkPaymentStatus(showBusy: true),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.prosocGreen,
                       foregroundColor: Colors.white,
+                      disabledBackgroundColor:
+                          AppColors.prosocGreen.withValues(alpha: 0.5),
                       padding: const EdgeInsets.symmetric(vertical: 14),
                     ),
-                    child: const Text('Paiement validé par l\'affilié'),
+                    child: Text(
+                      _isChecking ? 'Vérification…' : 'Vérifier le statut',
+                    ),
                   ),
                 ),
                 const SizedBox(height: 10),
@@ -253,7 +424,11 @@ class _FlexPayPaymentWaitingScreenState
                     side: const BorderSide(color: AppColors.prosocGreen),
                     padding: const EdgeInsets.symmetric(vertical: 14),
                   ),
-                  child: Text(_isExpired ? 'Fermer' : 'Quitter sans confirmer'),
+                  child: Text(
+                    _isExpired || _paymentFailed
+                        ? 'Fermer'
+                        : 'Quitter sans confirmer',
+                  ),
                 ),
               ),
             ],

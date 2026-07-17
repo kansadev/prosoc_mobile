@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../../../config/api.dart';
 import '../../../config/colors.dart';
@@ -16,8 +17,23 @@ import 'widgets/bon_envoi_detail_sheet.dart';
 import 'widgets/demande_bon_form_sheet.dart';
 
 /// Bons d'envoi et demandes — BonEnvoi paginé + DemandeBonEnvoi.
+///
+/// - Adhérent : [affilieId] omis → utilise le profil connecté.
+/// - Agent / percepteur : passent [affilieId] (+ [agentId]) pour demander un bon
+///   pour un affilié.
 class AdherentDemandeBonScreen extends StatefulWidget {
-  const AdherentDemandeBonScreen({super.key});
+  final int? affilieId;
+  final int? agentId;
+  final String? affilieNomComplet;
+  final String? screenTitle;
+
+  const AdherentDemandeBonScreen({
+    super.key,
+    this.affilieId,
+    this.agentId,
+    this.affilieNomComplet,
+    this.screenTitle,
+  });
 
   @override
   State<AdherentDemandeBonScreen> createState() =>
@@ -46,7 +62,24 @@ class _AdherentDemandeBonScreenState extends State<AdherentDemandeBonScreen>
 
   static const _pageSize = 20;
 
-  int? get _affilieId => AuthService.affilieId;
+  int? get _affilieId =>
+      widget.affilieId ?? AuthService.affilieId;
+
+  int? get _agentId =>
+      widget.agentId ?? AuthService.agentId;
+
+  bool get _isAgentContext =>
+      widget.affilieId != null && widget.affilieId! > 0;
+
+  String get _appBarTitle {
+    final custom = widget.screenTitle?.trim();
+    if (custom != null && custom.isNotEmpty) return custom;
+    if (_isAgentContext) {
+      final name = widget.affilieNomComplet?.trim() ?? '';
+      return name.isNotEmpty ? 'Bons — $name' : 'Demande de bon';
+    }
+    return 'Bons d\'envoi';
+  }
 
   @override
   void initState() {
@@ -323,6 +356,7 @@ class _AdherentDemandeBonScreenState extends State<AdherentDemandeBonScreen>
       context,
       affilieId: affilieId,
       souscriptions: _souscriptions,
+      agentId: _agentId,
     );
     if (ok == true && mounted) {
       await _loadDemandesAndMeta();
@@ -353,7 +387,7 @@ class _AdherentDemandeBonScreenState extends State<AdherentDemandeBonScreen>
           onPressed: () => Navigator.pop(context),
           icon: const Icon(Icons.arrow_back_ios_new_rounded),
         ),
-        title: const Text('Bons et Demandes'),
+        title: Text(_appBarTitle),
         backgroundColor: Colors.white,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
@@ -373,7 +407,7 @@ class _AdherentDemandeBonScreenState extends State<AdherentDemandeBonScreen>
             controller: _tabController,
             tabs: [
               DashboardSegmentTabItem(
-                label: 'Mes bons',
+                label: _isAgentContext ? 'Ses bons' : 'Mes bons',
                 badgeCount: _bons.length,
               ),
               DashboardSegmentTabItem(
@@ -420,10 +454,12 @@ class _AdherentDemandeBonScreenState extends State<AdherentDemandeBonScreen>
     }
 
     if (_bons.isEmpty) {
-      return const EmptyStateScrollable(
+      return  EmptyStateScrollable(
         icon: Icons.receipt_long_outlined,
         title: 'Aucun bon émis',
-        subtitle: 'Vos bons d\'envoi validés apparaîtront ici.',
+        subtitle: _isAgentContext
+            ? 'Les bons d\'envoi validés de cet affilié apparaîtront ici.'
+            : 'Vos bons d\'envoi validés apparaîtront ici.',
       );
     }
 
@@ -824,11 +860,78 @@ class _AdherentDemandeBonScreenState extends State<AdherentDemandeBonScreen>
                 if (d.dateDemande != null)
                   AppFormatters.formatDate(d.dateDemande),
                 if (d.bonEnvoiNumero.isNotEmpty) 'Bon ${d.bonEnvoiNumero}',
-                if (d.jetonMedicalCode.isNotEmpty)
-                  'Jeton ${d.jetonMedicalCode}',
               ].where((s) => s.isNotEmpty).join(' · '),
               style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
             ),
+            if (d.jetonMedicalCode.isNotEmpty || d.jetonMedicalId > 0) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.prosocGreen.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: AppColors.prosocGreen.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.qr_code_2_rounded,
+                      color: AppColors.prosocGreen,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Jeton à présenter au percepteur',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          SelectableText(
+                            d.jetonMedicalCode.isNotEmpty
+                                ? d.jetonMedicalCode
+                                : '#${d.jetonMedicalId}',
+                            style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: 1.1,
+                              color: AppColors.prosocGreen,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Copier le jeton',
+                      onPressed: () {
+                        final code = d.jetonMedicalCode.isNotEmpty
+                            ? d.jetonMedicalCode
+                            : '${d.jetonMedicalId}';
+                        Clipboard.setData(ClipboardData(text: code));
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Jeton copié'),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                      icon: const Icon(
+                        Icons.copy_rounded,
+                        color: AppColors.prosocGreen,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             if (d.hasCoupleBonJeton && d.hasQr) ...[
               const SizedBox(height: 12),
               Center(

@@ -7,6 +7,7 @@ import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_frais_screen.da
 import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_souscription_screen.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/AffiliateDetailsScreen.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/arrieres_affilie_screen.dart';
+import 'package:prosoc/views/screens/adh%C3%A9rent/adherent_demande_bon_screen.dart';
 import 'package:prosoc/widgets/popup_menu_widget.dart';
 import 'package:prosoc/widgets/antecedent_bottom_sheet.dart';
 import 'package:prosoc/widgets/dependant_bottom_sheet.dart';
@@ -571,6 +572,19 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                     affilieTelephone:
                         telephone.trim().isNotEmpty ? telephone : null,
                     allowVirtualAccount: true,
+                  );
+                },
+                onDemandeBon: () {
+                  final name = '$prenom $nom'.trim();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => AdherentDemandeBonScreen(
+                        affilieId: affilieId,
+                        agentId: AuthService.agentId,
+                        affilieNomComplet: name.isNotEmpty ? name : null,
+                      ),
+                    ),
                   );
                 },
                 onAntecedents: () {

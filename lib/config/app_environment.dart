@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 
 /// Environnements API Prosoc.
 enum AppEnvironment {
-  dev('https://dev-prosoc.asdc-rdc.org'),
+  dev('https://uat-prosoc.asdc-rdc.org'),
   uat('https://uat-prosoc.asdc-rdc.org');
 
   const AppEnvironment(this.baseUrl);

@@ -13,10 +13,12 @@ import 'widgets/payer_contributionScreen.dart';
 import 'widgets/payer_souscription_screen.dart';
 import 'widgets/payer_frais_screen.dart';
 import 'arrieres_affilie_screen.dart';
+import 'adherent_demande_bon_screen.dart';
 import 'package:prosoc/widgets/antecedent_bottom_sheet.dart';
 import 'package:prosoc/widgets/dependant_bottom_sheet.dart';
 import 'package:prosoc/widgets/souscription_bottom_sheet.dart';
 import 'package:prosoc/widgets/popup_menu_widget.dart';
+import 'package:prosoc/services/auth_service.dart';
 
 class AffiliateDetailsScreen extends StatefulWidget {
   final int affilieId;
@@ -676,6 +678,7 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
           onPayerSouscription: _navigateToPayerSouscriptionScreen,
           onDependants: _isSoloAdhesion ? null : _showAddDependantBottomSheet,
           onSouscription: _showSouscriptionBottomSheet,
+          onDemandeBon: _openDemandeBonScreen,
           onAntecedents: _showAddAntecedentBottomSheet,
           onArrieres: _navigateToArrieresScreen,
         ),
@@ -1782,6 +1785,22 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
     if (created == true && mounted) {
       await _loadSouscriptions();
     }
+  }
+
+  Future<void> _openDemandeBonScreen() async {
+    final nom = widget.preview?.nom ?? '';
+    final prenom = widget.preview?.prenom ?? '';
+    final name = '$prenom $nom'.trim();
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => AdherentDemandeBonScreen(
+          affilieId: widget.affilieId,
+          agentId: AuthService.agentId,
+          affilieNomComplet: name.isNotEmpty ? name : null,
+        ),
+      ),
+    );
   }
 
   Future<void> _showAddAntecedentBottomSheet() async {

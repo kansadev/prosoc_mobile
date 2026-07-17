@@ -2203,16 +2203,29 @@ class ApiService {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final List<dynamic> list = data is List ? data : [];
-        return ApiResponse.success(
-          list.map((json) => Frais.fromJson(json)).toList(),
-        );
+        final decoded = jsonDecode(response.body);
+        final rows = PaginatedResponseHelper.extractRows(decoded);
+        final parsed = <Frais>[];
+        for (final item in rows) {
+          if (item is! Map) continue;
+          try {
+            parsed.add(
+              Frais.fromJson(
+                item is Map<String, dynamic>
+                    ? item
+                    : Map<String, dynamic>.from(item),
+              ),
+            );
+          } catch (e, stackTrace) {
+            ApiErrorHelper.logException('Frais/fromJson', e, stackTrace);
+          }
+        }
+        return ApiResponse.success(parsed, statusCode: response.statusCode);
       } else {
         return _errorResponse(response);
       }
-    } catch (e) {
-      return _errorFromException(e, StackTrace.current);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, 'Frais/list');
     }
   }
 
@@ -2495,6 +2508,73 @@ class ApiService {
     final primary = await _get<Map<String, dynamic>>('/api/Collecte/$id');
     if (primary.success) return primary;
     return _get<Map<String, dynamic>>('/api/collecte/$id');
+  }
+
+  /// GET /api/FlexPay/verifier/{orderNumber} — statut paiement (polling).
+  /// Endpoint anonymisable (inscription publique + agent connecté).
+  static Future<ApiResponse<FlexPayVerifierResult>> verifyFlexPayPayment(
+    String orderNumber,
+  ) async {
+    const context = 'FlexPay/verifier';
+    final trimmed = orderNumber.trim();
+    if (trimmed.isEmpty) {
+      return ApiResponse.error('Numéro de commande FlexPay manquant');
+    }
+
+    final endpoint = '/api/FlexPay/verifier/$trimmed';
+    try {
+      ApiErrorHelper.logRequest(
+        context,
+        {'orderNumber': trimmed},
+        endpoint: endpoint,
+        method: 'GET',
+      );
+
+      // Toujours sans forcer le Bearer : inscription publique sans token.
+      // Si un JWT est présent (agent), on l'envoie aussi.
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}$endpoint'),
+        headers: isAuthenticated
+            ? ApiConfig.authHeaders(_token!)
+            : ApiConfig.headers,
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        ApiErrorHelper.logHttpSuccess(
+          context,
+          statusCode: response.statusCode,
+          body: response.body,
+          endpoint: endpoint,
+        );
+        final decoded = jsonDecode(response.body);
+        Map<String, dynamic>? payload;
+        if (decoded is Map<String, dynamic>) {
+          payload = decoded.containsKey('success') ||
+                  decoded.containsKey('alreadyProcessed')
+              ? decoded
+              : (decoded['data'] is Map
+                  ? Map<String, dynamic>.from(decoded['data'] as Map)
+                  : decoded);
+        }
+        if (payload == null) {
+          return ApiResponse.error(
+            'Format de réponse invalide',
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.success(
+          FlexPayVerifierResult.fromJson(payload),
+          statusCode: response.statusCode,
+        );
+      }
+
+      return _errorResponse<FlexPayVerifierResult>(
+        response,
+        context: context,
+      );
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
   }
 
   /// GET /api/Collecte/by-agent/{agentId} — Historique des collectes d'un agent
@@ -3668,6 +3748,74 @@ class ApiService {
     );
   }
 
+  /// POST /api/SouscriptionPrestation/paiement-electronique
+  /// Nouvelle souscription payée en Mobile Money / Carte (FlexPay).
+  static Future<ApiResponse<AdhesionElectronicPaymentResponse>>
+      createSouscriptionPrestationPaiementElectronique(
+    SouscriptionPrestationPaiementElectroniqueRequest request,
+  ) async {
+    const context = 'SouscriptionPrestation/paiement-electronique';
+    try {
+      final body = jsonEncode(request.toJson());
+      ApiErrorHelper.logRequest(
+        context,
+        {
+          'affilieId': request.affilieId,
+          'modePaiement': request.modePaiement,
+          'telephonePaiement': request.telephonePaiement,
+          'devisePaiementId': request.devisePaiementId,
+          'prestationId': request.achat.prestationId,
+        },
+        endpoint: '/api/SouscriptionPrestation/paiement-electronique',
+      );
+
+      final response = await http.post(
+        Uri.parse(
+          '${ApiConfig.baseUrl}/api/SouscriptionPrestation/paiement-electronique',
+        ),
+        headers: isAuthenticated
+            ? ApiConfig.authHeaders(_token!)
+            : ApiConfig.headers,
+        body: body,
+      );
+
+      if (response.statusCode == 200 ||
+          response.statusCode == 201 ||
+          response.statusCode == 202) {
+        ApiErrorHelper.logHttpSuccess(
+          context,
+          statusCode: response.statusCode,
+          body: response.body,
+          endpoint: '/api/SouscriptionPrestation/paiement-electronique',
+        );
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic>) {
+          final payload = data.containsKey('flexPayAccepted') ||
+                  data.containsKey('paymentUrl') ||
+                  data.containsKey('orderNumber')
+              ? data
+              : (data['data'] is Map<String, dynamic>
+                  ? data['data'] as Map<String, dynamic>
+                  : data);
+          return ApiResponse.success(
+            AdhesionElectronicPaymentResponse.fromJson(payload),
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.error(
+          'Format de réponse invalide',
+          statusCode: response.statusCode,
+        );
+      }
+      return _errorResponse<AdhesionElectronicPaymentResponse>(
+        response,
+        context: context,
+      );
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
   /// GET /api/DemandeBonEnvoi/by-affilie/{affilieId}
   static Future<ApiResponse<List<DemandeBonEnvoiModel>>>
   getDemandesBonEnvoiByAffilie(int affilieId) async {
@@ -3865,26 +4013,41 @@ class ApiService {
   }
 
   /// GET /api/DemandeBonEnvoi/by-statut/{statut}/simple
+  /// Fallback plural (doc legacy) : /api/DemandeBonEnvois/by-statut/{statut}/simple
   static Future<ApiResponse<List<DemandeBonEnvoiModel>>>
       getDemandesBonEnvoiByStatut(String statut) async {
     final encodedStatut = Uri.encodeComponent(statut);
-    final response = await _get<dynamic>(
+    final paths = <String>[
       '/api/DemandeBonEnvoi/by-statut/$encodedStatut/simple',
-    );
-    if (!response.success) {
-      return ApiResponse(
-        success: false,
-        message: response.message,
-        statusCode: response.statusCode,
-      );
+      '/api/DemandeBonEnvois/by-statut/$encodedStatut/simple',
+      '/api/DemandeBonEnvoi/by-statut/$encodedStatut/paginated',
+      '/api/DemandeBonEnvois/by-statut/$encodedStatut/paginated',
+    ];
+
+    ApiResponse<dynamic>? lastFailure;
+    for (final path in paths) {
+      final response = await _get<dynamic>(path);
+      if (response.success) {
+        return ApiResponse.success(
+          _parseDemandeBonEnvoiList(response.data),
+          statusCode: response.statusCode,
+        );
+      }
+      lastFailure = response;
+      // Ne tente les fallbacks que si la ressource n'existe pas (404).
+      if (response.statusCode != 404) break;
     }
-    return ApiResponse.success(
-      _parseDemandeBonEnvoiList(response.data),
-      statusCode: response.statusCode,
+
+    return ApiResponse(
+      success: false,
+      message: lastFailure?.message ??
+          'Impossible de charger les demandes de bon.',
+      statusCode: lastFailure?.statusCode,
     );
   }
 
-  /// POST /api/DemandeBonEnvoi/{id}/confirmer — Crée le couple BonEnvoi + JetonMedical
+  /// POST /api/DemandeBonEnvoi/{id}/confirmer — Crée le couple BonEnvoi + JetonMedical.
+  /// Fallback legacy : POST /api/DemandeBonEnvoi/valider-et-generer
   static Future<ApiResponse<DemandeBonEnvoiModel>> confirmerDemandeBonEnvoi(
     int idDemande, {
     int? agentId,
@@ -3900,17 +4063,41 @@ class ApiService {
       body,
       logContext: 'DemandeBonEnvoi/confirmer',
     );
-    if (!response.success || response.data == null) {
-      return ApiResponse(
-        success: false,
-        message: response.message,
+    if (response.success && response.data != null) {
+      return ApiResponse.success(
+        DemandeBonEnvoiModel.fromJson(
+          _unwrapDemandeBonEnvoiMap(response.data!),
+        ),
         statusCode: response.statusCode,
       );
     }
-    return ApiResponse.success(
-      DemandeBonEnvoiModel.fromJson(
-        _unwrapDemandeBonEnvoiMap(response.data!),
-      ),
+
+    // Endpoint singular absent → tentative pluriel + legacy.
+    if (response.statusCode == 404) {
+      final plural = await _post<Map<String, dynamic>>(
+        '/api/DemandeBonEnvois/$idDemande/confirmer',
+        body,
+        logContext: 'DemandeBonEnvois/confirmer',
+      );
+      if (plural.success && plural.data != null) {
+        return ApiResponse.success(
+          DemandeBonEnvoiModel.fromJson(
+            _unwrapDemandeBonEnvoiMap(plural.data!),
+          ),
+          statusCode: plural.statusCode,
+        );
+      }
+      return validerEtGenererDemandeBonEnvoi(
+        idDemande: idDemande,
+        agentId: agentId,
+        observationAgent: observationAgent,
+      );
+    }
+
+    return ApiResponse(
+      success: false,
+      message: response.message ??
+          'Impossible de confirmer la demande (bon + jeton).',
       statusCode: response.statusCode,
     );
   }
@@ -3932,10 +4119,34 @@ class ApiService {
       body,
       logContext: 'DemandeBonEnvoi/valider-et-generer',
     );
+    if ((!response.success || response.data == null) &&
+        response.statusCode == 404) {
+      final legacy = await _post<Map<String, dynamic>>(
+        '/api/DemandeBonEnvois/valider-et-generer',
+        body,
+        logContext: 'DemandeBonEnvois/valider-et-generer',
+      );
+      if (legacy.success && legacy.data != null) {
+        return ApiResponse.success(
+          DemandeBonEnvoiModel.fromJson(
+            _unwrapDemandeBonEnvoiMap(legacy.data!),
+          ),
+          statusCode: legacy.statusCode,
+        );
+      }
+      return ApiResponse(
+        success: false,
+        message: legacy.message ??
+            response.message ??
+            'Impossible de valider et générer le bon + jeton.',
+        statusCode: legacy.statusCode ?? response.statusCode,
+      );
+    }
     if (!response.success || response.data == null) {
       return ApiResponse(
         success: false,
-        message: response.message,
+        message: response.message ??
+            'Impossible de valider et générer le bon + jeton.',
         statusCode: response.statusCode,
       );
     }

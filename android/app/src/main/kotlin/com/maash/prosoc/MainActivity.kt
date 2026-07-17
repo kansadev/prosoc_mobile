@@ -1,4 +1,4 @@
-package com.prosoc.app
+package com.maash.prosoc
 
 import io.flutter.embedding.android.FlutterActivity
 

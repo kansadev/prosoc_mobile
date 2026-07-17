@@ -418,3 +418,46 @@ class AdhesionElectronicPaymentResponse {
     );
   }
 }
+
+/// Réponse de `GET /api/FlexPay/verifier/{orderNumber}`.
+class FlexPayVerifierResult {
+  final bool success;
+  final bool alreadyProcessed;
+  final String? message;
+  final int? idCollecte;
+  final int? idAdhesion;
+  final String? idCollecteEnAttente;
+
+  const FlexPayVerifierResult({
+    required this.success,
+    this.alreadyProcessed = false,
+    this.message,
+    this.idCollecte,
+    this.idAdhesion,
+    this.idCollecteEnAttente,
+  });
+
+  /// Confirmation basée uniquement sur le flag API [success].
+  bool get isPaymentFinalized => success;
+
+  /// Échec terminal quand le serveur a déjà traité et [success] est false.
+  bool get isPaymentFailed => alreadyProcessed && !success;
+
+  factory FlexPayVerifierResult.fromJson(Map<String, dynamic> json) {
+    return FlexPayVerifierResult(
+      success: json['success'] == true,
+      alreadyProcessed: json['alreadyProcessed'] == true,
+      message: json['message']?.toString(),
+      idCollecte: _asInt(json['idCollecte']),
+      idAdhesion: _asInt(json['idAdhesion']),
+      idCollecteEnAttente: json['idCollecteEnAttente']?.toString(),
+    );
+  }
+
+  static int? _asInt(dynamic value) {
+    if (value == null) return null;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value.toString());
+  }
+}

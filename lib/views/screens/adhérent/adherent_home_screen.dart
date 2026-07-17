@@ -9,9 +9,7 @@ import '../../../services/auth_service.dart';
 import '../../../utils/api_error_helper.dart';
 import '../../../utils/cotisation_montant_helper.dart';
 import '../../../utils/formatters.dart';
-import '../../widgets/adherent_cotisations_chart.dart';
 import '../../widgets/prosoc_shimmer_loading.dart';
-import '../../widgets/year_picker_sheet.dart';
 import '../../../widgets/souscription_bottom_sheet.dart';
 import 'arrieres_affilie_screen.dart';
 
@@ -34,21 +32,15 @@ class AdherentHomeScreen extends StatefulWidget {
 
 class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
   DashboardAffilieResumeModel? _data;
-  List<DashboardAffilieCotisation> _cotisationsRecentes = [];
-  List<DashboardAffilieCotisation> _cotisationsPeriode = [];
   List<ArriereAffilieModel> _mesArrieres = [];
   List<PenaliteAffilieModel> _mesPenalites = [];
   bool _isLoading = true;
-  bool _loadingCotisations = false;
   bool _loadingArrieres = false;
   String? _errorMessage;
-  late int _selectedYear;
-  int? _filterMois;
 
   @override
   void initState() {
     super.initState();
-    _selectedYear = DateTime.now().year;
     _loadDashboard();
   }
 
@@ -72,12 +64,9 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
 
     try {
       final results = await Future.wait([
-        ApiService.getDashboardAffilieResume(affilieId, annee: _selectedYear),
-        ApiService.getDashboardAffilieCotisationsRecentes(affilieId, limit: 10),
-        ApiService.getDashboardAffilieCotisations(
+        ApiService.getDashboardAffilieResume(
           affilieId,
-          annee: _selectedYear,
-          mois: _filterMois,
+          annee: DateTime.now().year,
         ),
         ApiService.getMesArrieresAffilie(),
         ApiService.getMesPenalitesAffilie(),
@@ -87,24 +76,14 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
 
       final resumeResponse =
           results[0] as ApiResponse<DashboardAffilieResumeModel>;
-      final recentesResponse =
-          results[1] as ApiResponse<List<DashboardAffilieCotisation>>;
-      final periodeResponse =
-          results[2] as ApiResponse<List<DashboardAffilieCotisation>>;
       final arrieresResponse =
-          results[3] as ApiResponse<List<ArriereAffilieModel>>;
+          results[1] as ApiResponse<List<ArriereAffilieModel>>;
       final penalitesResponse =
-          results[4] as ApiResponse<List<PenaliteAffilieModel>>;
+          results[2] as ApiResponse<List<PenaliteAffilieModel>>;
 
       if (resumeResponse.success && resumeResponse.data != null) {
         setState(() {
           _data = resumeResponse.data;
-          _cotisationsRecentes = recentesResponse.success
-              ? (recentesResponse.data ?? [])
-              : _cotisationsRecentes;
-          _cotisationsPeriode = periodeResponse.success
-              ? (periodeResponse.data ?? [])
-              : _cotisationsPeriode;
           _mesArrieres = arrieresResponse.success
               ? (arrieresResponse.data ?? [])
               : _mesArrieres;
@@ -113,7 +92,6 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
               : _mesPenalites;
           _errorMessage = null;
           _isLoading = false;
-          _loadingCotisations = false;
           _loadingArrieres = false;
         });
       } else {
@@ -126,7 +104,6 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
                 );
           }
           _isLoading = false;
-          _loadingCotisations = false;
         });
       }
     } catch (e, stackTrace) {
@@ -138,47 +115,6 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
         }
         _isLoading = false;
       });
-    }
-  }
-
-  Future<void> _onYearChanged(int year) async {
-    setState(() {
-      _selectedYear = year;
-      _filterMois = null;
-    });
-    await _loadDashboard();
-  }
-
-  Future<void> _reloadCotisationsPeriode(int? mois) async {
-    final affilieId = AuthService.affilieId;
-    if (affilieId == null) return;
-
-    setState(() {
-      _filterMois = mois;
-      _loadingCotisations = true;
-    });
-
-    try {
-      final response = await ApiService.getDashboardAffilieCotisations(
-        affilieId,
-        annee: _selectedYear,
-        mois: mois,
-      );
-      if (!mounted) return;
-      setState(() {
-        if (response.success && response.data != null) {
-          _cotisationsPeriode = response.data!;
-        }
-        _loadingCotisations = false;
-      });
-    } catch (e, stackTrace) {
-      ApiErrorHelper.logException(
-        'AdherentHome/cotisations',
-        e,
-        stackTrace,
-        false,
-      );
-      if (mounted) setState(() => _loadingCotisations = false);
     }
   }
 
@@ -253,12 +189,6 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           ],
         ),
         actions: [
-          YearPickerButton(
-            selectedYear: _selectedYear,
-            sheetTitle: 'Année du résumé',
-            sheetSubtitle: 'Dashboard et cotisations affichés pour cette année',
-            onYearSelected: _onYearChanged,
-          ),
           IconButton(
             icon: const Icon(
               Icons.notifications_outlined,
@@ -326,14 +256,6 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
         _buildArrieresSection(),
         const SizedBox(height: 20),
         _buildKpiRow(kpis),
-        if (kpis.montantPlafond > 0) ...[
-          const SizedBox(height: 16),
-          _buildPlafondCard(kpis),
-        ],
-        const SizedBox(height: 24),
-        _buildCotisationsChartSection(data),
-        const SizedBox(height: 24),
-        _buildCotisationsSection(),
 
         if (data.documentsEnAttente.isNotEmpty) ...[
           const SizedBox(height: 24),
@@ -439,167 +361,6 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
     );
   }
 
-  Widget _buildCotisationsChartSection(DashboardAffilieResumeModel data) {
-    final mensuelles =
-        data.graphiques?.forYear(_selectedYear) ??
-        <DashboardAffilieCotisationMensuelle>[];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle('Évolution des cotisations'),
-        const SizedBox(height: 12),
-        AdherentCotisationsChart(data: mensuelles, annee: _selectedYear),
-        if (data.graphiques?.resumeAnnuel != null &&
-            data.graphiques!.resumeAnnuel!.annee == _selectedYear) ...[
-          const SizedBox(height: 10),
-          _buildResumeAnnuelChip(data.graphiques!.resumeAnnuel!),
-        ],
-      ],
-    );
-  }
-
-  Widget _buildResumeAnnuelChip(DashboardAffilieResumeAnnuel resume) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: AppColors.prosocGreen.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: Text(
-        'Résumé ${resume.annee} · Cotisations '
-        '${AppFormatters.formatCurrencyDollar(resume.totalCotisations)} · '
-        'Utilisation moy. ${resume.tauxUtilisationMoyen.toStringAsFixed(0)}%',
-        style: const TextStyle(fontSize: 12, color: AppColors.textPrimary),
-      ),
-    );
-  }
-
-  Widget _buildCotisationsSection() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _buildSectionTitle('Cotisations récentes'),
-        const SizedBox(height: 4),
-        Text(
-          'Dernières opérations enregistrées',
-          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-        ),
-        const SizedBox(height: 10),
-        if (_cotisationsRecentes.isEmpty)
-          _buildEmptyCotisations('Aucune cotisation récente.')
-        else
-          ..._cotisationsRecentes.map(_buildCotisationTile),
-        const SizedBox(height: 20),
-        Row(
-          children: [
-            Expanded(
-              child: _buildSectionTitle(
-                _filterMois == null
-                    ? 'Cotisations $_selectedYear'
-                    : 'Cotisations — ${_monthLabel(_filterMois!)} $_selectedYear',
-              ),
-            ),
-            if (_loadingCotisations)
-              prosocLoadingInline(size: 18),
-          ],
-        ),
-        const SizedBox(height: 8),
-        _buildMonthFilterChips(),
-        const SizedBox(height: 10),
-        if (_cotisationsPeriode.isEmpty && !_loadingCotisations)
-          _buildEmptyCotisations(
-            _filterMois == null
-                ? 'Aucune cotisation pour $_selectedYear.'
-                : 'Aucune cotisation pour ce mois.',
-          )
-        else
-          ..._cotisationsPeriode.map(_buildCotisationTile),
-      ],
-    );
-  }
-
-  Widget _buildEmptyCotisations(String message) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Text(
-        message,
-        style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-      ),
-    );
-  }
-
-  Widget _buildMonthFilterChips() {
-    const moisLabels = [
-      'Jan',
-      'Fév',
-      'Mar',
-      'Avr',
-      'Mai',
-      'Juin',
-      'Juil',
-      'Aoû',
-      'Sep',
-      'Oct',
-      'Nov',
-      'Déc',
-    ];
-
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          FilterChip(
-            label: const Text('Toute l\'année'),
-            selected: _filterMois == null,
-            onSelected: (_) => _reloadCotisationsPeriode(null),
-            selectedColor: AppColors.prosocGreen.withValues(alpha: 0.2),
-            checkmarkColor: AppColors.prosocGreen,
-          ),
-          const SizedBox(width: 6),
-          for (var m = 1; m <= 12; m++)
-            Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: FilterChip(
-                label: Text(moisLabels[m - 1]),
-                selected: _filterMois == m,
-                onSelected: (_) => _reloadCotisationsPeriode(m),
-                selectedColor: AppColors.prosocGreen.withValues(alpha: 0.2),
-                checkmarkColor: AppColors.prosocGreen,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  String _monthLabel(int mois) {
-    const labels = [
-      '',
-      'Janvier',
-      'Février',
-      'Mars',
-      'Avril',
-      'Mai',
-      'Juin',
-      'Juillet',
-      'Août',
-      'Septembre',
-      'Octobre',
-      'Novembre',
-      'Décembre',
-    ];
-    if (mois >= 1 && mois <= 12) return labels[mois];
-    return '$mois';
-  }
-
   Widget _buildKpiRow(DashboardAffilieKpis kpis) {
     return Row(
       children: [
@@ -652,52 +413,6 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
               color: AppColors.textPrimary,
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPlafondCard(DashboardAffilieKpis kpis) {
-    final used = kpis.montantPlafond - kpis.restePlafond;
-    final ratio = kpis.montantPlafond > 0
-        ? (used / kpis.montantPlafond).clamp(0.0, 1.0)
-        : 0.0;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Plafond annuel',
-            style: TextStyle(fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: ratio,
-              minHeight: 8,
-              backgroundColor: Colors.grey.shade200,
-              color: AppColors.prosocGreen,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Reste : ${AppFormatters.formatCurrencyDollar(kpis.restePlafond)} / '
-            '${AppFormatters.formatCurrencyDollar(kpis.montantPlafond)}',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-          ),
-          if (kpis.tauxCouverture > 0)
-            Text(
-              'Couverture : ${kpis.tauxCouverture.toStringAsFixed(0)}%',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-            ),
         ],
       ),
     );
@@ -900,26 +615,6 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  Widget _buildCotisationTile(DashboardAffilieCotisation c) {
-    return _listTile(
-      icon: Icons.receipt_long_outlined,
-      title: c.typeCotisation.isNotEmpty ? c.typeCotisation : 'Cotisation',
-      subtitle: [
-        if (c.reference.isNotEmpty) c.reference,
-        if (c.dateCotisation != null)
-          AppFormatters.formatDate(c.dateCotisation),
-        if (c.modePaiement.isNotEmpty) c.modePaiement,
-        if (c.agentCollecteur.isNotEmpty) c.agentCollecteur,
-        if (c.statut.isNotEmpty) c.statut,
-        if (c.estEnRetard) 'Retard ${c.joursRetard} j',
-      ].where((s) => s.isNotEmpty).join(' · '),
-      trailing: AppFormatters.formatCurrencyDollar(c.montant),
-      trailingColor: c.estEnRetard
-          ? AppColors.errorColor
-          : AppColors.prosocGreen,
     );
   }
 

@@ -9,17 +9,21 @@ import '../../../../utils/api_error_helper.dart';
 class DemandeBonFormSheet extends StatefulWidget {
   final int affilieId;
   final List<SouscriptionPrestationModel> souscriptions;
+  /// Renseigné lorsqu'un agent crée la demande pour l'affilié.
+  final int? agentId;
 
   const DemandeBonFormSheet({
     super.key,
     required this.affilieId,
     required this.souscriptions,
+    this.agentId,
   });
 
   static Future<bool?> show(
     BuildContext context, {
     required int affilieId,
     required List<SouscriptionPrestationModel> souscriptions,
+    int? agentId,
   }) {
     return showModalBottomSheet<bool>(
       context: context,
@@ -28,6 +32,7 @@ class DemandeBonFormSheet extends StatefulWidget {
       builder: (context) => DemandeBonFormSheet(
         affilieId: affilieId,
         souscriptions: souscriptions,
+        agentId: agentId,
       ),
     );
   }
@@ -107,6 +112,7 @@ class _DemandeBonFormSheetState extends State<DemandeBonFormSheet> {
         prestationId: souscription.prestationId,
         typeDemande: type,
         motifDemande: _motifController.text.trim(),
+        agentId: widget.agentId,
       );
 
       if (!mounted) return;
