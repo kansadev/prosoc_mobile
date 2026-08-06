@@ -51,6 +51,10 @@ class _MainSuperviseurScreenState extends State<MainSuperviseurScreen> {
     widget.onLogout?.call();
   }
 
+  void _afterLogout() {
+    widget.onLogout?.call();
+  }
+
   void _goToTab(int index) {
     setState(() => _currentIndex = index);
   }
@@ -106,7 +110,7 @@ class _MainSuperviseurScreenState extends State<MainSuperviseurScreen> {
           ),
           ProfileScreen(
             controller: _profileController,
-            onLogout: _handleLogout,
+            onLogout: _afterLogout,
           ),
         ],
       ),

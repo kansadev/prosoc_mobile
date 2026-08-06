@@ -5,6 +5,7 @@ import '../../../controllers/main_controller.dart';
 import '../../../models/auth_user_model.dart';
 import '../../../services/auth_service.dart';
 import '../../../utils/api_error_helper.dart';
+import '../../widgets/logout_flow.dart';
 import 'change_password_screen.dart';
 import 'edit_profile_screen.dart';
 
@@ -579,11 +580,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         iconBgColor: Colors.red.withValues(alpha: 0.08),
                         titleColor: Colors.red,
                         showChevron: false,
-                        onTap: () async {
-                          final logoutCallback = widget.onLogout;
-                          await AuthService.logout();
-                          logoutCallback?.call();
-                        },
+                        onTap: () => LogoutFlow.run(
+                          context,
+                          onCompleted: widget.onLogout,
+                        ),
                       ),
                     ],
                   ),

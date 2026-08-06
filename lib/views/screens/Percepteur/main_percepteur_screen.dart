@@ -24,8 +24,12 @@ class MainPercepteurScreen extends StatefulWidget {
 class _MainPercepteurScreenState extends State<MainPercepteurScreen> {
   int _currentIndex = 0;
 
-  void _handleLogout() async {
+  Future<void> _handleLogout() async {
     await AuthService.logout();
+    widget.onLogout?.call();
+  }
+
+  void _afterLogout() {
     widget.onLogout?.call();
   }
 
@@ -62,7 +66,7 @@ class _MainPercepteurScreenState extends State<MainPercepteurScreen> {
             currentIndex: _currentIndex,
             child: const VirtualAccountScreen(),
           ),
-          ProfilePercepteurScreen(onLogout: _handleLogout),
+          ProfilePercepteurScreen(onLogout: _afterLogout),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(

@@ -306,7 +306,7 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
     );
 
     final souscriptionMontant = _selectedPrestation!.resolveMontant() ?? 0;
-    if (souscriptionMontant <= 0) {
+    if (!_selectedPrestation!.isGratuit && souscriptionMontant <= 0) {
       _showSnack('Montant de prestation invalide.', isError: true);
       return;
     }
@@ -759,7 +759,9 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
             if (_selectedPrestation != null) ...[
               const SizedBox(height: 12),
               _montantPreviewTile(
-                label: 'Montant de la prestation',
+                label: _selectedPrestation!.isGratuit
+                    ? 'Prestation gratuite'
+                    : 'Montant de la prestation',
                 montantText: _formatPrestationMontant(_selectedPrestation!),
                 isDark: isDark,
               ),
@@ -771,12 +773,13 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
   }
 
   String _prestationLabel(Prestation p) {
+    if (p.isGratuit) return p.displayLabel();
     final montant = _formatPrestationMontant(p);
-    if (montant == null) return p.nomPrestation;
-    return '${p.nomPrestation} — $montant';
+    return p.displayLabel(formattedMontant: montant);
   }
 
   String? _formatPrestationMontant(Prestation p) {
+    if (p.isGratuit) return 'Gratuit';
     final montant = p.resolveMontant();
     if (montant == null) return null;
     final code = p.resolveDeviseCode();

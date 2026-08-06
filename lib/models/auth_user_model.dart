@@ -65,14 +65,26 @@ class UtilisateurModel {
       dateCreation: DateTime.parse(json['dateCreation'] ?? DateTime.now().toIso8601String()),
       isConnecte: json['isConnecte'] ?? false,
       doitChangerMotDePasse: json['doitChangerMotDePasse'] ?? false,
-      agentId: json['agentId'],
-      affilieId: json['affilieId'],
-      idAgentGestionnaireCompte: json['idAgentGestionnaireCompte'],
+      agentId: _parsePositiveId(json['agentId']),
+      affilieId: _parsePositiveId(json['affilieId']),
+      idAgentGestionnaireCompte:
+          _parsePositiveId(json['idAgentGestionnaireCompte']),
       nomAgentGestionnaireCompte:
           json['nomAgentGestionnaireCompte']?.toString(),
       matriculeAgentGestionnaireCompte:
           json['matriculeAgentGestionnaireCompte']?.toString(),
     );
+  }
+
+  static int? _parsePositiveId(dynamic value) {
+    if (value == null) return null;
+    final id = value is int
+        ? value
+        : value is num
+            ? value.toInt()
+            : int.tryParse(value.toString());
+    if (id == null || id <= 0) return null;
+    return id;
   }
 
   UtilisateurModel copyWith({

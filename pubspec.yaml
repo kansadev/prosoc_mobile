@@ -64,6 +64,7 @@ dependencies:
   google_fonts: ^8.0.2
   webview_flutter: ^4.13.1
   timelines_plus: ^2.0.0
+  mobile_scanner: ^7.0.1
 
 dev_dependencies:
   flutter_test:

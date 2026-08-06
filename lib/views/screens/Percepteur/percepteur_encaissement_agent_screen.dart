@@ -7,6 +7,7 @@ import 'package:prosoc/config/api.dart';
 import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/agent_model.dart';
 import 'package:prosoc/models/perception_virtuelle_model.dart';
+import 'package:prosoc/models/session_caisse_model.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/currency_formatter.dart';
 import 'package:prosoc/utils/paginated_response_helper.dart';
@@ -48,13 +49,19 @@ class _PercepteurEncaissementAgentScreenState
   bool _collectesHasNext = false;
   bool _isConfirming = false;
 
+  SessionCaisseModel? _sessionCaisse;
+  bool _isLoadingSession = true;
+  bool _isOpeningSession = false;
+
   static const _pageSize = 15;
+  static const _sessionCaisseRequise = 'SESSION_CAISSIER_REQUISE';
 
   @override
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
     _loadAgents(reset: true);
+    _loadSessionCaisse();
   }
 
   @override
@@ -321,9 +328,139 @@ class _PercepteurEncaissementAgentScreenState
     });
   }
 
+  Future<void> _loadSessionCaisse() async {
+    setState(() => _isLoadingSession = true);
+    try {
+      final response = await ApiService.getSessionCaisseCourante();
+      if (!mounted) return;
+      if (response.success) {
+        final session = response.data;
+        setState(() {
+          _sessionCaisse =
+              (session != null && session.isOuverte) ? session : null;
+          _isLoadingSession = false;
+        });
+      } else {
+        setState(() {
+          _sessionCaisse = null;
+          _isLoadingSession = false;
+        });
+      }
+    } catch (e, stackTrace) {
+      ApiErrorHelper.logException(
+        'PercepteurEncaissementAgent/session',
+        e,
+        stackTrace,
+        false,
+      );
+      if (mounted) {
+        setState(() {
+          _sessionCaisse = null;
+          _isLoadingSession = false;
+        });
+      }
+    }
+  }
+
+  Future<bool> _ensureSessionCaisseOuverte() async {
+    if (_sessionCaisse != null && _sessionCaisse!.isOuverte) return true;
+
+    final opened = await _promptOpenSessionCaisse();
+    return opened == true;
+  }
+
+  Future<bool?> _promptOpenSessionCaisse() async {
+    final controller = TextEditingController(text: '0');
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Session caisse requise'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Ouvrez une session de caisse pour confirmer une perception virtuelle.',
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: controller,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Solde d\'ouverture',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.prosocGreen,
+            ),
+            child: const Text('Ouvrir'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return false;
+
+    final solde = double.tryParse(
+      controller.text.trim().replaceAll(',', '.'),
+    );
+    if (solde == null || solde < 0) {
+      _showSnack('Solde d\'ouverture invalide.', isError: true);
+      return false;
+    }
+
+    setState(() => _isOpeningSession = true);
+    try {
+      final response = await ApiService.ouvrirSessionCaisse(
+        soldeOuverture: solde,
+      );
+      if (!mounted) return false;
+
+      if (!response.success || response.data == null) {
+        _showSnack(
+          response.message ?? 'Impossible d\'ouvrir la session caisse.',
+          isError: true,
+        );
+        return false;
+      }
+
+      setState(() => _sessionCaisse = response.data);
+      _showSnack('Session caisse ouverte.');
+      return true;
+    } catch (e, stackTrace) {
+      ApiErrorHelper.logException(
+        'PercepteurEncaissementAgent/ouvrirSession',
+        e,
+        stackTrace,
+        false,
+      );
+      if (mounted) {
+        _showSnack(ApiErrorHelper.userFacingNetwork(), isError: true);
+      }
+      return false;
+    } finally {
+      if (mounted) setState(() => _isOpeningSession = false);
+    }
+  }
+
   Future<void> _confirmSelection() async {
     final agent = _selectedAgent;
     if (agent == null || _selectedCollecteIds.isEmpty || _isConfirming) return;
+
+    final sessionOk = await _ensureSessionCaisseOuverte();
+    if (!sessionOk || !mounted) return;
 
     final observation = await _askObservation();
     if (observation == null || !mounted) return;
@@ -341,6 +478,19 @@ class _PercepteurEncaissementAgentScreenState
 
       final statusCode = response.statusCode;
       final isHttpOk = statusCode == 200 || statusCode == 201;
+      final codeErreur = response.data?.codeErreur?.trim().toUpperCase();
+
+      if (codeErreur == _sessionCaisseRequise) {
+        setState(() => _sessionCaisse = null);
+        _showSnack(
+          response.data?.message.isNotEmpty == true
+              ? response.data!.message
+              : 'Ouvrez une session de caisse avant de confirmer.',
+          isError: true,
+        );
+        await _promptOpenSessionCaisse();
+        return;
+      }
 
       if (!isHttpOk || !response.success || response.data == null) {
         _showSnack(
@@ -352,6 +502,11 @@ class _PercepteurEncaissementAgentScreenState
 
       final result = response.data!;
       if (!result.succes) {
+        if (result.codeErreur?.toUpperCase() == _sessionCaisseRequise) {
+          setState(() => _sessionCaisse = null);
+          await _promptOpenSessionCaisse();
+          return;
+        }
         _showSnack(
           result.message.isNotEmpty
               ? result.message
@@ -374,6 +529,7 @@ class _PercepteurEncaissementAgentScreenState
       });
 
       await _loadCollectes(reset: true);
+      await _loadSessionCaisse();
     } catch (e, stackTrace) {
       ApiErrorHelper.logException(
         'PercepteurEncaissementAgent/confirmer',
@@ -522,6 +678,7 @@ class _PercepteurEncaissementAgentScreenState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _buildSessionCaisseBanner(),
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
           child: TextField(
@@ -544,6 +701,61 @@ class _PercepteurEncaissementAgentScreenState
         ),
         Expanded(child: _buildAgentsList()),
       ],
+    );
+  }
+
+  Widget _buildSessionCaisseBanner() {
+    final hasSession = _sessionCaisse != null && _sessionCaisse!.isOuverte;
+    final busy = _isLoadingSession || _isOpeningSession;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: hasSession
+            ? AppColors.prosocGreen.withValues(alpha: 0.1)
+            : Colors.orange.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: hasSession
+              ? AppColors.prosocGreen.withValues(alpha: 0.35)
+              : Colors.orange.withValues(alpha: 0.4),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            hasSession
+                ? Icons.point_of_sale_rounded
+                : Icons.warning_amber_rounded,
+            color: hasSession ? AppColors.prosocGreen : Colors.orange.shade800,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              busy
+                  ? 'Vérification de la session caisse…'
+                  : hasSession
+                      ? 'Session caisse ouverte'
+                          '${_sessionCaisse!.deviseCode != null ? ' · ${_sessionCaisse!.deviseCode}' : ''}'
+                      : 'Aucune session caisse — requise pour confirmer',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: hasSession
+                    ? AppColors.textPrimary
+                    : Colors.orange.shade900,
+              ),
+            ),
+          ),
+          if (!hasSession && !busy)
+            TextButton(
+              onPressed: _promptOpenSessionCaisse,
+              child: const Text('Ouvrir'),
+            ),
+        ],
+      ),
     );
   }
 
@@ -663,6 +875,7 @@ class _PercepteurEncaissementAgentScreenState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _buildSessionCaisseBanner(),
         Container(
           margin: const EdgeInsets.fromLTRB(20, 12, 20, 8),
           padding: const EdgeInsets.all(14),

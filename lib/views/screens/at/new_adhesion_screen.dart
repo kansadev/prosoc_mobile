@@ -413,7 +413,9 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
   void _applyPrestationSelection(Prestation? prestation) {
     if (prestation == null) return;
     final montant = prestation.resolveMontant();
-    if (montant != null && montant > 0) {
+    if (prestation.isGratuit) {
+      _montantController.text = '0';
+    } else if (montant != null && montant > 0) {
       _montantController.text = montant == montant.truncateToDouble()
           ? montant.toInt().toString()
           : montant.toString();
@@ -1851,6 +1853,9 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                   isRequired: true,
                   icon: Icons.health_and_safety_outlined,
                   itemLabel: (prestation) {
+                    if (prestation.isGratuit) {
+                      return prestation.displayLabel();
+                    }
                     final montant = prestation.resolveMontant();
                     final codeDevise = _prestationDeviseCode(prestation);
                     if (montant != null) {
@@ -1879,10 +1884,12 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                   ),
                   decoration: InputDecoration(
                     labelText: 'Montant de la prestation',
-                    hintText: _selectedPrestation?.resolveMontant() != null
-                        ? 'Tarif API: ${_selectedPrestation!.resolveMontant()} '
-                              '${_prestationDeviseCode(_selectedPrestation)}'
-                        : null,
+                    hintText: _selectedPrestation?.isGratuit == true
+                        ? 'Prestation gratuite'
+                        : _selectedPrestation?.resolveMontant() != null
+                            ? 'Tarif API: ${_selectedPrestation!.resolveMontant()} '
+                                  '${_prestationDeviseCode(_selectedPrestation)}'
+                            : null,
                     prefixIcon: const Icon(Icons.money),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
@@ -1893,6 +1900,12 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                       return 'Veuillez entrer le montant de la prestation';
                     }
                     final montant = double.tryParse(value);
+                    if (_selectedPrestation?.isGratuit == true) {
+                      if (montant == null || montant < 0) {
+                        return 'Montant invalide';
+                      }
+                      return null;
+                    }
                     if (montant == null || montant <= 0) {
                       return 'Le montant doit être supérieur à 0';
                     }

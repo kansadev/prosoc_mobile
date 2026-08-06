@@ -18,6 +18,14 @@ String? _prestationNullableString(dynamic value) {
   return text.isEmpty ? null : text;
 }
 
+bool _prestationBool(dynamic value) {
+  if (value == true) return true;
+  if (value == false || value == null) return false;
+  if (value is num) return value != 0;
+  final text = value.toString().trim().toLowerCase();
+  return text == 'true' || text == '1';
+}
+
 class Prestation {
   final int id;
   final String nomPrestation;
@@ -29,6 +37,8 @@ class Prestation {
   final String? produitMutuelNom;
   final int? produitAssiseurId;
   final String? produitAssiseurNom;
+  /// Dérivé du produit lié (non stocké sur Prestation en écriture).
+  final bool estGratuit;
 
   Prestation({
     required this.id,
@@ -41,25 +51,51 @@ class Prestation {
     this.produitMutuelNom,
     this.produitAssiseurId,
     this.produitAssiseurNom,
+    this.estGratuit = false,
   });
 
+  /// Gratuit via flag API ou montant à 0.
+  bool get isGratuit =>
+      estGratuit || (montant != null && montant! == 0);
+
   factory Prestation.fromJson(Map<String, dynamic> json) {
+    final montant = _parseMontant(
+      json['montant'] ?? json['prix'] ?? json['montantPrestation'],
+    );
+    final estGratuitFlag = _prestationBool(
+      json['estGratuit'] ?? json['EstGratuit'],
+    );
+
     return Prestation(
-      id: _prestationInt(json['id']),
-      nomPrestation: json['nomPrestation']?.toString() ?? '',
-      description: json['description']?.toString() ?? '',
-      montant: _parseMontant(
-        json['montant'] ?? json['prix'] ?? json['montantPrestation'],
+      id: _prestationInt(
+        json['id'] ?? json['idPrestation'] ?? json['IdPrestation'],
       ),
-      deviseId: _prestationInt(json['deviseId']),
-      deviseCode: _prestationNullableString(json['deviseCode']),
-      produitMutuelId: _prestationNullableInt(json['produitMutuelId']),
-      produitMutuelNom: json['produitMutuelNom']?.toString(),
+      nomPrestation: (json['nomPrestation'] ??
+              json['nom'] ??
+              json['NomPrestation'] ??
+              json['Nom'] ??
+              '')
+          .toString(),
+      description: (json['description'] ?? json['Description'] ?? '').toString(),
+      montant: montant,
+      deviseId: _prestationInt(json['deviseId'] ?? json['DeviseId']),
+      deviseCode: _prestationNullableString(
+        json['deviseCode'] ?? json['DeviseCode'],
+      ),
+      produitMutuelId: _prestationNullableInt(
+        json['produitMutuelId'] ?? json['ProduitMutuelId'],
+      ),
+      produitMutuelNom: json['produitMutuelNom']?.toString() ??
+          json['ProduitMutuelNom']?.toString(),
       produitAssiseurId: _prestationNullableInt(
-        json['produitAssureurId'] ?? json['produitAssiseurId'],
+        json['produitAssureurId'] ??
+            json['produitAssiseurId'] ??
+            json['ProduitAssureurId'],
       ),
       produitAssiseurNom: json['produitAssureurNom']?.toString() ??
-          json['produitAssiseurNom']?.toString(),
+          json['produitAssiseurNom']?.toString() ??
+          json['ProduitAssureurNom']?.toString(),
+      estGratuit: estGratuitFlag || (montant != null && montant == 0),
     );
   }
 
@@ -69,8 +105,9 @@ class Prestation {
     return double.tryParse(value.toString());
   }
 
-  /// Montant facturable renvoyé par l'API.
+  /// Montant facturable. `0` si gratuite ; `null` si inconnu.
   double? resolveMontant() {
+    if (isGratuit) return montant ?? 0;
     if (montant != null && montant! > 0) return montant;
     return null;
   }
@@ -81,6 +118,17 @@ class Prestation {
     if (deviseId == 2) return 'USD';
     if (deviseId == 1) return 'CDF';
     return '';
+  }
+
+  /// Libellé UI catalogue (badge Gratuit).
+  String displayLabel({String? formattedMontant}) {
+    if (isGratuit) {
+      return '$nomPrestation — Gratuit';
+    }
+    if (formattedMontant != null && formattedMontant.isNotEmpty) {
+      return '$nomPrestation — $formattedMontant';
+    }
+    return nomPrestation;
   }
 
   Map<String, dynamic> toJson() {
@@ -95,11 +143,13 @@ class Prestation {
       'produitMutuelNom': produitMutuelNom,
       'produitAssiseurId': produitAssiseurId,
       'produitAssiseurNom': produitAssiseurNom,
+      // estGratuit : lecture seule — ne pas envoyer en écriture
     };
   }
 
   @override
   String toString() {
-    return 'Prestation(id: $id, nomPrestation: $nomPrestation)';
+    return 'Prestation(id: $id, nomPrestation: $nomPrestation, '
+        'estGratuit: $estGratuit)';
   }
 }

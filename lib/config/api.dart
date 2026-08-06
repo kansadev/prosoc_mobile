@@ -34,6 +34,8 @@ import '../models/arriere_affilie_model.dart';
 import '../models/penalite_affilie_model.dart';
 import '../models/adhesion_en_ligne_model.dart';
 import '../models/agent_affecter_affilies_model.dart';
+import '../models/session_caisse_model.dart';
+import '../models/prestation_model.dart';
 import 'app_environment.dart';
 
 // ============================================
@@ -763,6 +765,29 @@ class ApiService {
           PerceptionVirtuelleConfirmResultModel.fromJson(map),
           statusCode: response.statusCode,
         );
+      }
+
+      // 400 métier (ex. SESSION_CAISSIER_REQUISE) : parser codeErreur.
+      try {
+        final decoded = jsonDecode(response.body);
+        final map = _unwrapPerceptionConfirmMap(decoded) ??
+            (decoded is Map
+                ? Map<String, dynamic>.from(decoded)
+                : null);
+        if (map != null &&
+            (map.containsKey('codeErreur') || map.containsKey('CodeErreur'))) {
+          final result = PerceptionVirtuelleConfirmResultModel.fromJson(map);
+          return ApiResponse(
+            success: false,
+            data: result,
+            message: result.message.isNotEmpty
+                ? result.message
+                : _parseErrorDetail(response),
+            statusCode: response.statusCode,
+          );
+        }
+      } catch (_) {
+        // Fallback _errorResponse ci-dessous.
       }
 
       return _errorResponse<PerceptionVirtuelleConfirmResultModel>(
@@ -2875,6 +2900,142 @@ class ApiService {
 
     final queryString = Uri(queryParameters: queryParams).query;
     return _get<Map<String, dynamic>>('/api/Prestation?$queryString');
+  }
+
+  /// GET /api/Prestation/gratuites — catalogue prestations gratuites (paginé).
+  static Future<ApiResponse<Map<String, dynamic>>> getPrestationsGratuites({
+    int page = 1,
+    int pageSize = 20,
+  }) async {
+    final queryParams = <String, String>{
+      'Page': page.toString(),
+      'pageNumber': page.toString(),
+      'PageSize': pageSize.toString(),
+      'pageSize': pageSize.toString(),
+    };
+    return _get<Map<String, dynamic>>(
+      '/api/Prestation/gratuites',
+      queryParams: queryParams,
+    );
+  }
+
+  static List<Prestation> parsePrestations(dynamic data) {
+    final rows = data is List
+        ? data
+        : PaginatedResponseHelper.extractRows(data);
+    return rows
+        .whereType<Map>()
+        .map((item) => Prestation.fromJson(Map<String, dynamic>.from(item)))
+        .toList();
+  }
+
+  // ============================================
+  // CAISSE — session (Percepteur / confirmation perception)
+  // ============================================
+
+  /// GET /api/Caisse/session/courante — 404 si aucune session ouverte.
+  static Future<ApiResponse<SessionCaisseModel?>> getSessionCaisseCourante() async {
+    const context = 'Caisse/session/courante';
+    try {
+      final response = await _withAuthRetry(
+        () => http.get(
+          Uri.parse('${ApiConfig.baseUrl}/api/Caisse/session/courante'),
+          headers: isAuthenticated
+              ? ApiConfig.authHeaders(_token!)
+              : ApiConfig.headers,
+        ),
+      );
+
+      if (response.statusCode == 404) {
+        return ApiResponse.success(null, statusCode: 404);
+      }
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+        Map<String, dynamic>? map;
+        if (decoded is Map) {
+          final raw = Map<String, dynamic>.from(decoded);
+          final nested = raw['data'] ?? raw['Data'];
+          map = nested is Map
+              ? Map<String, dynamic>.from(nested)
+              : raw;
+        }
+        if (map == null) {
+          return ApiResponse.error(
+            'Format de session caisse invalide',
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.success(
+          SessionCaisseModel.fromJson(map),
+          statusCode: response.statusCode,
+        );
+      }
+
+      return _errorResponse<SessionCaisseModel?>(
+        response,
+        context: context,
+      );
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  /// POST /api/Caisse/session/ouvrir
+  static Future<ApiResponse<SessionCaisseModel>> ouvrirSessionCaisse({
+    required double soldeOuverture,
+  }) async {
+    const context = 'Caisse/session/ouvrir';
+    final body = <String, dynamic>{'soldeOuverture': soldeOuverture};
+    try {
+      if (kDebugMode) {
+        ApiErrorHelper.logRequest(
+          context,
+          body,
+          endpoint: '/api/Caisse/session/ouvrir',
+        );
+      }
+
+      final response = await _withAuthRetry(
+        () => http.post(
+          Uri.parse('${ApiConfig.baseUrl}/api/Caisse/session/ouvrir'),
+          headers: isAuthenticated
+              ? ApiConfig.authHeaders(_token!)
+              : ApiConfig.headers,
+          body: jsonEncode(body),
+        ),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+        Map<String, dynamic>? map;
+        if (decoded is Map) {
+          final raw = Map<String, dynamic>.from(decoded);
+          final nested = raw['data'] ?? raw['Data'];
+          map = nested is Map
+              ? Map<String, dynamic>.from(nested)
+              : raw;
+        }
+        if (map == null) {
+          return ApiResponse.error(
+            'Réponse d\'ouverture de session invalide',
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.success(
+          SessionCaisseModel.fromJson(map),
+          statusCode: response.statusCode,
+        );
+      }
+
+      return _errorResponse<SessionCaisseModel>(
+        response,
+        context: context,
+        requestBody: body,
+      );
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
   }
 
   /// POST /api/devise - Créer une devise

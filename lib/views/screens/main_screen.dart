@@ -94,6 +94,11 @@ class _MainScreenState extends State<MainScreen> {
     widget.onLogout?.call();
   }
 
+  /// Navigation post-déconnexion (session déjà nettoyée par [LogoutFlow]).
+  void _afterLogout() {
+    widget.onLogout?.call();
+  }
+
   void _onTabSelected(int index) {
     setState(() => widget.controller.setIndex(_clampTabIndex(index)));
   }
@@ -145,7 +150,7 @@ class _MainScreenState extends State<MainScreen> {
         currentIndex: stackIndex,
         child: ProfileScreen(
           controller: _profileController,
-          onLogout: _handleLogout,
+          onLogout: _afterLogout,
         ),
       ),
     ];

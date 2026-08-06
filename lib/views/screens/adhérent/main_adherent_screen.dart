@@ -29,6 +29,10 @@ class _MainAdherentScreenState extends State<MainAdherentScreen> {
     widget.onLogout?.call();
   }
 
+  void _afterLogout() {
+    widget.onLogout?.call();
+  }
+
   void _goToTab(int index) {
     setState(() => _currentIndex = index);
   }
@@ -54,7 +58,7 @@ class _MainAdherentScreenState extends State<MainAdherentScreen> {
           const AdherentContributionsTabScreen(),
           const AdherentDependantsScreen(),
           AdherentProfileScreen(
-            onLogout: _handleLogout,
+            onLogout: _afterLogout,
             onOpenDependants: () => _goToTab(3),
           ),
         ],

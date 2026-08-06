@@ -106,12 +106,17 @@ class _EditPercepteurProfileScreenState
 
         setState(() => _isLoading = false);
       } else {
+        final isNotFound = response.statusCode == 404;
         setState(() {
-          _errorMessage = ApiErrorHelper.messageForApiFailure(
-            statusCode: response.statusCode,
-            serverDetail: response.message,
-            fallback: 'Impossible de charger le profil agent.',
-          );
+          _errorMessage = isNotFound
+              ? 'Aucun profil agent trouvé pour cet compte (id $agentId). '
+                  'Reconnectez-vous ou contactez l\'administrateur pour lier '
+                  'votre compte à un agent valide.'
+              : ApiErrorHelper.messageForApiFailure(
+                  statusCode: response.statusCode,
+                  serverDetail: response.message,
+                  fallback: 'Impossible de charger le profil agent.',
+                );
           _isLoading = false;
         });
       }

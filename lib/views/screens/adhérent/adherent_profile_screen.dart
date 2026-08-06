@@ -10,6 +10,7 @@ import '../../../utils/formatters.dart';
 import '../../../utils/photo_url_helper.dart';
 import '../at/change_password_screen.dart';
 import '../at/edit_profile_screen.dart';
+import '../../widgets/logout_flow.dart';
 
 /// Profil affilié connecté — vue compacte.
 class AdherentProfileScreen extends StatefulWidget {
@@ -572,7 +573,10 @@ class _AdherentProfileScreenState extends State<AdherentProfileScreen> {
                   title: 'Déconnexion',
                   iconColor: Colors.red,
                   titleColor: Colors.red,
-                  onTap: widget.onLogout,
+                  onTap: () => LogoutFlow.run(
+                    context,
+                    onCompleted: widget.onLogout,
+                  ),
                 ),
               ],
             ),

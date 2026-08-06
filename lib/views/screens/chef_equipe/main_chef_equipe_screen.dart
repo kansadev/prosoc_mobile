@@ -48,6 +48,10 @@ class _MainChefEquipeScreenState extends State<MainChefEquipeScreen> {
     widget.onLogout?.call();
   }
 
+  void _afterLogout() {
+    widget.onLogout?.call();
+  }
+
   void _goToTab(int index) {
     setState(() => _currentIndex = index);
   }
@@ -69,7 +73,7 @@ class _MainChefEquipeScreenState extends State<MainChefEquipeScreen> {
           ),
           ProfileScreen(
             controller: _profileController,
-            onLogout: _handleLogout,
+            onLogout: _afterLogout,
           ),
         ],
       ),

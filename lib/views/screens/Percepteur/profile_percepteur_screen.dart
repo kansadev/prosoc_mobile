@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../config/colors.dart';
 import '../../../services/auth_service.dart';
+import '../../widgets/logout_flow.dart';
 import '../at/change_password_screen.dart';
 import 'edit_percepteur_profile_screen.dart';
 
@@ -292,11 +293,10 @@ class _ProfilePercepteurScreenState extends State<ProfilePercepteurScreen> {
                         iconBgColor: Colors.red.withValues(alpha: 0.1),
                         titleColor: Colors.red,
                         showChevron: false,
-                        onTap: () async {
-                          final logoutCallback = widget.onLogout;
-                          await AuthService.logout();
-                          logoutCallback?.call();
-                        },
+                        onTap: () => LogoutFlow.run(
+                          context,
+                          onCompleted: widget.onLogout,
+                        ),
                       ),
                     ],
                   ),

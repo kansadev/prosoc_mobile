@@ -7,6 +7,7 @@ import 'package:prosoc/services/auth_service.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/formatters.dart';
 import 'package:prosoc/views/widgets/bon_envoi_qr_view.dart';
+import 'package:prosoc/views/widgets/bon_envoi_scanner_sheet.dart';
 import 'package:prosoc/views/widgets/empty_state_widget.dart';
 import 'package:prosoc/views/widgets/prosoc_resource_error_view.dart';
 
@@ -201,21 +202,18 @@ class _BonEnvoiMedicalScreenState extends State<BonEnvoiMedicalScreen>
   }
 
   Future<void> _scannerBon() async {
-    final payload = await _askText(
-      title: 'Scanner un bon d\'envoi',
-      label: 'Contenu QR ou numéro de bon',
-      hint: 'Collez le payload QR ou le numéro BE-...',
-      confirmLabel: 'Vérifier',
-      required: true,
-    );
+    final payload = await BonEnvoiScannerSheet.show(context);
     if (!mounted || payload == null) return;
 
+    final trimmed = payload.trim();
+    if (trimmed.isEmpty) return;
+
     try {
-      final isNumero = payload.toUpperCase().startsWith('BE-') ||
-          payload.toUpperCase().contains('BON');
+      final isNumero = trimmed.toUpperCase().startsWith('BE-') ||
+          trimmed.toUpperCase().contains('BON');
       final response = await ApiService.scannerBonEnvoi(
-        qrCodePayload: isNumero ? '' : payload,
-        numeroBon: isNumero ? payload : null,
+        qrCodePayload: isNumero ? '' : trimmed,
+        numeroBon: isNumero ? trimmed : null,
       );
 
       if (!mounted) return;
@@ -243,44 +241,24 @@ class _BonEnvoiMedicalScreenState extends State<BonEnvoiMedicalScreen>
     required String hint,
     required String confirmLabel,
     bool required = false,
-  }) async {
-    final controller = TextEditingController();
-    final result = await showDialog<String>(
+  }) {
+    return showModalBottomSheet<String>(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) {
-        return AlertDialog(
-          title: Text(title),
-          content: TextField(
-            controller: controller,
-            maxLines: 3,
-            decoration: InputDecoration(
-              labelText: label,
-              hintText: hint,
-              border: const OutlineInputBorder(),
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Annuler'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final value = controller.text.trim();
-                if (required && value.isEmpty) return;
-                Navigator.pop(ctx, value);
-              },
-              style: FilledButton.styleFrom(
-                backgroundColor: AppColors.prosocGreen,
-              ),
-              child: Text(confirmLabel),
-            ),
-          ],
+        return _BonEnvoiAskTextSheet(
+          title: title,
+          label: label,
+          hint: hint,
+          confirmLabel: confirmLabel,
+          requiredField: required,
         );
       },
     );
-    controller.dispose();
-    return result;
   }
 
   void _showSnack(String message, {bool isError = false}) {
@@ -641,6 +619,155 @@ class _BonEnvoiMedicalScreenState extends State<BonEnvoiMedicalScreen>
             icon: const Icon(Icons.copy_rounded, size: 18),
           ),
       ],
+    );
+  }
+}
+
+class _BonEnvoiAskTextSheet extends StatefulWidget {
+  const _BonEnvoiAskTextSheet({
+    required this.title,
+    required this.label,
+    required this.hint,
+    required this.confirmLabel,
+    required this.requiredField,
+  });
+
+  final String title;
+  final String label;
+  final String hint;
+  final String confirmLabel;
+  final bool requiredField;
+
+  @override
+  State<_BonEnvoiAskTextSheet> createState() => _BonEnvoiAskTextSheetState();
+}
+
+class _BonEnvoiAskTextSheetState extends State<_BonEnvoiAskTextSheet> {
+  late final TextEditingController _controller;
+  String? _errorText;
+  bool _submitted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    if (_submitted) return;
+    final value = _controller.text.trim();
+    if (widget.requiredField && value.isEmpty) {
+      setState(() => _errorText = 'Ce champ est requis');
+      return;
+    }
+    _submitted = true;
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context).pop(value);
+  }
+
+  void _cancel() {
+    if (_submitted) return;
+    _submitted = true;
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + bottomInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              widget.title,
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _controller,
+              maxLines: 3,
+              textInputAction: TextInputAction.done,
+              onSubmitted: (_) => _submit(),
+              decoration: InputDecoration(
+                labelText: widget.label,
+                hintText: widget.hint,
+                errorText: _errorText,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: AppColors.prosocGreen,
+                    width: 2,
+                  ),
+                ),
+              ),
+              onChanged: (_) {
+                if (_errorText != null) setState(() => _errorText = null);
+              },
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _cancel,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.textPrimary,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Annuler'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: _submit,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.prosocGreen,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(widget.confirmLabel),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

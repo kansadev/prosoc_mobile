@@ -120,13 +120,17 @@ class PerceptionVirtuelleConfirmResultModel {
     final succes = _parseBool(
       json['succes'] ?? json['Succes'] ?? json['success'] ?? json['Success'],
     );
+    final codeErreur =
+        (json['codeErreur'] ?? json['CodeErreur'])?.toString();
 
     return PerceptionVirtuelleConfirmResultModel(
-      succes: succes ||
-          nombreCollectes > 0 ||
-          perceptionVirtuelleId > 0,
+      succes: codeErreur != null && codeErreur.trim().isNotEmpty
+          ? false
+          : (succes ||
+              nombreCollectes > 0 ||
+              perceptionVirtuelleId > 0),
       message: (json['message'] ?? json['Message'] ?? '').toString(),
-      codeErreur: (json['codeErreur'] ?? json['CodeErreur'])?.toString(),
+      codeErreur: codeErreur,
       perceptionVirtuelleId: perceptionVirtuelleId,
       montantTotal: _asDouble(json['montantTotal'] ?? json['MontantTotal']),
       nombreCollectes: nombreCollectes,

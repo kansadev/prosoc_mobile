@@ -37,8 +37,13 @@ class AuthService {
   /// ID affilié lié au compte (rôle adhérent / affilié)
   static int? get affilieId => _currentUser?.utilisateur.affilieId;
 
-  /// ID agent lié au compte (agent AT, percepteur, superviseur terrain)
-  static int? get agentId => _currentUser?.utilisateur.agentId;
+  /// ID agent lié au compte (agent AT, percepteur, superviseur terrain).
+  /// Retourne null si absent ou invalide (évite GET /api/Agent/0 ou id inventé).
+  static int? get agentId {
+    final id = _currentUser?.utilisateur.agentId;
+    if (id == null || id <= 0) return null;
+    return id;
+  }
 
   /// ID agent pour une collecte (AT ou agent gestionnaire d'un affilié).
   static int? get collecteAgentId =>
@@ -140,19 +145,21 @@ class AuthService {
       // Restaurer le token dans ApiService
       ApiService.token = accessToken;
 
-        // Restaurer les données utilisateur
+      // Restaurer les données utilisateur
       UtilisateurModel? utilisateur;
-      int? savedAgentId;
-      int? savedAffilieId;
-      
-      // Extraire agentId et affilieId du userDataStr
+
       if (userDataStr != null) {
         try {
           final userData = jsonDecode(userDataStr);
-          savedAgentId = userData['agentId'];
-          savedAffilieId = userData['affilieId'];
-          utilisateur = UtilisateurModel.fromJson(userData);
-        } catch (e) {
+          if (userData is Map<String, dynamic>) {
+            utilisateur = UtilisateurModel.fromJson(userData);
+          } else if (userData is Map) {
+            utilisateur = UtilisateurModel.fromJson(
+              Map<String, dynamic>.from(userData),
+            );
+          }
+        } catch (_) {
+          // Ne jamais inventer agentId = idUtilisateur (provoque des 404 /api/Agent/{id}).
           utilisateur = UtilisateurModel(
             idUtilisateur: idUtilisateur ?? 0,
             referenceUtilisateur: '',
@@ -162,7 +169,7 @@ class AuthService {
             dateCreation: DateTime.now(),
             isConnecte: true,
             doitChangerMotDePasse: false,
-            agentId: idUtilisateur,
+            agentId: null,
             affilieId: null,
           );
         }

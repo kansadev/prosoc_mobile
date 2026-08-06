@@ -160,6 +160,7 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
   }
 
   double? _resolveMontant(Prestation prestation) {
+    if (prestation.isGratuit) return 0;
     final montant = prestation.resolveMontant();
     if (montant != null && montant > 0) return montant;
 
@@ -188,12 +189,17 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
     setState(() {
       _selectedPrestation = prestation;
       _montantAttendu = montant;
-      _montantController.text =
-          montant != null && montant > 0 ? montant.toString() : '';
+      if (prestation.isGratuit) {
+        _montantController.text = '0';
+      } else {
+        _montantController.text =
+            montant != null && montant > 0 ? montant.toString() : '';
+      }
     });
   }
 
   String _formatMontant(Prestation prestation) {
+    if (prestation.isGratuit) return 'Gratuit';
     final montant = _resolveMontant(prestation);
     if (montant == null) return '—';
     return CurrencyFormatter.format(
@@ -236,14 +242,19 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
       _montantController.text.trim().replaceAll(',', '.'),
     );
     final montantAttendu = _montantAttendu ?? montantRecu;
-    final montantError = CollecteMontantHelper.validatePartialPayment(
-      montantRecu: montantRecu ?? 0,
-      montantAttendu: montantAttendu != null && montantAttendu > 0
-          ? montantAttendu
-          : null,
-    );
-    if (montantError != null) {
-      await _showError(montantError);
+    if (_selectedPrestation?.isGratuit != true) {
+      final montantError = CollecteMontantHelper.validatePartialPayment(
+        montantRecu: montantRecu ?? 0,
+        montantAttendu: montantAttendu != null && montantAttendu > 0
+            ? montantAttendu
+            : null,
+      );
+      if (montantError != null) {
+        await _showError(montantError);
+        return;
+      }
+    } else if (montantRecu == null || montantRecu < 0) {
+      await _showError('Montant invalide');
       return;
     }
 
@@ -600,6 +611,12 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
                           final parsed = double.tryParse(
                             (value ?? '').trim().replaceAll(',', '.'),
                           );
+                          if (_selectedPrestation?.isGratuit == true) {
+                            if (parsed == null || parsed < 0) {
+                              return 'Montant invalide';
+                            }
+                            return null;
+                          }
                           if (parsed == null || parsed <= 0) {
                             return 'Montant invalide';
                           }

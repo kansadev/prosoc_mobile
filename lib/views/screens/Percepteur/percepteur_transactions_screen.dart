@@ -348,30 +348,33 @@ class _EvolutionSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text(
-                  'Période',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.grey.shade700,
-                  ),
+              Text(
+                'Période',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.grey.shade700,
                 ),
               ),
-              ...moisOptions.map((mois) {
-                final selected = mois == selectedMois;
-                return Padding(
-                  padding: const EdgeInsets.only(left: 6),
-                  child: ChoiceChip(
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: moisOptions.map((mois) {
+                  final selected = mois == selectedMois;
+                  return ChoiceChip(
                     label: Text('$mois mois'),
                     selected: selected,
                     onSelected: (_) => onMoisChanged(mois),
-                    selectedColor: AppColors.prosocGreen.withValues(alpha: 0.15),
+                    selectedColor:
+                        AppColors.prosocGreen.withValues(alpha: 0.15),
                     labelStyle: TextStyle(
                       fontSize: 11,
-                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      fontWeight:
+                          selected ? FontWeight.w700 : FontWeight.w500,
                       color: selected
                           ? AppColors.prosocGreen
                           : Colors.grey.shade700,
@@ -383,9 +386,10 @@ class _EvolutionSection extends StatelessWidget {
                     ),
                     padding: const EdgeInsets.symmetric(horizontal: 4),
                     visualDensity: VisualDensity.compact,
-                  ),
-                );
-              }),
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  );
+                }).toList(),
+              ),
             ],
           ),
           const SizedBox(height: 16),
@@ -445,62 +449,87 @@ class _EvolutionBarChart extends StatelessWidget {
 
     return SizedBox(
       height: 140,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: evolution.map((item) {
-          final ratio = item.montantTotal / maxMontant;
-          final barHeight = (100 * ratio).clamp(8.0, 100.0);
-          final label = _shortPeriode(item.periode);
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final count = evolution.length;
+          final minBarWidth = 36.0;
+          final needsScroll = count * minBarWidth > constraints.maxWidth;
 
-          return Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 3),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Text(
-                    item.nombreTransactions > 0
-                        ? '${item.nombreTransactions}'
-                        : '',
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: Colors.grey.shade500,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 350),
-                    height: barHeight,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.bottomCenter,
-                        end: Alignment.topCenter,
-                        colors: [
-                          AppColors.prosocGreen,
-                          AppColors.prosocGreen.withValues(alpha: 0.65),
-                        ],
+          final chart = Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: evolution.map((item) {
+              final ratio = item.montantTotal / maxMontant;
+              final barHeight = (100 * ratio).clamp(8.0, 100.0);
+              final label = _shortPeriode(item.periode);
+
+              final bar = Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 3),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Text(
+                      item.nombreTransactions > 0
+                          ? '${item.nombreTransactions}'
+                          : '',
+                      style: TextStyle(
+                        fontSize: 9,
+                        color: Colors.grey.shade500,
+                        fontWeight: FontWeight.w600,
                       ),
-                      borderRadius: BorderRadius.circular(8),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: 9,
-                      color: Colors.grey.shade600,
-                      fontWeight: FontWeight.w500,
+                    const SizedBox(height: 4),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 350),
+                      height: barHeight,
+                      width: needsScroll ? minBarWidth - 6 : null,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.bottomCenter,
+                          end: Alignment.topCenter,
+                          colors: [
+                            AppColors.prosocGreen,
+                            AppColors.prosocGreen.withValues(alpha: 0.65),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
                     ),
-                  ),
-                ],
-              ),
+                    const SizedBox(height: 6),
+                    SizedBox(
+                      width: needsScroll ? minBarWidth - 6 : null,
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 9,
+                          color: Colors.grey.shade600,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+
+              if (needsScroll) {
+                return SizedBox(width: minBarWidth, child: bar);
+              }
+              return Expanded(child: bar);
+            }).toList(),
+          );
+
+          if (!needsScroll) return chart;
+
+          return SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              height: 140,
+              child: chart,
             ),
           );
-        }).toList(),
+        },
       ),
     );
   }

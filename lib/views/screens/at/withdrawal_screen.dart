@@ -253,9 +253,11 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
   InputDecoration _fieldDecoration({
     required String label,
     required IconData icon,
+    String? helperText,
   }) {
     return InputDecoration(
       labelText: label,
+      helperText: helperText,
       prefixIcon: Icon(icon, color: AppColors.prosocGreen),
       filled: true,
       fillColor: AppColors.cardColor,
@@ -508,7 +510,6 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
         wallet != null &&
         wallet.soldeDisponible > 0;
     final currencyLabel = wallet?.currencyLabel ?? 'devise';
-    final montantReadOnly = _isRetraitTotal;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
@@ -532,11 +533,13 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
               keyboardType: const TextInputType.numberWithOptions(
                 decimal: true,
               ),
-              enabled: canWithdraw && !montantReadOnly,
-              readOnly: montantReadOnly,
+              enabled: canWithdraw,
               decoration: _fieldDecoration(
                 label: 'Montant demandé ($currencyLabel)',
                 icon: Icons.payments_outlined,
+                helperText: _isRetraitTotal
+                    ? 'Prérempli avec le solde disponible — modifiable'
+                    : null,
               ),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {

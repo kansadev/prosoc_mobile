@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../config/colors.dart';
 import '../../../services/auth_service.dart';
+import '../../widgets/logout_flow.dart';
 import '../at/change_password_screen.dart';
 
 class SuperviseurProfileScreen extends StatelessWidget {
@@ -182,7 +183,10 @@ class SuperviseurProfileScreen extends StatelessWidget {
                                 'Déconnexion',
                                 style: TextStyle(color: Colors.red),
                               ),
-                              onTap: onLogout,
+                              onTap: () => LogoutFlow.run(
+                                context,
+                                onCompleted: onLogout,
+                              ),
                             ),
                           ],
                         ),
