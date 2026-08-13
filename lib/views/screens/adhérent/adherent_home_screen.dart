@@ -8,6 +8,7 @@ import '../../../models/penalite_affilie_model.dart';
 import '../../../services/auth_service.dart';
 import '../../../utils/api_error_helper.dart';
 import '../../../utils/cotisation_montant_helper.dart';
+import '../../../utils/currency_formatter.dart';
 import '../../../utils/formatters.dart';
 import '../../widgets/prosoc_shimmer_loading.dart';
 import '../../../widgets/souscription_bottom_sheet.dart';
@@ -16,12 +17,14 @@ import 'arrieres_affilie_screen.dart';
 /// Accueil / dashboard affilié — données `/api/DashboardAffilie/resume/{affilieId}`.
 class AdherentHomeScreen extends StatefulWidget {
   final VoidCallback? onPayCotisation;
+  final VoidCallback? onOpenSouscriptions;
   final VoidCallback? onOpenDemandeBon;
   final VoidCallback? onOpenDependants;
 
   const AdherentHomeScreen({
     super.key,
     this.onPayCotisation,
+    this.onOpenSouscriptions,
     this.onOpenDemandeBon,
     this.onOpenDependants,
   });
@@ -82,6 +85,9 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           results[2] as ApiResponse<List<PenaliteAffilieModel>>;
 
       if (resumeResponse.success && resumeResponse.data != null) {
+        AuthService.setAffilieDeviseCode(
+          resumeResponse.data!.kpis.devisePrincipaleCode,
+        );
         setState(() {
           _data = resumeResponse.data;
           _mesArrieres = arrieresResponse.success
@@ -123,6 +129,14 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
     if (fromApi != null && fromApi.isNotEmpty) return fromApi;
     return AuthService.userName ?? 'Adhérent';
   }
+
+  String get _deviseCode =>
+      _data?.kpis.deviseCodeEffective ?? AuthService.affilieDeviseCode;
+
+  String _money(num? amount) => CurrencyFormatter.format(
+        amount: amount,
+        deviseCode: _deviseCode,
+      );
 
   ({String nom, String prenom}) _splitDisplayName() {
     final full = _displayName().trim();
@@ -309,7 +323,7 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            AppFormatters.formatCurrencyDollar(kpis.soldeDisponible),
+            _money(kpis.soldeDisponible),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 28,
@@ -318,7 +332,7 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Solde total : ${AppFormatters.formatCurrencyDollar(kpis.soldeTotal)}',
+            'Solde total : ${_money(kpis.soldeTotal)}',
             style: const TextStyle(color: Colors.white70, fontSize: 13),
           ),
           const SizedBox(height: 16),
@@ -367,7 +381,7 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
         Expanded(
           child: _miniStat(
             'Cotisations',
-            AppFormatters.formatCurrencyDollar(kpis.totalCotisations),
+            _money(kpis.totalCotisations),
             Icons.payments_outlined,
             AppColors.prosocGreen,
           ),
@@ -376,7 +390,7 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
         Expanded(
           child: _miniStat(
             'Prestations',
-            AppFormatters.formatCurrencyDollar(kpis.totalPrestations),
+            _money(kpis.totalPrestations),
             Icons.medical_services_outlined,
             const Color(0xFF2196F3),
           ),
@@ -437,7 +451,13 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
                 Icons.medical_services_outlined,
                 'Souscription',
                 Colors.purple,
-                _openSouscriptionPrestation,
+                () {
+                  if (widget.onOpenSouscriptions != null) {
+                    widget.onOpenSouscriptions!();
+                    return;
+                  }
+                  _openSouscriptionPrestation();
+                },
               ),
             ),
           ],
@@ -565,7 +585,7 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
                     Text(
                       impayes > 0
                           ? '$impayes impayé${impayes > 1 ? 's' : ''} · '
-                              'Reste ${AppFormatters.formatCurrencyDollar(_arrieresTotalReste)}'
+                              'Reste ${_money(_arrieresTotalReste)}'
                           : hasArrieres
                               ? 'Toutes vos obligations sont à jour'
                               : 'Aucun arriéré enregistré',
@@ -628,7 +648,7 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           AppFormatters.formatDate(p.datePrestation),
         p.statut,
       ].where((s) => s.isNotEmpty).join(' · '),
-      trailing: AppFormatters.formatCurrencyDollar(p.montantPriseEnCharge),
+      trailing: _money(p.montantPriseEnCharge),
       trailingColor: const Color(0xFF2196F3),
     );
   }

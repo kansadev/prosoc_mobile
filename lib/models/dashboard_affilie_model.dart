@@ -107,6 +107,7 @@ class DashboardAffilieKpis {
   final double soldeDisponible;
   final double totalCotisations;
   final double totalPrestations;
+  final String devisePrincipaleCode;
   final int nombrePrestations;
   final double montantDerniereCotisation;
   final DateTime? dateDerniereCotisation;
@@ -121,6 +122,11 @@ class DashboardAffilieKpis {
   final int nombreBeneficiaires;
   final double montantPlafond;
   final double restePlafond;
+  final String statutGlobal;
+  final String statutCotisation;
+  final String statutPrestation;
+  final int nombreArrieresOuverts;
+  final double montantRestantDu;
 
   DashboardAffilieKpis({
     required this.idAffilie,
@@ -130,6 +136,7 @@ class DashboardAffilieKpis {
     required this.soldeDisponible,
     required this.totalCotisations,
     required this.totalPrestations,
+    this.devisePrincipaleCode = 'CDF',
     required this.nombrePrestations,
     required this.montantDerniereCotisation,
     this.dateDerniereCotisation,
@@ -144,9 +151,20 @@ class DashboardAffilieKpis {
     required this.nombreBeneficiaires,
     required this.montantPlafond,
     required this.restePlafond,
+    this.statutGlobal = '',
+    this.statutCotisation = '',
+    this.statutPrestation = '',
+    this.nombreArrieresOuverts = 0,
+    this.montantRestantDu = 0,
   });
 
+  String get deviseCodeEffective {
+    final code = devisePrincipaleCode.trim().toUpperCase();
+    return code.isNotEmpty ? code : 'CDF';
+  }
+
   factory DashboardAffilieKpis.fromJson(Map<String, dynamic> json) {
+    final devise = json['devisePrincipaleCode']?.toString().trim() ?? '';
     return DashboardAffilieKpis(
       idAffilie: _affilieInt(json['idAffilie']),
       codeAdhesion: json['codeAdhesion']?.toString() ?? '',
@@ -155,6 +173,7 @@ class DashboardAffilieKpis {
       soldeDisponible: _affilieDouble(json['soldeDisponible']),
       totalCotisations: _affilieDouble(json['totalCotisations']),
       totalPrestations: _affilieDouble(json['totalPrestations']),
+      devisePrincipaleCode: devise.isNotEmpty ? devise.toUpperCase() : 'CDF',
       nombrePrestations: _affilieInt(json['nombrePrestations']),
       montantDerniereCotisation:
           _affilieDouble(json['montantDerniereCotisation']),
@@ -171,6 +190,11 @@ class DashboardAffilieKpis {
       nombreBeneficiaires: _affilieInt(json['nombreBeneficiaires']),
       montantPlafond: _affilieDouble(json['montantPlafond']),
       restePlafond: _affilieDouble(json['restePlafond']),
+      statutGlobal: json['statutGlobal']?.toString() ?? '',
+      statutCotisation: json['statutCotisation']?.toString() ?? '',
+      statutPrestation: json['statutPrestation']?.toString() ?? '',
+      nombreArrieresOuverts: _affilieInt(json['nombreArrieresOuverts']),
+      montantRestantDu: _affilieDouble(json['montantRestantDu']),
     );
   }
 }

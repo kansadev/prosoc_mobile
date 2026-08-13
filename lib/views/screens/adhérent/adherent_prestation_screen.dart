@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../../config/api.dart';
 import '../../../config/colors.dart';
+import '../../../models/dashboard_affilie_model.dart';
 import '../../../models/souscription_prestation_model.dart';
 import '../../../services/auth_service.dart';
 import '../../../utils/api_error_helper.dart';
+import '../../../utils/currency_formatter.dart';
 import '../../../utils/formatters.dart';
 import '../../widgets/dashboard_segment_tab_bar.dart';
 import '../../widgets/year_picker_sheet.dart';
@@ -113,9 +115,21 @@ class _AdherentPrestationScreenState extends State<AdherentPrestationScreen>
     });
 
     try {
-      final response =
-          await ApiService.getSouscriptionsPrestationByAffilie(affilieId);
+      final results = await Future.wait([
+        ApiService.getSouscriptionsPrestationByAffilie(affilieId),
+        ApiService.getDashboardAffilieResume(affilieId),
+      ]);
       if (!mounted) return;
+
+      final response =
+          results[0] as ApiResponse<List<SouscriptionPrestationModel>>;
+      final resumeResponse =
+          results[1] as ApiResponse<DashboardAffilieResumeModel>;
+      if (resumeResponse.success && resumeResponse.data != null) {
+        AuthService.setAffilieDeviseCode(
+          resumeResponse.data!.kpis.devisePrincipaleCode,
+        );
+      }
 
       if (response.success && response.data != null) {
         setState(() {
@@ -170,7 +184,7 @@ class _AdherentPrestationScreenState extends State<AdherentPrestationScreen>
       backgroundColor: const Color(0xFFF8F9FA),
       appBar: AppBar(
         title: const Text(
-          'Mes souscriptions',
+          'Souscriptions prestations',
           style: TextStyle(
             fontWeight: FontWeight.w700,
             fontSize: 20,
@@ -500,7 +514,10 @@ class _AdherentPrestationScreenState extends State<AdherentPrestationScreen>
                 _detailRow(
                   Icons.account_balance_wallet_outlined,
                   'Total collecté',
-                  AppFormatters.formatCurrencyDollar(s.totalCollectes),
+                  CurrencyFormatter.format(
+                    amount: s.totalCollectes,
+                    deviseCode: AuthService.affilieDeviseCode,
+                  ),
                 ),
                 if (s.affilieNom.isNotEmpty || s.affiliePrenom.isNotEmpty)
                   _detailRow(

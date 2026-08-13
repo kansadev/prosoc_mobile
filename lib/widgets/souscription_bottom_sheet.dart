@@ -5,11 +5,14 @@ import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/adhesion_with_affilie_model.dart';
 import 'package:prosoc/models/prestation_model.dart';
 import 'package:prosoc/models/souscription_prestation_model.dart';
+import 'package:prosoc/models/collecte_receipt_data.dart';
 import 'package:prosoc/utils/affilie_payment_modes.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/collecte_agent_resolver.dart';
 import 'package:prosoc/utils/collecte_montant_helper.dart';
+import 'package:prosoc/utils/collecte_receipt_helper.dart';
 import 'package:prosoc/utils/currency_formatter.dart';
+import 'package:prosoc/utils/electronic_payment_error_handler.dart';
 import 'package:prosoc/utils/phone_utils.dart';
 import 'package:prosoc/views/screens/at/flex_pay_payment_waiting_screen.dart';
 import 'package:prosoc/views/screens/at/payment_webview_screen.dart';
@@ -330,10 +333,13 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
         if (flexResponse.success && flexResponse.data != null) {
           await _handleFlexPayResponse(flexResponse.data!);
         } else {
-          await FlexPayPaymentErrorDialog.show(
+          await ElectronicPaymentErrorHandler.show(
             context,
-            message: flexResponse.message,
-            statusCode: flexResponse.statusCode,
+            flexResponse,
+            onChooseOtherMode: () {
+              if (!mounted) return;
+              setState(() => _selectedModePaiement = null);
+            },
           );
         }
         return;
@@ -347,15 +353,24 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
       if (!mounted) return;
 
       if (response.success) {
-        await ProsocMessageDialog.show(
+        final montant = double.tryParse(_montantController.text.trim()) ?? 0;
+        await CollecteReceiptHelper.open(
           context,
-          variant: ProsocMessageVariant.success,
-          title: 'Souscription enregistrée',
-          message: 'La souscription à la prestation a été créée avec succès.',
-          onConfirm: () {
-            if (mounted) Navigator.pop(context, true);
-          },
+          receipt: CollecteReceiptData(
+            operation: CollecteReceiptOperation.souscription,
+            montant: montant,
+            deviseId: _selectedPrestation?.deviseId,
+            modePaiement: _selectedModePaiement,
+            affilieNom: '${widget.affiliePrenom} ${widget.affilieNom}'.trim(),
+            statutPaiement: 'OK',
+            extras: {
+              if (_selectedPrestation != null)
+                'Prestation': _selectedPrestation!.nomPrestation,
+            },
+          ),
+          popResult: true,
         );
+        if (mounted) Navigator.pop(context, true);
       } else {
         await _showError(
           response.message ?? 'Erreur lors de la création de la souscription.',
@@ -398,6 +413,9 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
           builder: (_) => FlexPayPaymentWaitingScreen(
             payment: payment,
             isMobileMoney: _isMobileMoneyPayment,
+            receiptOperation: CollecteReceiptOperation.souscription,
+            affilieNom: '${widget.affiliePrenom} ${widget.affilieNom}'.trim(),
+            modePaiement: _selectedModePaiement,
           ),
         ),
       );
@@ -443,6 +461,9 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
             builder: (_) => FlexPayPaymentWaitingScreen(
               payment: payment,
               isMobileMoney: false,
+              receiptOperation: CollecteReceiptOperation.souscription,
+              affilieNom: '${widget.affiliePrenom} ${widget.affilieNom}'.trim(),
+              modePaiement: _selectedModePaiement,
             ),
           ),
         );

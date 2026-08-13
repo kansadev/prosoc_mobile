@@ -5,10 +5,13 @@ import 'package:prosoc/models/adhesion_with_affilie_model.dart';
 import 'package:prosoc/models/prestation_model.dart';
 import 'package:prosoc/models/souscription_prestation_model.dart';
 import 'package:prosoc/models/wallet_agent_model.dart';
+import 'package:prosoc/models/collecte_receipt_data.dart';
 import 'package:prosoc/utils/affilie_payment_modes.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/collecte_agent_resolver.dart';
 import 'package:prosoc/utils/collecte_montant_helper.dart';
+import 'package:prosoc/utils/collecte_receipt_helper.dart';
+import 'package:prosoc/utils/electronic_payment_error_handler.dart';
 import 'package:prosoc/utils/phone_utils.dart';
 import 'package:prosoc/views/screens/at/flex_pay_payment_waiting_screen.dart';
 import 'package:prosoc/views/screens/at/payment_webview_screen.dart';
@@ -784,10 +787,13 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
           await _handleFlexPayResponse(flexResponse.data!);
         } else {
           setState(() => _isLoading = false);
-          await FlexPayPaymentErrorDialog.show(
+          await ElectronicPaymentErrorHandler.show(
             context,
-            message: flexResponse.message,
-            statusCode: flexResponse.statusCode,
+            flexResponse,
+            onChooseOtherMode: () {
+              if (!mounted) return;
+              setState(() => _selectedModePaiement = null);
+            },
           );
         }
         return;
@@ -816,8 +822,26 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
       if (!mounted) return;
 
       if (response.success) {
-        _showSuccessSnackBar('Paiement de souscription enregistré avec succès');
-        Navigator.pop(context, true);
+        final idCollecte = CollecteReceiptHelper.parseId(
+          response.data is Map ? (response.data as Map)['idCollecte'] : null,
+        );
+        await CollecteReceiptHelper.open(
+          context,
+          receipt: CollecteReceiptData(
+            operation: CollecteReceiptOperation.souscription,
+            montant: montantPaye,
+            deviseId: deviseId,
+            reference: response.data is Map
+                ? (response.data as Map)['referencePaiement']?.toString()
+                : null,
+            modePaiement: modePaiement,
+            affilieNom: '${widget.affiliePrenom} ${widget.affilieNom}'.trim(),
+            idCollecte: idCollecte,
+            statutPaiement: statutPaiement,
+          ),
+          popResult: true,
+        );
+        if (mounted) Navigator.pop(context, true);
       } else {
         await FlexPayPaymentErrorDialog.show(
           context,
@@ -857,6 +881,9 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
           builder: (_) => FlexPayPaymentWaitingScreen(
             payment: payment,
             isMobileMoney: _isMobileMoneyPayment,
+            receiptOperation: CollecteReceiptOperation.souscription,
+            affilieNom: '${widget.affiliePrenom} ${widget.affilieNom}'.trim(),
+            modePaiement: _selectedModePaiement,
           ),
         ),
       );
@@ -902,6 +929,9 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
             builder: (_) => FlexPayPaymentWaitingScreen(
               payment: payment,
               isMobileMoney: false,
+              receiptOperation: CollecteReceiptOperation.souscription,
+              affilieNom: '${widget.affiliePrenom} ${widget.affilieNom}'.trim(),
+              modePaiement: _selectedModePaiement,
             ),
           ),
         );

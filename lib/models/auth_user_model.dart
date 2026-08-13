@@ -2,6 +2,8 @@
 // MODÈLE D'UTILISATEUR AUTHENTIFIÉ
 // ============================================
 
+import 'payment_gateway_config.dart';
+
 class UtilisateurModel {
   final int idUtilisateur;
   final String referenceUtilisateur;
@@ -165,6 +167,7 @@ class AuthUserModel {
   final List<String> permissions;
   final RoleModel primaryRole;
   final List<RoleModel> roles;
+  final PaymentGatewayConfig? paymentGateway;
 
   AuthUserModel({
     required this.success,
@@ -181,9 +184,20 @@ class AuthUserModel {
     required this.permissions,
     required this.primaryRole,
     required this.roles,
+    this.paymentGateway,
   });
 
   factory AuthUserModel.fromJson(Map<String, dynamic> json) {
+    PaymentGatewayConfig? gateway;
+    final rawGateway = json['paymentGateway'];
+    if (rawGateway is Map<String, dynamic>) {
+      gateway = PaymentGatewayConfig.fromJson(rawGateway);
+    } else if (rawGateway is Map) {
+      gateway = PaymentGatewayConfig.fromJson(
+        Map<String, dynamic>.from(rawGateway),
+      );
+    }
+
     return AuthUserModel(
       success: json['success'] ?? false,
       message: json['message'] ?? '',
@@ -202,6 +216,7 @@ class AuthUserModel {
               ?.map((role) => RoleModel.fromJson(role))
               .toList() ??
           [],
+      paymentGateway: gateway,
     );
   }
 
@@ -213,6 +228,7 @@ class AuthUserModel {
     String? accessToken,
     String? refreshToken,
     DateTime? expiresAt,
+    PaymentGatewayConfig? paymentGateway,
   }) {
     return AuthUserModel(
       success: success,
@@ -229,6 +245,7 @@ class AuthUserModel {
       permissions: permissions,
       primaryRole: primaryRole ?? this.primaryRole,
       roles: roles,
+      paymentGateway: paymentGateway ?? this.paymentGateway,
     );
   }
 

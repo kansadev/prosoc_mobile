@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import '../utils/api_error_helper.dart';
 import '../utils/paginated_response_helper.dart';
 import '../models/auth_user_model.dart';
+import '../models/payment_gateway_config.dart';
 import '../models/wallet_agent_model.dart';
 import '../models/wallet_mouvement_model.dart';
 import '../models/wallet_virtuel_agent_model.dart';
@@ -71,12 +72,16 @@ class ApiResponse<T> {
   final T? data;
   final String? message;
   final int? statusCode;
+  final String? errorCode;
+  final PaymentChannelConflict? paymentConflict;
 
   ApiResponse({
     required this.success,
     this.data,
     this.message,
     this.statusCode,
+    this.errorCode,
+    this.paymentConflict,
   });
 
   factory ApiResponse.success(T data, {int? statusCode}) {
@@ -87,13 +92,27 @@ class ApiResponse<T> {
     );
   }
 
-  factory ApiResponse.error(String message, {int? statusCode}) {
+  factory ApiResponse.error(
+    String message, {
+    int? statusCode,
+    String? errorCode,
+    PaymentChannelConflict? paymentConflict,
+  }) {
     return ApiResponse(
       success: false,
       message: message,
       statusCode: statusCode,
+      errorCode: errorCode,
+      paymentConflict: paymentConflict,
     );
   }
+
+  /// 409 + `PAYMENT_CHANNEL_INACTIVE` → proposer un autre mode de paiement.
+  bool get isPaymentChannelInactive =>
+      !success &&
+      statusCode == 409 &&
+      (paymentConflict?.isChannelInactive == true ||
+          errorCode == PaymentChannelConflict.codeInactive);
 }
 
 class RefreshTokenResult {
@@ -2038,6 +2057,17 @@ class ApiService {
           statusCode: response.statusCode,
         );
       }
+      final channelConflict = _tryParsePaymentChannelConflict(response);
+      if (channelConflict != null) {
+        return ApiResponse.error(
+          channelConflict.message.isNotEmpty
+              ? channelConflict.message
+              : 'Ce mode de paiement n\'est pas disponible.',
+          statusCode: response.statusCode,
+          errorCode: channelConflict.code,
+          paymentConflict: channelConflict,
+        );
+      }
       return _errorResponse<AdhesionElectronicPaymentResponse>(
         response,
         context: context,
@@ -2786,6 +2816,17 @@ class ApiService {
           statusCode: response.statusCode,
         );
       }
+      final channelConflict = _tryParsePaymentChannelConflict(response);
+      if (channelConflict != null) {
+        return ApiResponse.error(
+          channelConflict.message.isNotEmpty
+              ? channelConflict.message
+              : 'Ce mode de paiement n\'est pas disponible.',
+          statusCode: response.statusCode,
+          errorCode: channelConflict.code,
+          paymentConflict: channelConflict,
+        );
+      }
       return _errorResponse<AdhesionElectronicPaymentResponse>(
         response,
         context: context,
@@ -3431,6 +3472,34 @@ class ApiService {
     }
   }
 
+  /// Parse le 409 canal inactif (`PAYMENT_CHANNEL_INACTIVE` + paymentGateway).
+  static PaymentChannelConflict? _tryParsePaymentChannelConflict(
+    http.Response response,
+  ) {
+    if (response.statusCode != 409) return null;
+    try {
+      final decoded = jsonDecode(response.body);
+      if (decoded is! Map) return null;
+      final map = decoded is Map<String, dynamic>
+          ? decoded
+          : Map<String, dynamic>.from(decoded);
+      final conflict = PaymentChannelConflict.fromJson(map);
+      if (conflict.code != PaymentChannelConflict.codeInactive &&
+          !conflict.isChannelInactive) {
+        return null;
+      }
+      ApiErrorHelper.logHttpFailure(
+        'payment-channel-conflict',
+        statusCode: 409,
+        detail: conflict.message,
+        body: response.body,
+      );
+      return conflict;
+    } catch (_) {
+      return null;
+    }
+  }
+
   static ApiResponse<T> _errorResponse<T>(
     http.Response response, {
     String? context,
@@ -3966,6 +4035,17 @@ class ApiService {
         return ApiResponse.error(
           'Format de réponse invalide',
           statusCode: response.statusCode,
+        );
+      }
+      final channelConflict = _tryParsePaymentChannelConflict(response);
+      if (channelConflict != null) {
+        return ApiResponse.error(
+          channelConflict.message.isNotEmpty
+              ? channelConflict.message
+              : 'Ce mode de paiement n\'est pas disponible.',
+          statusCode: response.statusCode,
+          errorCode: channelConflict.code,
+          paymentConflict: channelConflict,
         );
       }
       return _errorResponse<AdhesionElectronicPaymentResponse>(

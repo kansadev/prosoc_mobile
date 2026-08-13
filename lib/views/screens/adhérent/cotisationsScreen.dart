@@ -98,6 +98,12 @@ class _ContributionsScreenState extends State<ContributionsScreen>
               p.affilieId == 0 || p.affilieId == widget.affilieId,
         )
         .where((p) => p.annee == 0 || p.annee == _selectedYear)
+        // Onglet Cotisations : uniquement les collectes de type cotisation.
+        .where((p) {
+          final type = p.typeCollecte.trim().toLowerCase();
+          if (type.isEmpty) return true;
+          return type.contains('cotisation');
+        })
         .toList();
   }
 

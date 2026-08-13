@@ -12,7 +12,10 @@ import '../../../models/adhesion_with_affilie_model.dart';
 import '../../../models/frais_model.dart';
 import '../../../models/wallet_agent_model.dart';
 import 'package:flutter/foundation.dart';
+import '../../../models/collecte_receipt_data.dart';
 import '../../../utils/api_error_helper.dart';
+import '../../../utils/collecte_receipt_helper.dart';
+import '../../../utils/electronic_payment_error_handler.dart';
 import '../../../utils/email_utils.dart';
 import '../../../utils/phone_utils.dart';
 import '../../../utils/picked_image_data.dart';
@@ -368,14 +371,7 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                 (json) => Prestation.fromJson(Map<String, dynamic>.from(json)),
               )
               .toList();
-          if (_prestations.isNotEmpty) {
-            _selectedPrestation = _prestations.first;
-            _prestationIdController.text = _selectedPrestation!.id.toString();
-            _applyPrestationSelection(_selectedPrestation);
-            debugPrint(
-              '[DEBUG] Prestation sélectionnée par défaut: ${_selectedPrestation!.nomPrestation} (ID: ${_selectedPrestation!.id})',
-            );
-          }
+          // Prestation optionnelle : pas d'auto-sélection.
           _isLoadingPrestations = false;
           debugPrint(
             '[DEBUG] Nombre de prestations chargées: ${_prestations.length}',
@@ -1334,11 +1330,14 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         return true;
       case 2:
         if (_selectedTypeAdhesion == null ||
-            _selectedPrestation == null ||
-            _montantController.text.trim().isEmpty ||
             _selectedFraisAdhesion == null ||
             _selectedModePaiement == null) {
-          _showSnack('Complétez la souscription et le paiement.');
+          _showSnack('Complétez le type d\'adhésion et le paiement.');
+          return false;
+        }
+        if (_selectedPrestation != null &&
+            _montantController.text.trim().isEmpty) {
+          _showSnack('Indiquez le montant de la prestation sélectionnée.');
           return false;
         }
         return true;
@@ -1846,11 +1845,11 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                 ),
                 const SizedBox(height: 20),
                 _buildDropdownField<Prestation>(
-                  label: "Prestation",
+                  label: "Prestation (optionnel)",
                   value: _selectedPrestation,
                   items: _prestations,
                   isLoading: _isLoadingPrestations,
-                  isRequired: true,
+                  isRequired: false,
                   icon: Icons.health_and_safety_outlined,
                   itemLabel: (prestation) {
                     if (prestation.isGratuit) {
@@ -1871,10 +1870,29 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                       if (newValue != null) {
                         _prestationIdController.text = newValue.id.toString();
                         _applyPrestationSelection(newValue);
+                      } else {
+                        _prestationIdController.clear();
+                        _montantController.clear();
                       }
                     });
                   },
                 ),
+                if (_selectedPrestation != null)
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _selectedPrestation = null;
+                          _prestationIdController.clear();
+                          _montantController.clear();
+                        });
+                      },
+                      icon: const Icon(Icons.close_rounded, size: 18),
+                      label: const Text('Retirer la prestation'),
+                    ),
+                  ),
+                if (_selectedPrestation != null) ...[
                 const SizedBox(height: 20),
                 // Montant de la Prestation (Souscription)
                 TextFormField(
@@ -1896,6 +1914,7 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                     ),
                   ),
                   validator: (value) {
+                    if (_selectedPrestation == null) return null;
                     if (value == null || value.isEmpty) {
                       return 'Veuillez entrer le montant de la prestation';
                     }
@@ -1912,27 +1931,27 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                     return null;
                   },
                 ),
-                if (_selectedPrestation != null &&
-                    _prestationDeviseCode(_selectedPrestation).isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.currency_exchange,
-                        size: 16,
-                        color: Colors.grey.shade600,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        'Devise : ${_prestationDeviseCode(_selectedPrestation)}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w500,
-                          color: Colors.grey.shade700,
+                  if (_prestationDeviseCode(_selectedPrestation).isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.currency_exchange,
+                          size: 16,
+                          color: Colors.grey.shade600,
                         ),
-                      ),
-                    ],
-                  ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Devise : ${_prestationDeviseCode(_selectedPrestation)}',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
                 const SizedBox(height: 20),
                 if (_fraisAdhesionOptions.isNotEmpty) ...[
@@ -2447,12 +2466,13 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                     ),
                     _buildSummaryRow(
                       'Prestation',
-                      _selectedPrestation?.nomPrestation ?? '',
+                      _selectedPrestation?.nomPrestation ?? 'Non souscrite',
                     ),
-                    _buildSummaryRow(
-                      'Montant',
-                      '${_montantController.text} ${_selectedDevise?.code ?? ''}',
-                    ),
+                    if (_selectedPrestation != null)
+                      _buildSummaryRow(
+                        'Montant',
+                        '${_montantController.text} ${_selectedDevise?.code ?? ''}',
+                      ),
                     if (_modePaiementLibelle != null)
                       _buildSummaryRow(
                         'Mode de paiement',
@@ -2998,12 +3018,16 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         _telephoneController.text.isEmpty ||
         _dateNController.text.isEmpty ||
         _selectedTypeAdhesion == null ||
-        _selectedPrestation == null ||
-        _montantController.text.isEmpty ||
         _selectedDevise == null ||
         _selectedFraisAdhesion == null ||
         _selectedModePaiement == null) {
       _showSnack('Veuillez remplir tous les champs obligatoires');
+      return;
+    }
+
+    if (_selectedPrestation != null &&
+        _montantController.text.trim().isEmpty) {
+      _showSnack('Indiquez le montant de la prestation sélectionnée');
       return;
     }
 
@@ -3083,29 +3107,33 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         throw Exception('TypeAdhesionId invalide');
       }
 
-      final prestationId = int.tryParse(_prestationIdController.text.trim());
-      if (prestationId == null) {
-        throw Exception('PrestationId invalide');
-      }
-
       if (_selectedFraisAdhesion == null) {
         throw Exception('Veuillez sélectionner les frais d\'adhésion');
       }
 
-      if (_selectedPrestation == null) {
-        throw Exception('Veuillez sélectionner une prestation');
+      final fraisDeviseId = _fraisAdhesionDeviseId;
+      final hasSouscription = _selectedPrestation != null;
+      final prestationId = hasSouscription
+          ? int.tryParse(_prestationIdController.text.trim())
+          : null;
+      if (hasSouscription && (prestationId == null || prestationId <= 0)) {
+        throw Exception('PrestationId invalide');
       }
 
-      final fraisDeviseId = _fraisAdhesionDeviseId;
-      final prestationDeviseId = _selectedPrestation!.deviseId;
-
-      final souscriptionMontant =
-          _selectedPrestation?.resolveMontant() ??
-          double.tryParse(_montantController.text.trim());
-      if (souscriptionMontant == null || souscriptionMontant <= 0) {
-        throw Exception(
-          'Montant de prestation invalide. Saisissez un montant ou choisissez une prestation tarifée.',
-        );
+      final prestationDeviseId = _selectedPrestation?.deviseId ?? 0;
+      final souscriptionMontant = hasSouscription
+          ? (_selectedPrestation!.resolveMontant() ??
+              double.tryParse(_montantController.text.trim()))
+          : null;
+      if (hasSouscription) {
+        final isGratuit = _selectedPrestation!.isGratuit;
+        if (souscriptionMontant == null ||
+            (!isGratuit && souscriptionMontant <= 0) ||
+            (isGratuit && souscriptionMontant < 0)) {
+          throw Exception(
+            'Montant de prestation invalide. Saisissez un montant ou choisissez une prestation tarifée.',
+          );
+        }
       }
 
       final referencePaiement = _referencePaiementElectronique();
@@ -3182,26 +3210,27 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
             referencePaiement: referencePaiement,
             statut: true,
           ),
-          CollecteRequest(
-            typeCollecte: AdhesionApiValues.typeCollecteSouscription,
-            subscription: SouscriptionRequest(
-              prestationId: prestationId,
-              dateSouscription: DateTime.now().toUtc(),
+          if (hasSouscription)
+            CollecteRequest(
+              typeCollecte: AdhesionApiValues.typeCollecteSouscription,
+              subscription: SouscriptionRequest(
+                prestationId: prestationId!,
+                dateSouscription: DateTime.now().toUtc(),
+                statut: true,
+              ),
+              montant: souscriptionMontant!,
+              mois: DateTime.now().month,
+              annee: DateTime.now().year,
+              modePaiement: _selectedModePaiement,
+              statutPaiement: _statutPaiementCollecte,
+              montantRecu: souscriptionMontant,
+              montantAttendu: souscriptionMontant,
+              deviseId: prestationDeviseId > 0
+                  ? prestationDeviseId
+                  : fraisDeviseId,
+              referencePaiement: referencePaiement,
               statut: true,
             ),
-            montant: souscriptionMontant,
-            mois: DateTime.now().month,
-            annee: DateTime.now().year,
-            modePaiement: _selectedModePaiement,
-            statutPaiement: _statutPaiementCollecte,
-            montantRecu: souscriptionMontant,
-            montantAttendu: souscriptionMontant,
-            deviseId: prestationDeviseId > 0
-                ? prestationDeviseId
-                : fraisDeviseId,
-            referencePaiement: referencePaiement,
-            statut: true,
-          ),
         ],
         dependants: _buildDependantsPayload(),
         antecedants: const [],
@@ -3243,10 +3272,13 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
           );
         } else {
           setState(() => _isLoading = false);
-          await FlexPayPaymentErrorDialog.show(
+          await ElectronicPaymentErrorHandler.show(
             context,
-            message: flexResponse.message,
-            statusCode: flexResponse.statusCode,
+            flexResponse,
+            onChooseOtherMode: () {
+              if (!mounted) return;
+              setState(() => _selectedModePaiement = null);
+            },
           );
         }
       } else {
@@ -3257,8 +3289,9 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
           );
         }
         if (response.success) {
-          await _showAdhesionSuccessDialog(
+          await _showAdhesionSuccessReceipt(
             codeAdhesion: response.data?.codeAdhesion,
+            idAdhesion: response.data?.id,
           );
         } else if (mounted) {
           await _showApiError(
@@ -3279,25 +3312,44 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
     }
   }
 
-  Future<void> _showAdhesionSuccessDialog({String? codeAdhesion}) async {
+  Future<void> _showAdhesionSuccessReceipt({
+    String? codeAdhesion,
+    int? idAdhesion,
+  }) async {
     if (!mounted) return;
-    final parentContext = context;
-    final hasCode = codeAdhesion != null && codeAdhesion.isNotEmpty;
-    await ProsocMessageDialog.show(
+    final fraisMontant = _selectedFraisAdhesion?.montant ?? 0;
+    final souscriptionMontant = _selectedPrestation == null
+        ? 0.0
+        : (double.tryParse(_montantController.text.trim()) ??
+            _selectedPrestation!.resolveMontant() ??
+            0);
+    final total = fraisMontant + souscriptionMontant;
+    await CollecteReceiptHelper.open(
       context,
-      variant: ProsocMessageVariant.success,
-      title: 'Adhésion créée',
-      message: hasCode
-          ? 'L\'adhésion a été enregistrée avec succès.'
-          : 'L\'adhésion a été enregistrée avec succès.',
-      hint: hasCode ? 'Code d\'adhésion : $codeAdhesion' : null,
-      confirmLabel: 'Fermer',
-      onConfirm: () {
-        if (parentContext.mounted) {
-          Navigator.of(parentContext).pop(true);
-        }
-      },
+      receipt: CollecteReceiptData(
+        operation: CollecteReceiptOperation.adhesion,
+        montant: total,
+        deviseCode: _selectedDevise?.code ?? 'USD',
+        deviseId: _selectedDevise?.idDevise,
+        reference: _referencePaiementElectronique(),
+        modePaiement: _selectedModePaiement,
+        affilieNom:
+            '${_prenomController.text.trim()} ${_nomController.text.trim()}'
+                .trim(),
+        codeAdhesion: codeAdhesion,
+        idAdhesion: idAdhesion,
+        statutPaiement: _statutPaiementCollecte,
+        extras: {
+          'Frais adhésion': fraisMontant.toString(),
+          if (_selectedPrestation != null)
+            'Prestation': _selectedPrestation!.nomPrestation,
+          if (_selectedPrestation != null)
+            'Montant prestation': souscriptionMontant.toString(),
+        },
+      ),
+      popResult: true,
     );
+    if (mounted) Navigator.of(context).pop(true);
   }
 
   bool _hasFlexPayPaymentUrl(AdhesionElectronicPaymentResponse payment) {
@@ -3325,6 +3377,11 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         builder: (_) => FlexPayPaymentWaitingScreen(
           payment: payment,
           isMobileMoney: _isMobileMoneyPayment,
+          receiptOperation: CollecteReceiptOperation.adhesion,
+          affilieNom:
+              '${_prenomController.text.trim()} ${_nomController.text.trim()}'
+                  .trim(),
+          modePaiement: _selectedModePaiement,
         ),
       ),
     );

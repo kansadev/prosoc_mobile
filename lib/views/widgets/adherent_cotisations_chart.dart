@@ -2,17 +2,19 @@ import 'package:flutter/material.dart';
 
 import '../../config/colors.dart';
 import '../../models/dashboard_affilie_model.dart';
-import '../../utils/formatters.dart';
+import '../../utils/currency_formatter.dart';
 
 /// Histogramme des cotisations mensuelles (données `graphiques.cotisationsMensuelles`).
 class AdherentCotisationsChart extends StatelessWidget {
   final List<DashboardAffilieCotisationMensuelle> data;
   final int annee;
+  final String deviseCode;
 
   const AdherentCotisationsChart({
     super.key,
     required this.data,
     required this.annee,
+    this.deviseCode = 'CDF',
   });
 
   @override
@@ -74,7 +76,7 @@ class AdherentCotisationsChart extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'Total : ${AppFormatters.formatCurrencyDollar(totalAnnee)}',
+            'Total : ${CurrencyFormatter.format(amount: totalAnnee, deviseCode: deviseCode)}',
             style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
           ),
           const SizedBox(height: 20),

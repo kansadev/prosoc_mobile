@@ -6,8 +6,10 @@ import 'package:flutter/material.dart';
 import '../../../config/api.dart';
 import '../../../config/colors.dart';
 import '../../../models/adhesion_with_affilie_model.dart';
+import '../../../models/collecte_receipt_data.dart';
 import '../../../services/flex_pay_signalr_service.dart';
 import '../../../utils/api_error_helper.dart';
+import '../../../utils/collecte_receipt_helper.dart';
 import '../../../utils/formatters.dart';
 
 /// Écran d'attente pendant la validation FlexPay (Mobile Money, carte, etc.).
@@ -19,10 +21,16 @@ class FlexPayPaymentWaitingScreen extends StatefulWidget {
     super.key,
     required this.payment,
     required this.isMobileMoney,
+    this.receiptOperation = CollecteReceiptOperation.cotisation,
+    this.affilieNom,
+    this.modePaiement,
   });
 
   final AdhesionElectronicPaymentResponse payment;
   final bool isMobileMoney;
+  final CollecteReceiptOperation receiptOperation;
+  final String? affilieNom;
+  final String? modePaiement;
 
   @override
   State<FlexPayPaymentWaitingScreen> createState() =>
@@ -209,43 +217,32 @@ class _FlexPayPaymentWaitingScreenState
     _pollTimer?.cancel();
     _expiryTimer?.cancel();
 
-    final detail = <String>[];
-    if (result.idAdhesion != null) {
-      detail.add('Adhésion n° ${result.idAdhesion}');
-    }
-    if (result.idCollecte != null) {
-      detail.add('Collecte n° ${result.idCollecte}');
-    }
+    final payment = widget.payment;
+    final operation = result.idAdhesion != null
+        ? CollecteReceiptOperation.adhesion
+        : widget.receiptOperation;
 
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) => AlertDialog(
-        title: const Icon(
-          Icons.check_circle,
-          color: AppColors.prosocGreen,
-          size: 64,
-        ),
-        content: Text(
-          detail.isEmpty
-              ? 'Paiement confirmé.\nL\'opération a bien été finalisée.'
-              : 'Paiement confirmé.\n${detail.join('\n')}',
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: AppColors.textPrimary,
-          ),
-        ),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            style: TextButton.styleFrom(foregroundColor: AppColors.prosocGreen),
-            child: const Text('OK'),
-          ),
-        ],
+    await CollecteReceiptHelper.open(
+      context,
+      receipt: CollecteReceiptData(
+        operation: operation,
+        montant: payment.montantFlexPay > 0
+            ? payment.montantFlexPay
+            : payment.montantTarif,
+        deviseCode: payment.codeDevisePaiement ?? payment.codeDeviseTarif,
+        reference: payment.referenceFlexPay ?? payment.orderNumberFlexPay,
+        modePaiement: widget.modePaiement ??
+            (widget.isMobileMoney ? 'MOBILE_MONEY' : 'CARTE_BANCAIRE'),
+        affilieNom: widget.affilieNom,
+        idCollecte: result.idCollecte,
+        idAdhesion: result.idAdhesion,
+        statutPaiement: 'OK',
+        extras: {
+          if (payment.message != null && payment.message!.trim().isNotEmpty)
+            'Message': payment.message!.trim(),
+        },
       ),
+      popResult: true,
     );
 
     if (mounted) {

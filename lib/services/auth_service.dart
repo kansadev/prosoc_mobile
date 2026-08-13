@@ -6,6 +6,7 @@ import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api.dart';
 import '../models/auth_user_model.dart';
+import '../models/payment_gateway_config.dart';
 
 class AuthService {
   /// Branche le renouvellement automatique de session sur les appels API (401).
@@ -20,10 +21,29 @@ class AuthService {
   static const String _nomRoleKey = 'nom_role';
   static const String _nomCompletKey = 'nom_complet';
   static const String _idUtilisateurKey = 'id_utilisateur';
+  static const String _paymentGatewayKey = 'payment_gateway';
   static const String _onboardingSeenKey = 'onboarding_seen';
 
   static AuthUserModel? _currentUser;
   static AuthUserModel? get currentUser => _currentUser;
+
+  /// Passerelle de paiement persistée au login (provider session).
+  static PaymentGatewayConfig? get paymentGateway =>
+      _currentUser?.paymentGateway;
+
+  /// Devise principale affilié (issue du dashboard resume).
+  static String? _affilieDeviseCode;
+  static String get affilieDeviseCode {
+    final code = _affilieDeviseCode?.trim().toUpperCase();
+    if (code != null && code.isNotEmpty) return code;
+    return 'CDF';
+  }
+
+  static void setAffilieDeviseCode(String? code) {
+    final normalized = code?.trim().toUpperCase();
+    _affilieDeviseCode =
+        (normalized != null && normalized.isNotEmpty) ? normalized : null;
+  }
 
   /// Obtenir le nom complet de l'utilisateur
   static String? get userName => _currentUser?.utilisateur.nomComplet;
@@ -106,6 +126,15 @@ class AuthService {
       });
       await prefs.setString(_userDataKey, userJson);
 
+      if (authUser.paymentGateway != null) {
+        await prefs.setString(
+          _paymentGatewayKey,
+          jsonEncode(authUser.paymentGateway!.toJson()),
+        );
+      } else {
+        await prefs.remove(_paymentGatewayKey);
+      }
+
       _currentUser = authUser;
       ApiService.token = authUser.accessToken;
 
@@ -175,6 +204,23 @@ class AuthService {
         }
       }
 
+      PaymentGatewayConfig? paymentGateway;
+      final gatewayStr = prefs.getString(_paymentGatewayKey);
+      if (gatewayStr != null && gatewayStr.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(gatewayStr);
+          if (decoded is Map<String, dynamic>) {
+            paymentGateway = PaymentGatewayConfig.fromJson(decoded);
+          } else if (decoded is Map) {
+            paymentGateway = PaymentGatewayConfig.fromJson(
+              Map<String, dynamic>.from(decoded),
+            );
+          }
+        } catch (_) {
+          paymentGateway = null;
+        }
+      }
+
       _currentUser = AuthUserModel(
         success: true,
         message: '',
@@ -199,6 +245,7 @@ class AuthService {
         permissions: [],
         primaryRole: RoleModel(idRole: 0, nom: nomRole ?? '', description: '', niveau: 0, statut: true),
         roles: [],
+        paymentGateway: paymentGateway,
       );
 
       return true;
@@ -237,8 +284,10 @@ class AuthService {
       await prefs.remove(_nomRoleKey);
       await prefs.remove(_nomCompletKey);
       await prefs.remove(_idUtilisateurKey);
+      await prefs.remove(_paymentGatewayKey);
 
       _currentUser = null;
+      _affilieDeviseCode = null;
       ApiService.token = null;
 
       return true;

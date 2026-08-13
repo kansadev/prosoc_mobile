@@ -8,8 +8,10 @@ import '../../../models/devise_model.dart';
 import '../../../models/frais_model.dart';
 import '../../../models/prestation_model.dart';
 import '../../../models/type_adhesion_model.dart';
+import '../../../models/collecte_receipt_data.dart';
 import '../../../utils/affilie_payment_modes.dart';
 import '../../../utils/api_error_helper.dart';
+import '../../../utils/electronic_payment_error_handler.dart';
 import '../../../utils/email_utils.dart';
 import '../../../utils/paginated_response_helper.dart';
 import '../../../utils/phone_utils.dart';
@@ -145,8 +147,8 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
         _devises = devises;
         _selectedType = types.isNotEmpty ? types.first : null;
         _selectedFrais = frais.isNotEmpty ? frais.first : null;
-        _selectedPrestation =
-            prestations.isNotEmpty ? prestations.first : null;
+        // Prestation optionnelle : pas d'auto-sélection.
+        _selectedPrestation = null;
         _selectedDevise = devises.isNotEmpty ? devises.first : null;
         _isLoadingCatalog = false;
       });
@@ -218,10 +220,11 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
         );
         return;
       }
-      if (_selectedType == null ||
-          _selectedFrais == null ||
-          _selectedPrestation == null) {
-        _showSnack('Veuillez compléter les choix d\'adhésion.', isError: true);
+      if (_selectedType == null || _selectedFrais == null) {
+        _showSnack(
+          'Veuillez choisir le type d\'adhésion et les frais.',
+          isError: true,
+        );
         return;
       }
     }
@@ -281,7 +284,6 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
     if (!_paymentFormKey.currentState!.validate()) return;
     if (_selectedType == null ||
         _selectedFrais == null ||
-        _selectedPrestation == null ||
         _selectedDevise == null) {
       _showSnack('Catalogues incomplets.', isError: true);
       return;
@@ -305,8 +307,12 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
       int.parse(dateParts[0]),
     );
 
-    final souscriptionMontant = _selectedPrestation!.resolveMontant() ?? 0;
-    if (!_selectedPrestation!.isGratuit && souscriptionMontant <= 0) {
+    final hasSouscription = _selectedPrestation != null;
+    final souscriptionMontant =
+        hasSouscription ? (_selectedPrestation!.resolveMontant() ?? 0) : 0.0;
+    if (hasSouscription &&
+        !_selectedPrestation!.isGratuit &&
+        souscriptionMontant <= 0) {
       _showSnack('Montant de prestation invalide.', isError: true);
       return;
     }
@@ -358,26 +364,27 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
           referencePaiement: reference,
           statut: true,
         ),
-        CollecteRequest(
-          typeCollecte: AdhesionApiValues.typeCollecteSouscription,
-          subscription: SouscriptionRequest(
-            prestationId: _selectedPrestation!.id,
-            dateSouscription: DateTime.now().toUtc(),
+        if (hasSouscription)
+          CollecteRequest(
+            typeCollecte: AdhesionApiValues.typeCollecteSouscription,
+            subscription: SouscriptionRequest(
+              prestationId: _selectedPrestation!.id,
+              dateSouscription: DateTime.now().toUtc(),
+              statut: true,
+            ),
+            montant: souscriptionMontant,
+            mois: DateTime.now().month,
+            annee: DateTime.now().year,
+            modePaiement: _selectedModePaiement,
+            statutPaiement: 'EN_ATTENTE',
+            montantRecu: souscriptionMontant,
+            montantAttendu: souscriptionMontant,
+            deviseId: _selectedPrestation!.deviseId > 0
+                ? _selectedPrestation!.deviseId
+                : _selectedFrais!.deviseId,
+            referencePaiement: reference,
             statut: true,
           ),
-          montant: souscriptionMontant,
-          mois: DateTime.now().month,
-          annee: DateTime.now().year,
-          modePaiement: _selectedModePaiement,
-          statutPaiement: 'EN_ATTENTE',
-          montantRecu: souscriptionMontant,
-          montantAttendu: souscriptionMontant,
-          deviseId: _selectedPrestation!.deviseId > 0
-              ? _selectedPrestation!.deviseId
-              : _selectedFrais!.deviseId,
-          referencePaiement: reference,
-          statut: true,
-        ),
       ],
     );
 
@@ -395,10 +402,19 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
       if (!mounted) return;
 
       if (!response.success || response.data == null) {
-        await FlexPayPaymentErrorDialog.show(
+        await ElectronicPaymentErrorHandler.show(
           context,
-          message: response.message,
-          statusCode: response.statusCode,
+          response,
+          onChooseOtherMode: () {
+            if (!mounted) return;
+            setState(() {
+              // Retour au sélecteur : bascule vers l'autre mode électronique.
+              _selectedModePaiement =
+                  AffiliePaymentModes.isMobileMoney(_selectedModePaiement)
+                      ? AffiliePaymentModes.carteBancaire
+                      : AffiliePaymentModes.mobileMoney;
+            });
+          },
         );
         return;
       }
@@ -418,6 +434,11 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
             builder: (_) => FlexPayPaymentWaitingScreen(
               payment: payment,
               isMobileMoney: _isMobileMoney,
+              receiptOperation: CollecteReceiptOperation.adhesion,
+              affilieNom:
+                  '${_prenomController.text.trim()} ${_nomController.text.trim()}'
+                      .trim(),
+              modePaiement: _selectedModePaiement,
             ),
           ),
         );
@@ -440,6 +461,11 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
               builder: (_) => FlexPayPaymentWaitingScreen(
                 payment: payment,
                 isMobileMoney: false,
+                receiptOperation: CollecteReceiptOperation.adhesion,
+                affilieNom:
+                    '${_prenomController.text.trim()} ${_nomController.text.trim()}'
+                        .trim(),
+                modePaiement: _selectedModePaiement,
               ),
             ),
           );
@@ -735,14 +761,14 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
               onChanged: (v) => setState(() => _selectedFrais = v),
             ),
           const SizedBox(height: 16),
-          _sectionTitle('Prestation / cotisation', isDark),
+          _sectionTitle('Prestation (optionnel)', isDark),
           if (_isLoadingCatalog)
             _dropdownShimmer()
           else ...[
             DropdownButtonFormField<Prestation>(
               value: _selectedPrestation,
               isExpanded: true,
-              decoration: _inputDecoration('Prestation'),
+              decoration: _inputDecoration('Prestation — facultatif'),
               items: _prestations
                   .map(
                     (p) => DropdownMenuItem(
@@ -757,7 +783,14 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
               onChanged: (v) => setState(() => _selectedPrestation = v),
             ),
             if (_selectedPrestation != null) ...[
-              const SizedBox(height: 12),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => setState(() => _selectedPrestation = null),
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                  label: const Text('Retirer la prestation'),
+                ),
+              ),
               _montantPreviewTile(
                 label: _selectedPrestation!.isGratuit
                     ? 'Prestation gratuite'

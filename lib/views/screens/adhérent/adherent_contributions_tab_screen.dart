@@ -20,7 +20,7 @@ class AdherentContributionsTabScreen extends StatelessWidget {
     if (affilieId == null || affilieId <= 0) {
       return Scaffold(
         appBar: AppBar(
-          title: const Text('Mes cotisations'),
+          title: const Text('Cotisations'),
           backgroundColor: Colors.white,
         ),
         body: Center(
@@ -43,6 +43,7 @@ class AdherentContributionsTabScreen extends StatelessWidget {
       affilieId: affilieId,
       affilieNom: names.nom,
       affiliePrenom: names.prenom,
+      screenTitle: 'Cotisations',
     );
   }
 }

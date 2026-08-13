@@ -2,6 +2,8 @@
 // MODÈLE CRÉATION ADHÉSION AVEC AFFILIÉ
 // ============================================
 
+import 'payment_gateway_config.dart';
+
 /// Valeurs alignées sur le contrat API (Swagger / good_request_body.json).
 class AdhesionApiValues {
   AdhesionApiValues._();
@@ -383,6 +385,7 @@ class AdhesionElectronicPaymentResponse {
   final String? paymentUrl;
   final bool flexPayAccepted;
   final String? message;
+  final PaymentGatewayConfig? paymentGateway;
 
   AdhesionElectronicPaymentResponse({
     this.idCollecteEnAttente,
@@ -397,9 +400,20 @@ class AdhesionElectronicPaymentResponse {
     this.paymentUrl,
     this.flexPayAccepted = false,
     this.message,
+    this.paymentGateway,
   });
 
   factory AdhesionElectronicPaymentResponse.fromJson(Map<String, dynamic> json) {
+    PaymentGatewayConfig? gateway;
+    final rawGateway = json['paymentGateway'];
+    if (rawGateway is Map<String, dynamic>) {
+      gateway = PaymentGatewayConfig.fromJson(rawGateway);
+    } else if (rawGateway is Map) {
+      gateway = PaymentGatewayConfig.fromJson(
+        Map<String, dynamic>.from(rawGateway),
+      );
+    }
+
     return AdhesionElectronicPaymentResponse(
       idCollecteEnAttente: json['idCollecteEnAttente']?.toString(),
       orderNumberFlexPay: json['orderNumberFlexPay']?.toString(),
@@ -415,6 +429,7 @@ class AdhesionElectronicPaymentResponse {
       paymentUrl: json['paymentUrl']?.toString(),
       flexPayAccepted: json['flexPayAccepted'] == true,
       message: json['message']?.toString(),
+      paymentGateway: gateway,
     );
   }
 }

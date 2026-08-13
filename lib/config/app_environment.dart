@@ -32,6 +32,8 @@ abstract final class AppEnvironmentConfig {
 
   static bool get isUat => current == AppEnvironment.uat;
 
+  //commande pour build en dev: flutter build apk --dart-define=APP_ENV=dev
+  //commande pour build en uat: flutter build apk --dart-define=APP_ENV=uat
   static void logIfDebug() {
     if (kDebugMode) {
       debugPrint(

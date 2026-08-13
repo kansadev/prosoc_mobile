@@ -6,9 +6,11 @@ import 'package:intl/intl.dart';
 import 'package:prosoc/config/api.dart';
 import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/agent_model.dart';
+import 'package:prosoc/models/collecte_receipt_data.dart';
 import 'package:prosoc/models/perception_virtuelle_model.dart';
 import 'package:prosoc/models/session_caisse_model.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
+import 'package:prosoc/utils/collecte_receipt_helper.dart';
 import 'package:prosoc/utils/currency_formatter.dart';
 import 'package:prosoc/utils/paginated_response_helper.dart';
 import 'package:prosoc/views/widgets/prosoc_resource_error_view.dart';
@@ -595,33 +597,21 @@ class _PercepteurEncaissementAgentScreenState
   ) async {
     if (!mounted) return;
 
-    final montant = CurrencyFormatter.format(amount: result.montantTotal);
     final solde = CurrencyFormatter.format(amount: result.soldeRestantAgent);
-
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        icon: const Icon(
-          Icons.check_circle_rounded,
-          color: AppColors.prosocGreen,
-          size: 40,
-        ),
-        title: const Text('Perception confirmée'),
-        content: Text(
-          result.message.isNotEmpty
-              ? result.message
-              : '${result.nombreCollectes} collecte(s) perçue(s) pour un total '
-                  'de $montant.\nSolde virtuel restant agent : $solde.',
-        ),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.prosocGreen,
-            ),
-            child: const Text('OK'),
-          ),
-        ],
+    await CollecteReceiptHelper.open(
+      context,
+      receipt: CollecteReceiptData(
+        operation: CollecteReceiptOperation.encaissement,
+        montant: result.montantTotal,
+        affilieNom: _selectedAgent?.nomComplet,
+        statutPaiement: 'OK',
+        extras: {
+          'Collectes perçues': '${result.nombreCollectes}',
+          'Solde virtuel restant': solde,
+          if (result.message.trim().isNotEmpty) 'Message': result.message.trim(),
+          if (result.perceptionVirtuelleId > 0)
+            'Perception #': '${result.perceptionVirtuelleId}',
+        },
       ),
     );
   }
