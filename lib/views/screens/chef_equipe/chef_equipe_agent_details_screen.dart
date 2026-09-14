@@ -6,6 +6,7 @@ import '../../../models/chef_equipe_model.dart';
 import '../../../utils/api_error_helper.dart';
 import '../../../utils/formatters.dart';
 import '../../widgets/prosoc_resource_error_view.dart';
+import '../superviseur/widgets/superviseur_recharge_wallet_sheet.dart';
 
 class ChefEquipeAgentDetailsScreen extends StatefulWidget {
   final int agentId;
@@ -166,6 +167,19 @@ class _ChefEquipeAgentDetailsScreenState
     }
   }
 
+  Future<void> _openRechargeWallet() async {
+    if (widget.agentId <= 0) return;
+    final recharged = await SuperviseurRechargeWalletSheet.show(
+      context,
+      agentId: widget.agentId,
+      agentNom: widget.agentNom.trim().isNotEmpty
+          ? widget.agentNom.trim()
+          : 'Agent',
+    );
+    if (!mounted || !recharged) return;
+    await _loadMovementsIfNeeded(force: true, initial: true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final safeNom =
@@ -179,6 +193,13 @@ class _ChefEquipeAgentDetailsScreenState
         surfaceTintColor: Colors.white,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
+        actions: [
+          IconButton(
+            tooltip: 'Recharger le compte virtuel',
+            onPressed: widget.agentId > 0 ? _openRechargeWallet : null,
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+          ),
+        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -227,6 +248,20 @@ class _ChefEquipeAgentDetailsScreenState
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
           _MovementsSummaryCard(data: data),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: widget.agentId > 0 ? _openRechargeWallet : null,
+            icon: const Icon(Icons.account_balance_wallet_outlined),
+            label: const Text('Recharger le compte virtuel'),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.prosocGreen,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          ),
           const SizedBox(height: 16),
           if (data.mouvementsRecents.isEmpty)
             _emptyState('Aucun mouvement récent pour ce wallet.')

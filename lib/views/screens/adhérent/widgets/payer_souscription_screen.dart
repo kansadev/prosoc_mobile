@@ -6,6 +6,7 @@ import 'package:prosoc/models/prestation_model.dart';
 import 'package:prosoc/models/souscription_prestation_model.dart';
 import 'package:prosoc/models/wallet_agent_model.dart';
 import 'package:prosoc/models/collecte_receipt_data.dart';
+import 'package:prosoc/services/auth_service.dart';
 import 'package:prosoc/utils/affilie_payment_modes.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/collecte_agent_resolver.dart';
@@ -130,14 +131,27 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
     });
 
     try {
+      final isOwnAffilie = AuthService.affilieId == widget.affilieId;
+      final souscriptionsFuture = isOwnAffilie
+          ? ApiService.getAffilieMesSouscriptions()
+          : ApiService.getSouscriptionsPrestationByAffilie(widget.affilieId);
+
       final results = await Future.wait([
-        ApiService.getSouscriptionsPrestationByAffilie(widget.affilieId),
+        souscriptionsFuture,
         ApiService.getPrestations(pageSize: 100),
       ]);
       if (!mounted) return;
 
-      final souscriptionsResponse =
+      var souscriptionsResponse =
           results[0] as ApiResponse<List<SouscriptionPrestationModel>>;
+      if (isOwnAffilie &&
+          (!souscriptionsResponse.success ||
+              souscriptionsResponse.data == null)) {
+        souscriptionsResponse =
+            await ApiService.getSouscriptionsPrestationByAffilie(
+          widget.affilieId,
+        );
+      }
       final prestationsResponse =
           results[1] as ApiResponse<Map<String, dynamic>>;
 
@@ -819,11 +833,31 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
             : null,
       );
 
+      // Affilié connecté : tenter aussi le contrat POST /api/Affilie/paiement
+      // si la collecte classique est refusée (permissions PAIEMENT_AFFILIE).
+      var effectiveResponse = response;
+      if (!response.success &&
+          AuthService.isAdherentOrAffilie &&
+          AuthService.affilieId == widget.affilieId) {
+        final affiliePay = await ApiService.createAffiliePaiement(
+          souscriptionPrestationId: souscriptionPrestationId,
+          montant: montantPaye,
+          modePaiement: modePaiement,
+          deviseId: deviseId,
+          observation: _observationController.text.trim(),
+        );
+        if (affiliePay.success) {
+          effectiveResponse = affiliePay;
+        }
+      }
+
       if (!mounted) return;
 
-      if (response.success) {
+      if (effectiveResponse.success) {
         final idCollecte = CollecteReceiptHelper.parseId(
-          response.data is Map ? (response.data as Map)['idCollecte'] : null,
+          effectiveResponse.data is Map
+              ? (effectiveResponse.data as Map)['idCollecte']
+              : null,
         );
         await CollecteReceiptHelper.open(
           context,
@@ -831,8 +865,9 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
             operation: CollecteReceiptOperation.souscription,
             montant: montantPaye,
             deviseId: deviseId,
-            reference: response.data is Map
-                ? (response.data as Map)['referencePaiement']?.toString()
+            reference: effectiveResponse.data is Map
+                ? (effectiveResponse.data as Map)['referencePaiement']
+                    ?.toString()
                 : null,
             modePaiement: modePaiement,
             affilieNom: '${widget.affiliePrenom} ${widget.affilieNom}'.trim(),
@@ -845,8 +880,8 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
       } else {
         await FlexPayPaymentErrorDialog.show(
           context,
-          message: response.message,
-          statusCode: response.statusCode,
+          message: effectiveResponse.message,
+          statusCode: effectiveResponse.statusCode,
         );
       }
     } catch (e, stackTrace) {

@@ -4,6 +4,7 @@ import '../../../config/colors.dart';
 import '../../../controllers/chef_equipe_controller.dart';
 import '../../../models/chef_equipe_model.dart';
 import '../../widgets/prosoc_resource_error_view.dart';
+import '../superviseur/widgets/superviseur_recharge_wallet_sheet.dart';
 import 'chef_equipe_agent_details_screen.dart';
 
 class ChefEquipeTeamScreen extends StatefulWidget {
@@ -190,7 +191,7 @@ class _ChefEquipeTeamScreenState extends State<ChefEquipeTeamScreen> {
         borderRadius: BorderRadius.circular(16),
         onTap: () => widget.onOpenDetails(agent.agentId, agent.nomComplet),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
           child: Row(
             children: [
               CircleAvatar(
@@ -232,7 +233,16 @@ class _ChefEquipeTeamScreenState extends State<ChefEquipeTeamScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: 4),
+              IconButton(
+                tooltip: 'Recharger le compte virtuel',
+                onPressed: agent.agentId > 0
+                    ? () => _openRechargeWallet(agent)
+                    : null,
+                icon: const Icon(
+                  Icons.account_balance_wallet_outlined,
+                  color: AppColors.prosocGreen,
+                ),
+              ),
               Icon(
                 Icons.chevron_right_rounded,
                 size: 20,
@@ -243,6 +253,16 @@ class _ChefEquipeTeamScreenState extends State<ChefEquipeTeamScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _openRechargeWallet(ChefEquipeAgentResumeDto agent) async {
+    final recharged = await SuperviseurRechargeWalletSheet.show(
+      context,
+      agentId: agent.agentId,
+      agentNom: agent.nomComplet,
+    );
+    if (!mounted || !recharged) return;
+    await widget.controller.load(force: true);
   }
 
   // Ancien layout détaillé des métriques supprimé pour une liste plus simple.

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../../../../config/app_features.dart';
 import '../../../../config/colors.dart';
 import '../../../../models/dashboard_agent_graphs_model.dart';
 
@@ -88,12 +89,14 @@ class DashboardAgentChartsSection extends StatelessWidget {
           ),
           const SizedBox(height: 20),
         ],
-        if (graphs.repartitionPrestations.isNotEmpty) ...[
+        if (AppFeatures.healthUiEnabled &&
+            graphs.repartitionPrestations.isNotEmpty) ...[
           _sectionTitle('Répartition des prestations'),
           const SizedBox(height: 10),
           _chartCard(
             child: Column(
-              children: graphs.repartitionPrestations.map(_prestationRow).toList(),
+              children:
+                  graphs.repartitionPrestations.map(_prestationRow).toList(),
             ),
           ),
           const SizedBox(height: 20),

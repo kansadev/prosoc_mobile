@@ -61,6 +61,10 @@ class RetraitAgentPeriodeCourante {
   final String fenetreActive;
   final String typeRetraitAutorise;
   final double montantMinimumPartiel;
+  /// Cap % du solde disponible en retrait PARTIEL (ex. 25). 0 = non exposé.
+  final double pourcentageMaxPartiel;
+  /// Cap montant absolu PARTIEL si fourni par l'API. 0 = non exposé.
+  final double montantMaximumPartiel;
   final bool montantDemandeRequis;
 
   const RetraitAgentPeriodeCourante({
@@ -76,6 +80,8 @@ class RetraitAgentPeriodeCourante {
     required this.fenetreActive,
     required this.typeRetraitAutorise,
     required this.montantMinimumPartiel,
+    this.pourcentageMaxPartiel = 0,
+    this.montantMaximumPartiel = 0,
     required this.montantDemandeRequis,
   });
 
@@ -94,6 +100,8 @@ class RetraitAgentPeriodeCourante {
       fenetreActive: _periodeString(json, 'fenetreActive'),
       typeRetraitAutorise: _periodeString(json, 'typeRetraitAutorise'),
       montantMinimumPartiel: _periodeDouble(json, 'montantMinimumPartiel'),
+      pourcentageMaxPartiel: _periodeDouble(json, 'pourcentageMaxPartiel'),
+      montantMaximumPartiel: _periodeDouble(json, 'montantMaximumPartiel'),
       montantDemandeRequis: _periodeBool(json, 'montantDemandeRequis'),
     );
   }
@@ -103,6 +111,21 @@ class RetraitAgentPeriodeCourante {
 
   bool get isRetraitPartiel =>
       typeRetraitAutorise.trim().toUpperCase() == 'PARTIEL';
+
+  /// Plafond PARTIEL dérivé du solde (null si pas de plafond %).
+  double? montantMaxDepuisSolde(double soldeDisponible) {
+    if (!isRetraitPartiel || soldeDisponible <= 0) return null;
+    if (montantMaximumPartiel > 0) {
+      return montantMaximumPartiel < soldeDisponible
+          ? montantMaximumPartiel
+          : soldeDisponible;
+    }
+    if (pourcentageMaxPartiel > 0) {
+      final capped = soldeDisponible * (pourcentageMaxPartiel / 100.0);
+      return capped < soldeDisponible ? capped : soldeDisponible;
+    }
+    return null;
+  }
 
   String get statusLabel => estPeriodeAutorisee
       ? 'Période de retrait ouverte'
@@ -123,9 +146,43 @@ class RetraitAgentPeriodeCourante {
     if (isRetraitTotal) {
       return 'Retrait total du solde disponible requis';
     }
-    if (isRetraitPartiel && montantMinimumPartiel > 0) {
-      return 'Retrait partiel autorisé (min. $montantMinimumPartiel)';
+    if (isRetraitPartiel) {
+      final parts = <String>['Retrait partiel autorisé'];
+      if (montantMinimumPartiel > 0) {
+        parts.add('min. $montantMinimumPartiel');
+      }
+      if (pourcentageMaxPartiel > 0) {
+        parts.add('max. ${pourcentageMaxPartiel.toStringAsFixed(0)} %');
+      }
+      return parts.join(' · ');
     }
     return 'Retrait autorisé';
+  }
+
+  RetraitAgentPeriodeCourante copyWith({
+    double? pourcentageMaxPartiel,
+    double? montantMaximumPartiel,
+    double? montantMinimumPartiel,
+  }) {
+    return RetraitAgentPeriodeCourante(
+      date: date,
+      estPeriodeAutorisee: estPeriodeAutorisee,
+      message: message,
+      jourDuMois: jourDuMois,
+      periodeInfo: periodeInfo,
+      fenetre1Debut: fenetre1Debut,
+      fenetre1Fin: fenetre1Fin,
+      fenetre2Debut: fenetre2Debut,
+      fenetre2Fin: fenetre2Fin,
+      fenetreActive: fenetreActive,
+      typeRetraitAutorise: typeRetraitAutorise,
+      montantMinimumPartiel:
+          montantMinimumPartiel ?? this.montantMinimumPartiel,
+      pourcentageMaxPartiel:
+          pourcentageMaxPartiel ?? this.pourcentageMaxPartiel,
+      montantMaximumPartiel:
+          montantMaximumPartiel ?? this.montantMaximumPartiel,
+      montantDemandeRequis: montantDemandeRequis,
+    );
   }
 }

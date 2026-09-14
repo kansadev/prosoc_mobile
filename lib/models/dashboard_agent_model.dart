@@ -333,6 +333,11 @@ class DashboardAgentObjectifs {
   final double progressionCollectes;
   final int progressionAdhesions;
   final double progressionCommissions;
+  /// Target cotisation (si exposé par GET /DashboardAgent/objectifs).
+  final double objectifCotisations;
+  final double progressionCotisations;
+  final double montantTargetCotisation;
+  final int? targetCotisationId;
 
   const DashboardAgentObjectifs({
     required this.mois,
@@ -343,9 +348,29 @@ class DashboardAgentObjectifs {
     required this.progressionCollectes,
     required this.progressionAdhesions,
     required this.progressionCommissions,
+    this.objectifCotisations = 0,
+    this.progressionCotisations = 0,
+    this.montantTargetCotisation = 0,
+    this.targetCotisationId,
   });
 
   factory DashboardAgentObjectifs.fromJson(Map<String, dynamic> json) {
+    double firstDouble(List<String> keys) {
+      for (final key in keys) {
+        final value = _dashDouble(json, key);
+        if (value != 0) return value;
+      }
+      return _dashDouble(json, keys.first);
+    }
+
+    int? nullableInt(String key) {
+      final value = _dashField(json, key);
+      if (value == null) return null;
+      if (value is int) return value;
+      if (value is num) return value.toInt();
+      return int.tryParse(value.toString());
+    }
+
     return DashboardAgentObjectifs(
       mois: _dashInt(json, 'mois'),
       annee: _dashInt(json, 'annee'),
@@ -355,8 +380,33 @@ class DashboardAgentObjectifs {
       progressionCollectes: _dashDouble(json, 'progressionCollectes'),
       progressionAdhesions: _dashInt(json, 'progressionAdhesions'),
       progressionCommissions: _dashDouble(json, 'progressionCommissions'),
+      objectifCotisations: firstDouble(const [
+        'objectifCotisations',
+        'objectifCotisation',
+        'targetCotisationMontant',
+        'montantObjectifCotisation',
+      ]),
+      progressionCotisations: firstDouble(const [
+        'progressionCotisations',
+        'progressionCotisation',
+        'montantCotisationsRealisees',
+      ]),
+      montantTargetCotisation: firstDouble(const [
+        'montantTargetCotisation',
+        'targetCotisation',
+        'montantTarget',
+      ]),
+      targetCotisationId: nullableInt('targetCotisationId'),
     );
   }
+
+  bool get hasCotisationTarget =>
+      objectifCotisations > 0 ||
+      montantTargetCotisation > 0 ||
+      progressionCotisations > 0;
+
+  double get cotisationObjectifEffectif =>
+      objectifCotisations > 0 ? objectifCotisations : montantTargetCotisation;
 }
 
 class DashboardAgentAffilieRecent {
@@ -433,6 +483,22 @@ class DashboardAgentModel {
     this.dateGeneration,
     required this.devisePrincipaleCode,
   });
+
+  DashboardAgentModel copyWith({DashboardAgentObjectifs? objectifs}) {
+    return DashboardAgentModel(
+      agentId: agentId,
+      nomAgent: nomAgent,
+      kpis: kpis,
+      primes: primes,
+      commissions: commissions,
+      suiviAdherents: suiviAdherents,
+      affiliesRecents: affiliesRecents,
+      collectesEnAttente: collectesEnAttente,
+      objectifs: objectifs ?? this.objectifs,
+      dateGeneration: dateGeneration,
+      devisePrincipaleCode: devisePrincipaleCode,
+    );
+  }
 
   factory DashboardAgentModel.fromJson(Map<String, dynamic> json) {
     final kpisMap = _dashMap(json, 'kpis');

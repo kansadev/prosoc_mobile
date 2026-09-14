@@ -90,6 +90,11 @@ class BonEnvoiDetailSheet extends StatelessWidget {
                         : '#${bon.jetonMedicalId}',
                     color: AppColors.prosocGreen,
                   ),
+                  if (bon.jetonDateExpiration != null)
+                    _row(
+                      'Expiration',
+                      AppFormatters.formatDateTime(bon.jetonDateExpiration),
+                    ),
                   const SizedBox(height: 8),
                   Text(
                     'Présentez ce jeton au percepteur pour contrôle.',

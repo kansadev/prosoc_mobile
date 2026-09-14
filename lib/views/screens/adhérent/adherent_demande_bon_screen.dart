@@ -906,6 +906,16 @@ class _AdherentDemandeBonScreenState extends State<AdherentDemandeBonScreen>
                               color: AppColors.prosocGreen,
                             ),
                           ),
+                          if (d.jetonDateExpiration != null) ...[
+                            const SizedBox(height: 4),
+                            Text(
+                              'Expire le ${AppFormatters.formatDateTime(d.jetonDateExpiration)}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),

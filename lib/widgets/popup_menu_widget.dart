@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:prosoc/config/app_features.dart';
 import 'package:prosoc/config/colors.dart';
 
 /// Widget réutilisable pour les items de menu popup
@@ -54,6 +55,12 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final health = AppFeatures.healthUiEnabled;
+    final payerSouscription = health ? onPayerSouscription : null;
+    final souscription = health ? onSouscription : null;
+    final demandeBon = health ? onDemandeBon : null;
+    final antecedents = health ? onAntecedents : null;
+
     return PopupMenuButton<String>(
       icon: Icon(Icons.more_vert, color: iconColor ?? AppColors.textPrimary),
       onSelected: (value) {
@@ -65,19 +72,19 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
             onPayerFrais?.call();
             break;
           case 'payer_souscription':
-            onPayerSouscription?.call();
+            payerSouscription?.call();
             break;
           case 'dependants':
             onDependants?.call();
             break;
           case 'souscription':
-            onSouscription?.call();
+            souscription?.call();
             break;
           case 'demande_bon':
-            onDemandeBon?.call();
+            demandeBon?.call();
             break;
           case 'antecedents':
-            onAntecedents?.call();
+            antecedents?.call();
             break;
           case 'arrieres':
             onArrieres?.call();
@@ -85,59 +92,48 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
         }
       },
       itemBuilder: (context) => [
-        // Collecte
         if (onCollecte != null)
           PopupMenuItemWidget(
             value: 'collecte',
             icon: Icons.payments_outlined,
             label: 'Payer une cotisation',
           ),
-
         if (onPayerFrais != null)
           PopupMenuItemWidget(
             value: 'payer_frais',
             icon: Icons.receipt_long_outlined,
             label: 'Payer un frais',
           ),
-
-        if (onPayerSouscription != null)
+        if (payerSouscription != null)
           PopupMenuItemWidget(
             value: 'payer_souscription',
-            icon: Icons.medical_services_outlined,
+            icon: Icons.card_membership_outlined,
             label: 'Payer une souscription',
           ),
-
-        // Dépendants
         if (onDependants != null)
           PopupMenuItemWidget(
             value: 'dependants',
             icon: Icons.people_outline,
             label: 'Ajouter un dépendant',
           ),
-
-        // Souscription
-        if (onSouscription != null)
+        if (souscription != null)
           PopupMenuItemWidget(
             value: 'souscription',
             icon: Icons.library_add_rounded,
             label: 'Souscrire à une prestation',
           ),
-
-        if (onDemandeBon != null)
+        if (demandeBon != null)
           PopupMenuItemWidget(
             value: 'demande_bon',
             icon: Icons.confirmation_number_outlined,
             label: 'Demander un bon',
           ),
-
-        // Antécédents
-        if (onAntecedents != null)
+        if (antecedents != null)
           PopupMenuItemWidget(
             value: 'antecedents',
             icon: Icons.health_and_safety_rounded,
             label: 'Ajouter un antécédent',
           ),
-
         if (onArrieres != null)
           PopupMenuItemWidget(
             value: 'arrieres',

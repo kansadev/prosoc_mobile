@@ -48,6 +48,38 @@ class JetonMedicalModel {
   }
 
   bool get isActif => statut && !estUtilise;
+
+  bool get isExpire {
+    final exp = dateExpiration;
+    if (exp == null) return false;
+    return DateTime.now().isAfter(exp);
+  }
+
+  String? get dureeValiditeLabel {
+    final creation = dateCreation;
+    final expiration = dateExpiration;
+    if (expiration == null) return null;
+    if (creation != null) {
+      final hours = expiration.difference(creation).inHours;
+      if (hours > 0 && hours < 48) {
+        return 'Valable $hours h (expire le ${_fmt(expiration)})';
+      }
+      final days = expiration.difference(creation).inDays;
+      if (days > 0) {
+        return 'Valable $days j (expire le ${_fmt(expiration)})';
+      }
+    }
+    return 'Expire le ${_fmt(expiration)}';
+  }
+
+  static String _fmt(DateTime d) {
+    final local = d.toLocal();
+    final dd = local.day.toString().padLeft(2, '0');
+    final mm = local.month.toString().padLeft(2, '0');
+    final hh = local.hour.toString().padLeft(2, '0');
+    final min = local.minute.toString().padLeft(2, '0');
+    return '$dd/$mm/${local.year} $hh:$min';
+  }
 }
 
 int _asInt(dynamic value, [int fallback = 0]) {

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import 'package:prosoc/config/api.dart';
+import 'package:prosoc/config/app_features.dart';
 import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/dashboard_percepteur_model.dart';
 import 'package:prosoc/models/wallet_agent_model.dart';
@@ -622,6 +623,7 @@ class _HomePercepteurScreenState extends State<HomePercepteurScreen> {
   }
 
   Widget _buildQuickServices(BuildContext context) {
+    final health = AppFeatures.healthUiEnabled;
     final services = <_QuickService>[
       _QuickService(
         title: 'Encaisser',
@@ -629,34 +631,36 @@ class _HomePercepteurScreenState extends State<HomePercepteurScreen> {
         color: AppColors.prosocGreen,
         onTap: () => PercepteurEncaissementChoiceSheet.show(context),
       ),
-      _QuickService(
-        title: 'Souscription',
-        icon: Icons.medical_services_outlined,
-        color: Colors.purple,
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const PercepteurEncaissementScreen(
-                souscriptionOnly: true,
+      if (health)
+        _QuickService(
+          title: 'Souscription',
+          icon: Icons.medical_services_outlined,
+          color: Colors.purple,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const PercepteurEncaissementScreen(
+                  souscriptionOnly: true,
+                ),
               ),
-            ),
-          );
-        },
-      ),
-      _QuickService(
-        title: 'Valider bons',
-        icon: Icons.verified_outlined,
-        color: const Color(0xFFE65100),
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => const BonEnvoiMedicalScreen(),
-            ),
-          );
-        },
-      ),
+            );
+          },
+        ),
+      if (health)
+        _QuickService(
+          title: 'Valider bons',
+          icon: Icons.verified_outlined,
+          color: const Color(0xFFE65100),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const BonEnvoiMedicalScreen(),
+              ),
+            );
+          },
+        ),
       _QuickService(
         title: 'Dashboard',
         icon: Icons.dashboard,

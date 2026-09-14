@@ -46,7 +46,7 @@
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>La caméra est utilisée pour photographier la pièce d'identité, la photo de l'affilié et scanner les QR codes des bons d'envoi.</string>
+	<string>La caméra est utilisée pour photographier la pièce d'identité et la photo de l'affilié.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>La galerie est utilisée pour joindre la carte d'identité et la photo de l'affilié.</string>
 </dict>

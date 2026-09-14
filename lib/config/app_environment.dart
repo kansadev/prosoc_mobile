@@ -34,6 +34,8 @@ abstract final class AppEnvironmentConfig {
 
   //commande pour build en dev: flutter build apk --dart-define=APP_ENV=dev
   //commande pour build en uat: flutter build apk --dart-define=APP_ENV=uat
+  //santé UI (store) : désactivée par défaut ; réactiver :
+  //  --dart-define=HEALTH_UI_ENABLED=true
   static void logIfDebug() {
     if (kDebugMode) {
       debugPrint(

@@ -1,0 +1,1 @@
+flutter run --dart-define=HEALTH_UI_ENABLED=true

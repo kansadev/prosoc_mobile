@@ -13,6 +13,7 @@ import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/collecte_receipt_helper.dart';
 import 'package:prosoc/utils/currency_formatter.dart';
 import 'package:prosoc/utils/paginated_response_helper.dart';
+import 'package:prosoc/views/screens/Percepteur/percepteur_va_historique_screen.dart';
 import 'package:prosoc/views/widgets/prosoc_resource_error_view.dart';
 import 'package:prosoc/views/widgets/prosoc_shimmer_loading.dart';
 
@@ -54,6 +55,7 @@ class _PercepteurEncaissementAgentScreenState
   SessionCaisseModel? _sessionCaisse;
   bool _isLoadingSession = true;
   bool _isOpeningSession = false;
+  bool _isCloturingSession = false;
 
   static const _pageSize = 15;
   static const _sessionCaisseRequise = 'SESSION_CAISSIER_REQUISE';
@@ -457,6 +459,106 @@ class _PercepteurEncaissementAgentScreenState
     }
   }
 
+  Future<void> _promptCloturerSessionCaisse() async {
+    final session = _sessionCaisse;
+    if (session == null || !session.isOuverte) return;
+
+    final controller = TextEditingController(
+      text: session.soldeCourant > 0
+          ? session.soldeCourant.toStringAsFixed(
+              session.soldeCourant == session.soldeCourant.roundToDouble()
+                  ? 0
+                  : 2,
+            )
+          : '0',
+    );
+    final observationController = TextEditingController();
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Clôturer la session'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: controller,
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(
+                labelText: 'Solde réel de clôture',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: observationController,
+              maxLines: 2,
+              decoration: const InputDecoration(
+                labelText: 'Observation (optionnel)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.prosocGreen,
+            ),
+            child: const Text('Clôturer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    final solde = double.tryParse(
+      controller.text.trim().replaceAll(',', '.'),
+    );
+    if (solde == null || solde < 0) {
+      _showSnack('Solde de clôture invalide.', isError: true);
+      return;
+    }
+
+    setState(() => _isCloturingSession = true);
+    try {
+      final response = await ApiService.cloturerSessionCaisse(
+        idSessionCaisse: session.idSessionCaisse,
+        soldeReelCloture: solde,
+        observationCloture: observationController.text.trim(),
+      );
+      if (!mounted) return;
+      if (!response.success) {
+        _showSnack(
+          response.message ?? 'Impossible de clôturer la session.',
+          isError: true,
+        );
+        return;
+      }
+      setState(() => _sessionCaisse = null);
+      _showSnack('Session caisse clôturée.');
+    } catch (e, stackTrace) {
+      ApiErrorHelper.logException(
+        'PercepteurEncaissementAgent/cloturerSession',
+        e,
+        stackTrace,
+        false,
+      );
+      if (mounted) {
+        _showSnack(ApiErrorHelper.userFacingNetwork(), isError: true);
+      }
+    } finally {
+      if (mounted) setState(() => _isCloturingSession = false);
+    }
+  }
+
   Future<void> _confirmSelection() async {
     final agent = _selectedAgent;
     if (agent == null || _selectedCollecteIds.isEmpty || _isConfirming) return;
@@ -655,6 +757,19 @@ class _PercepteurEncaissementAgentScreenState
                 icon: const Icon(Icons.arrow_back_ios_rounded, size: 20),
                 onPressed: _clearSelectedAgent,
               ),
+        actions: [
+          IconButton(
+            tooltip: 'Historique remises VA',
+            icon: const Icon(Icons.history_rounded),
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const PercepteurVaHistoriqueScreen(),
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: selected == null ? _buildAgentsBody() : _buildCollectesBody(selected),
       bottomNavigationBar:
@@ -696,7 +811,8 @@ class _PercepteurEncaissementAgentScreenState
 
   Widget _buildSessionCaisseBanner() {
     final hasSession = _sessionCaisse != null && _sessionCaisse!.isOuverte;
-    final busy = _isLoadingSession || _isOpeningSession;
+    final busy =
+        _isLoadingSession || _isOpeningSession || _isCloturingSession;
 
     return Container(
       width: double.infinity,
@@ -739,7 +855,12 @@ class _PercepteurEncaissementAgentScreenState
               ),
             ),
           ),
-          if (!hasSession && !busy)
+          if (!busy && hasSession)
+            TextButton(
+              onPressed: _promptCloturerSessionCaisse,
+              child: const Text('Clôturer'),
+            )
+          else if (!hasSession && !busy)
             TextButton(
               onPressed: _promptOpenSessionCaisse,
               child: const Text('Ouvrir'),

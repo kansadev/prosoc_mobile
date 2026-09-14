@@ -28,6 +28,8 @@ import '../models/kpi_agent_model.dart';
 import '../models/agent_model.dart';
 import '../models/devise_model.dart';
 import '../models/perception_virtuelle_model.dart';
+import '../models/agent_maash_model.dart';
+import '../models/session_caisse_model.dart';
 import '../models/retrait_agent_model.dart';
 import '../models/retrait_agent_periode_model.dart';
 import '../models/retrait_agent_verifier_solde_model.dart';
@@ -35,8 +37,8 @@ import '../models/arriere_affilie_model.dart';
 import '../models/penalite_affilie_model.dart';
 import '../models/adhesion_en_ligne_model.dart';
 import '../models/agent_affecter_affilies_model.dart';
-import '../models/session_caisse_model.dart';
 import '../models/prestation_model.dart';
+import '../models/hopital_partenaire_model.dart';
 import 'app_environment.dart';
 
 // ============================================
@@ -841,6 +843,89 @@ class ApiService {
     }
 
     return null;
+  }
+
+  /// GET /api/PerceptionVirtuelle/synthese-agents
+  static Future<ApiResponse<List<PerceptionVirtuelleSyntheseAgent>>>
+      getPerceptionVirtuelleSyntheseAgents() async {
+    final response = await _get<dynamic>(
+      '/api/PerceptionVirtuelle/synthese-agents',
+    );
+    if (!response.success) {
+      return ApiResponse(
+        success: false,
+        message: response.message,
+        statusCode: response.statusCode,
+      );
+    }
+    final raw = response.data;
+    final List<dynamic> rows;
+    if (raw is List) {
+      rows = raw;
+    } else if (raw is Map) {
+      rows = PaginatedResponseHelper.extractRows(
+        Map<String, dynamic>.from(raw),
+      );
+    } else {
+      rows = const [];
+    }
+    final parsed = <PerceptionVirtuelleSyntheseAgent>[];
+    for (final item in rows) {
+      if (item is! Map) continue;
+      parsed.add(
+        PerceptionVirtuelleSyntheseAgent.fromJson(
+          Map<String, dynamic>.from(item),
+        ),
+      );
+    }
+    return ApiResponse.success(parsed, statusCode: response.statusCode);
+  }
+
+  /// GET /api/PerceptionVirtuelle/historique
+  static Future<ApiResponse<Map<String, dynamic>>>
+      getPerceptionVirtuelleHistorique({
+    int page = 1,
+    int pageSize = 20,
+    int? agentId,
+    DateTime? dateDebut,
+    DateTime? dateFin,
+  }) async {
+    final queryParams = <String, String>{
+      'Page': page.toString(),
+      'PageSize': pageSize.toString(),
+      if (agentId != null && agentId > 0) 'agentId': agentId.toString(),
+      if (dateDebut != null) 'dateDebut': dateDebut.toIso8601String(),
+      if (dateFin != null) 'dateFin': dateFin.toIso8601String(),
+    };
+    return _get<Map<String, dynamic>>(
+      '/api/PerceptionVirtuelle/historique',
+      queryParams: queryParams,
+    );
+  }
+
+  static List<PerceptionVirtuelleHistoModel> parsePerceptionVirtuelleHisto(
+    dynamic raw,
+  ) {
+    final List<dynamic> rows;
+    if (raw is List) {
+      rows = raw;
+    } else if (raw is Map) {
+      rows = PaginatedResponseHelper.extractRows(
+        Map<String, dynamic>.from(raw),
+      );
+    } else {
+      rows = const [];
+    }
+    final parsed = <PerceptionVirtuelleHistoModel>[];
+    for (final item in rows) {
+      if (item is! Map) continue;
+      parsed.add(
+        PerceptionVirtuelleHistoModel.fromJson(
+          Map<String, dynamic>.from(item),
+        ),
+      );
+    }
+    return parsed;
   }
 
   /// GET /api/WalletMouvement/by-agent/{agentId}/paginated
@@ -1707,6 +1792,44 @@ class ApiService {
   /// GET /api/DashboardAgent/terrain - Dashboard terrain agent (agentID from token)
   static Future<ApiResponse<DashboardAgentModel>> getDashboardAgentTerrain() {
     return _getDashboardAgent('terrain', context: 'DashboardAgent/terrain');
+  }
+
+  /// GET /api/DashboardAgent/objectifs — Objectifs mensuels agent (mois/annee optionnels).
+  static Future<ApiResponse<DashboardAgentObjectifs>> getDashboardAgentObjectifs({
+    int? mois,
+    int? annee,
+  }) async {
+    const context = 'DashboardAgent/objectifs';
+    try {
+      final query = <String, String>{
+        if (mois != null) 'mois': mois.toString(),
+        if (annee != null) 'annee': annee.toString(),
+      };
+      final uri = Uri.parse('${ApiConfig.baseUrl}/api/DashboardAgent/objectifs')
+          .replace(queryParameters: query.isEmpty ? null : query);
+      final response = await _httpGet(uri, context: context);
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        Map<String, dynamic>? map;
+        if (decoded is Map) {
+          final raw = Map<String, dynamic>.from(decoded);
+          final nested = raw['data'] ?? raw['Data'] ?? raw['objectifs'];
+          map = nested is Map
+              ? Map<String, dynamic>.from(nested)
+              : raw;
+        }
+        if (map == null) {
+          return ApiResponse.error(
+            'Réponse objectifs invalide',
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.success(DashboardAgentObjectifs.fromJson(map));
+      }
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
   }
 
   /// GET /api/DashboardAgent/graphs - Graphiques du dashboard agent (agentID from token)
@@ -3079,6 +3202,66 @@ class ApiService {
     }
   }
 
+  /// POST /api/Caisse/session/{id}/cloturer
+  static Future<ApiResponse<SessionCaisseModel>> cloturerSessionCaisse({
+    required int idSessionCaisse,
+    required double soldeReelCloture,
+    String? observationCloture,
+  }) async {
+    const context = 'Caisse/session/cloturer';
+    final body = <String, dynamic>{
+      'soldeReelCloture': soldeReelCloture,
+      if (observationCloture != null && observationCloture.trim().isNotEmpty)
+        'observationCloture': observationCloture.trim(),
+    };
+    try {
+      if (kDebugMode) {
+        ApiErrorHelper.logRequest(
+          context,
+          body,
+          endpoint: '/api/Caisse/session/$idSessionCaisse/cloturer',
+        );
+      }
+      final response = await _withAuthRetry(
+        () => http.post(
+          Uri.parse(
+            '${ApiConfig.baseUrl}/api/Caisse/session/$idSessionCaisse/cloturer',
+          ),
+          headers: isAuthenticated
+              ? ApiConfig.authHeaders(_token!)
+              : ApiConfig.headers,
+          body: jsonEncode(body),
+        ),
+      );
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+        Map<String, dynamic>? map;
+        if (decoded is Map) {
+          final raw = Map<String, dynamic>.from(decoded);
+          final nested = raw['data'] ?? raw['Data'];
+          map = nested is Map ? Map<String, dynamic>.from(nested) : raw;
+        }
+        if (map == null) {
+          return ApiResponse.error(
+            'Réponse de clôture de session invalide',
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.success(
+          SessionCaisseModel.fromJson(map),
+          statusCode: response.statusCode,
+        );
+      }
+      return _errorResponse<SessionCaisseModel>(
+        response,
+        context: context,
+        requestBody: body,
+      );
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
   /// POST /api/devise - Créer une devise
   static Future<ApiResponse<Map<String, dynamic>>> createDevise({
     required String nom,
@@ -3727,18 +3910,26 @@ class ApiService {
   }
 
   /// POST /api/retraitagent - Créer une demande de retrait
+  /// [typeRetrait] métier : `PARTIEL` ou `TOTAL` (aligné période API).
+  /// [modePaiement] (Espèces / Virement / Mobile Money) est fusionné dans le motif.
   static Future<ApiResponse<Map<String, dynamic>>> createDemandeRetraitAgent({
     required int agentId,
     required double montant,
     required String typeRetrait,
     required String motifRetrait,
     int? deviseId,
+    String? modePaiement,
   }) async {
+    final mode = modePaiement?.trim() ?? '';
+    final motif = motifRetrait.trim();
+    final motifComplet = mode.isEmpty
+        ? motif
+        : (motif.isEmpty ? 'Mode: $mode' : 'Mode: $mode — $motif');
     return _post<Map<String, dynamic>>('/api/retraitAgent', {
       'agentId': agentId,
       'montantDemande': montant,
-      'typeRetrait': typeRetrait,
-      'motifRetrait': motifRetrait,
+      'typeRetrait': typeRetrait.trim().toUpperCase(),
+      'motifRetrait': motifComplet,
       if (deviseId != null) 'deviseId': deviseId,
     });
   }
@@ -3877,6 +4068,86 @@ class ApiService {
           'SortDirection': sortDirection,
       },
     );
+  }
+
+  /// GET /api/Affilie/souscriptions — souscriptions de l'affilié connecté (JWT).
+  static Future<ApiResponse<List<SouscriptionPrestationModel>>>
+      getAffilieMesSouscriptions() async {
+    final response = await _get<dynamic>('/api/Affilie/souscriptions');
+    if (!response.success) {
+      final fallback = await _get<dynamic>('/api/affilie/souscriptions');
+      if (!fallback.success || fallback.data == null) {
+        return ApiResponse(
+          success: false,
+          message: response.message ?? fallback.message,
+          statusCode: response.statusCode ?? fallback.statusCode,
+        );
+      }
+      return ApiResponse.success(
+        _parseSouscriptionsList(fallback.data),
+        statusCode: fallback.statusCode,
+      );
+    }
+    return ApiResponse.success(
+      _parseSouscriptionsList(response.data),
+      statusCode: response.statusCode,
+    );
+  }
+
+  static List<SouscriptionPrestationModel> _parseSouscriptionsList(
+    dynamic raw,
+  ) {
+    final List<dynamic> rows;
+    if (raw is List) {
+      rows = raw;
+    } else if (raw is Map) {
+      rows = PaginatedResponseHelper.extractRows(
+        Map<String, dynamic>.from(raw),
+      );
+    } else {
+      rows = const [];
+    }
+    final parsed = <SouscriptionPrestationModel>[];
+    for (final item in rows) {
+      if (item is! Map) continue;
+      parsed.add(
+        SouscriptionPrestationModel.fromJson(Map<String, dynamic>.from(item)),
+      );
+    }
+    return parsed;
+  }
+
+  /// POST /api/Affilie/paiement — paiement souscription par l'affilié connecté.
+  static Future<ApiResponse<Map<String, dynamic>>> createAffiliePaiement({
+    required int souscriptionPrestationId,
+    required double montant,
+    required String modePaiement,
+    required int deviseId,
+    String? referencePaiement,
+    String? observation,
+  }) async {
+    final body = <String, dynamic>{
+      'souscriptionPrestationId': souscriptionPrestationId,
+      'montant': montant,
+      'modePaiement': modePaiement,
+      'deviseId': deviseId,
+      if (referencePaiement != null && referencePaiement.trim().isNotEmpty)
+        'referencePaiement': referencePaiement.trim(),
+      if (observation != null && observation.trim().isNotEmpty)
+        'observation': observation.trim(),
+    };
+    var response = await _post<Map<String, dynamic>>(
+      '/api/Affilie/paiement',
+      body,
+    );
+    if (!response.success &&
+        (response.statusCode == 404 || response.statusCode == 405)) {
+      response = await _post<Map<String, dynamic>>(
+        '/api/affilie/paiement',
+        body,
+      );
+    }
+    return response;
   }
 
   /// Liste typée des souscriptions prestation d'un affilié.
@@ -4253,6 +4524,79 @@ class ApiService {
     return json;
   }
 
+  /// Interprète DemandeBonEnvoiConfirmationResultDto (champ métier `succes`).
+  static ApiResponse<DemandeBonEnvoiModel> _parseConfirmerDemandeBonEnvoiResult(
+    Map<String, dynamic> raw, {
+    required int? statusCode,
+    String? fallbackMessage,
+  }) {
+    final map = _unwrapDemandeBonEnvoiMap(raw);
+    final succesMetier = map['succes'] ?? map['success'];
+    if (succesMetier == false) {
+      final message = (map['message'] ?? fallbackMessage ?? '')
+          .toString()
+          .trim();
+      return ApiResponse(
+        success: false,
+        message: message.isNotEmpty
+            ? message
+            : 'Confirmation de la demande refusée par le serveur.',
+        statusCode: statusCode,
+      );
+    }
+
+    return ApiResponse.success(
+      DemandeBonEnvoiModel.fromJson(map),
+      statusCode: statusCode,
+    );
+  }
+
+  /// GET /api/HopitalPartenaire/actifs — Hôpitaux partenaires actifs.
+  static Future<ApiResponse<List<HopitalPartenaireModel>>>
+      getHopitauxPartenairesActifs() async {
+    final response = await _get<dynamic>('/api/HopitalPartenaire/actifs');
+    if (!response.success) {
+      return ApiResponse(
+        success: false,
+        message: response.message ??
+            'Impossible de charger les hôpitaux partenaires.',
+        statusCode: response.statusCode,
+      );
+    }
+
+    final raw = response.data;
+    final List<dynamic> rows;
+    if (raw is List) {
+      rows = raw;
+    } else if (raw is Map) {
+      rows = PaginatedResponseHelper.extractRows(
+        raw is Map<String, dynamic> ? raw : Map<String, dynamic>.from(raw),
+      );
+    } else {
+      rows = const [];
+    }
+
+    final parsed = <HopitalPartenaireModel>[];
+    for (final item in rows) {
+      if (item is! Map) continue;
+      try {
+        final map = item is Map<String, dynamic>
+            ? item
+            : Map<String, dynamic>.from(item);
+        final hopital = HopitalPartenaireModel.fromJson(map);
+        if (hopital.idHopital > 0) parsed.add(hopital);
+      } catch (e, stackTrace) {
+        ApiErrorHelper.logException(
+          'HopitalPartenaire/fromJson',
+          e,
+          stackTrace,
+        );
+      }
+    }
+
+    return ApiResponse.success(parsed, statusCode: response.statusCode);
+  }
+
   /// GET /api/DemandeBonEnvoi/by-statut/{statut}/simple
   /// Fallback plural (doc legacy) : /api/DemandeBonEnvois/by-statut/{statut}/simple
   static Future<ApiResponse<List<DemandeBonEnvoiModel>>>
@@ -4288,16 +4632,26 @@ class ApiService {
   }
 
   /// POST /api/DemandeBonEnvoi/{id}/confirmer — Crée le couple BonEnvoi + JetonMedical.
+  /// Body requis (swagger) : `agentId`, `accepter`.
   /// Fallback legacy : POST /api/DemandeBonEnvoi/valider-et-generer
   static Future<ApiResponse<DemandeBonEnvoiModel>> confirmerDemandeBonEnvoi(
     int idDemande, {
     int? agentId,
+    bool accepter = true,
+    int? hopitalPartenaireId,
     String? observationAgent,
+    String? motifRejet,
   }) async {
     final body = <String, dynamic>{
       if (agentId != null && agentId > 0) 'agentId': agentId,
+      // Requis par l'API : omis → bool = false → rejet systématique.
+      'accepter': accepter,
+      if (hopitalPartenaireId != null && hopitalPartenaireId > 0)
+        'hopitalPartenaireId': hopitalPartenaireId,
       if (observationAgent != null && observationAgent.trim().isNotEmpty)
         'observationAgent': observationAgent.trim(),
+      if (motifRejet != null && motifRejet.trim().isNotEmpty)
+        'motifRejet': motifRejet.trim(),
     };
     final response = await _post<Map<String, dynamic>>(
       '/api/DemandeBonEnvoi/$idDemande/confirmer',
@@ -4305,11 +4659,10 @@ class ApiService {
       logContext: 'DemandeBonEnvoi/confirmer',
     );
     if (response.success && response.data != null) {
-      return ApiResponse.success(
-        DemandeBonEnvoiModel.fromJson(
-          _unwrapDemandeBonEnvoiMap(response.data!),
-        ),
+      return _parseConfirmerDemandeBonEnvoiResult(
+        response.data!,
         statusCode: response.statusCode,
+        fallbackMessage: response.message,
       );
     }
 
@@ -4321,11 +4674,10 @@ class ApiService {
         logContext: 'DemandeBonEnvois/confirmer',
       );
       if (plural.success && plural.data != null) {
-        return ApiResponse.success(
-          DemandeBonEnvoiModel.fromJson(
-            _unwrapDemandeBonEnvoiMap(plural.data!),
-          ),
+        return _parseConfirmerDemandeBonEnvoiResult(
+          plural.data!,
           statusCode: plural.statusCode,
+          fallbackMessage: plural.message,
         );
       }
       return validerEtGenererDemandeBonEnvoi(
@@ -4730,6 +5082,61 @@ class ApiService {
     } catch (e, stackTrace) {
       return _errorFromException(e, stackTrace, context);
     }
+  }
+
+  /// GET /api/parametres-metier/retrait-agent
+  static Future<ApiResponse<RetraitAgentParametresMetier>>
+      getRetraitAgentParametresMetier() async {
+    final response = await _get<dynamic>('/api/parametres-metier/retrait-agent');
+    if (!response.success || response.data == null) {
+      return ApiResponse(
+        success: false,
+        message: response.message,
+        statusCode: response.statusCode,
+      );
+    }
+    final raw = response.data;
+    Map<String, dynamic>? map;
+    if (raw is Map) {
+      final m = Map<String, dynamic>.from(raw);
+      final nested = m['data'] ?? m['Data'];
+      map = nested is Map ? Map<String, dynamic>.from(nested) : m;
+    }
+    if (map == null) {
+      return ApiResponse.error('Paramètres retrait invalides');
+    }
+    return ApiResponse.success(
+      RetraitAgentParametresMetier.fromJson(map),
+      statusCode: response.statusCode,
+    );
+  }
+
+  /// GET /api/agent-maash/{agentId}/couverture — retenues / couverture MAASH
+  static Future<ApiResponse<AgentMaashCouverture>> getAgentMaashCouverture(
+    int agentId,
+  ) async {
+    final response = await _get<dynamic>('/api/agent-maash/$agentId/couverture');
+    if (!response.success || response.data == null) {
+      return ApiResponse(
+        success: false,
+        message: response.message,
+        statusCode: response.statusCode,
+      );
+    }
+    final raw = response.data;
+    Map<String, dynamic>? map;
+    if (raw is Map) {
+      final m = Map<String, dynamic>.from(raw);
+      final nested = m['data'] ?? m['Data'];
+      map = nested is Map ? Map<String, dynamic>.from(nested) : m;
+    }
+    if (map == null) {
+      return ApiResponse.error('Couverture MAASH invalide');
+    }
+    return ApiResponse.success(
+      AgentMaashCouverture.fromJson(map),
+      statusCode: response.statusCode,
+    );
   }
 
   /// GET /api/retraitagent/periodes - Vérifier les périodes autorisées (legacy)

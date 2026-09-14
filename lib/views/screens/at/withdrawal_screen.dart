@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 
 import '../../../config/api.dart';
+import '../../../config/app_features.dart';
 import '../../../config/colors.dart';
+import '../../../models/agent_maash_model.dart';
 import '../../../models/retrait_agent_periode_model.dart';
 import '../../../models/wallet_agent_model.dart';
 import '../../../services/auth_service.dart';
 import '../../../utils/api_error_helper.dart';
+import '../../../utils/currency_formatter.dart';
 import '../../../utils/wallet_agent_loader.dart';
 import '../../widgets/wallet_devise_switch.dart';
 import 'retrait_historique_screen.dart';
@@ -30,7 +33,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
   final _motifController = TextEditingController();
   final _pageController = PageController();
 
-  String _selectedTypeRetrait = 'Espèces';
+  String _selectedModePaiement = 'Espèces';
   bool _isLoading = false;
   bool _isLoadingWallets = true;
   bool _isLoadingPeriode = true;
@@ -39,13 +42,15 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
   bool _isSuccess = false;
 
   RetraitAgentPeriodeCourante? _periodeCourante;
+  RetraitAgentParametresMetier? _parametresMetier;
+  AgentMaashCouverture? _maashCouverture;
 
   Set<int> _availableDeviseIds = {};
   Map<int, WalletAgentModel> _walletsByDevise = {};
   int? _selectedDeviseId;
   bool _isUsdSelected = false;
 
-  final List<String> _typeRetraitOptions = [
+  final List<String> _modePaiementOptions = [
     'Espèces',
     'Virement bancaire',
     'Mobile Money',
@@ -54,6 +59,21 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
   bool get _windowOpen => _periodeCourante?.estPeriodeAutorisee == true;
 
   bool get _isRetraitTotal => _periodeCourante?.isRetraitTotal ?? false;
+
+  bool get _isRetraitPartiel => _periodeCourante?.isRetraitPartiel ?? false;
+
+  /// Type métier API : PARTIEL / TOTAL.
+  String get _typeRetraitMetier {
+    final raw = _periodeCourante?.typeRetraitAutorise.trim().toUpperCase() ?? '';
+    if (raw == 'TOTAL' || raw == 'PARTIEL') return raw;
+    return _isRetraitTotal ? 'TOTAL' : 'PARTIEL';
+  }
+
+  double? get _montantMaxPartiel {
+    final wallet = _selectedWallet;
+    if (wallet == null || !_isRetraitPartiel) return null;
+    return _periodeCourante?.montantMaxDepuisSolde(wallet.soldeDisponible);
+  }
 
   String get _periodeApiMessage {
     final periode = _periodeCourante;
@@ -122,7 +142,28 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
     await Future.wait([
       _loadWallets(),
       _loadPeriodeCourante(),
+      _loadMaashCouverture(),
     ]);
+  }
+
+  Future<void> _loadMaashCouverture() async {
+    if (!AppFeatures.healthUiEnabled) return;
+    final agentId = AuthService.currentUser?.utilisateur.agentId;
+    if (agentId == null) return;
+    try {
+      final response = await ApiService.getAgentMaashCouverture(agentId);
+      if (!mounted) return;
+      if (response.success && response.data != null) {
+        setState(() => _maashCouverture = response.data);
+      }
+    } catch (e, stackTrace) {
+      ApiErrorHelper.logException(
+        'WithdrawalScreen/maash',
+        e,
+        stackTrace,
+        false,
+      );
+    }
   }
 
   Future<void> _loadPeriodeCourante() async {
@@ -132,12 +173,38 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
     });
 
     try {
-      final response = await ApiService.getRetraitAgentPeriodeCourante();
+      final results = await Future.wait([
+        ApiService.getRetraitAgentPeriodeCourante(),
+        ApiService.getRetraitAgentParametresMetier(),
+      ]);
       if (!mounted) return;
 
+      final response =
+          results[0] as ApiResponse<RetraitAgentPeriodeCourante>;
+      final paramsResponse =
+          results[1] as ApiResponse<RetraitAgentParametresMetier>;
+
       setState(() {
+        if (paramsResponse.success) {
+          _parametresMetier = paramsResponse.data;
+        }
         if (response.success && response.data != null) {
-          _periodeCourante = response.data;
+          var periode = response.data!;
+          final params = _parametresMetier;
+          if (params != null) {
+            periode = periode.copyWith(
+              pourcentageMaxPartiel: periode.pourcentageMaxPartiel > 0
+                  ? periode.pourcentageMaxPartiel
+                  : params.pourcentageMaxPartiel,
+              montantMaximumPartiel: periode.montantMaximumPartiel > 0
+                  ? periode.montantMaximumPartiel
+                  : params.montantMaximumPartiel,
+              montantMinimumPartiel: periode.montantMinimumPartiel > 0
+                  ? periode.montantMinimumPartiel
+                  : params.montantMinimumPartiel,
+            );
+          }
+          _periodeCourante = periode;
           _periodeError = null;
         } else {
           _periodeCourante = null;
@@ -313,6 +380,19 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
 
     try {
       final montant = double.parse(_montantController.text.trim());
+      final maxPartiel = _montantMaxPartiel;
+      if (!_isRetraitTotal && maxPartiel != null && montant > maxPartiel) {
+        final pct = _periodeCourante?.pourcentageMaxPartiel ?? 0;
+        setState(() {
+          _serverMessage = pct > 0
+              ? 'Montant supérieur au plafond '
+                  '(max ${pct.toStringAsFixed(0)} % du solde disponible).'
+              : 'Montant supérieur au plafond autorisé '
+                  '(${_formatAmountInput(maxPartiel)}).';
+          _isLoading = false;
+        });
+        return;
+      }
 
       final verif = await ApiService.verifierSoldeRetraitAgent(
         agentId: agentId,
@@ -345,8 +425,9 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
       final response = await ApiService.createDemandeRetraitAgent(
         agentId: agentId,
         montant: montant,
-        typeRetrait: _selectedTypeRetrait,
+        typeRetrait: _typeRetraitMetier,
         motifRetrait: _motifController.text.trim(),
+        modePaiement: _selectedModePaiement,
         deviseId: wallet.deviseId > 0 ? wallet.deviseId : null,
       );
 
@@ -539,7 +620,11 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
                 icon: Icons.payments_outlined,
                 helperText: _isRetraitTotal
                     ? 'Prérempli avec le solde disponible — modifiable'
-                    : null,
+                    : (_montantMaxPartiel != null &&
+                            (_periodeCourante?.pourcentageMaxPartiel ?? 0) > 0)
+                        ? 'Max ${_periodeCourante!.pourcentageMaxPartiel.toStringAsFixed(0)} % '
+                            '(${_formatAmountInput(_montantMaxPartiel!)})'
+                        : null,
               ),
               validator: (value) {
                 if (value == null || value.trim().isEmpty) {
@@ -563,17 +648,29 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
                     montant < minPartiel) {
                   return 'Montant minimum : $minPartiel';
                 }
+                final maxPartiel = _montantMaxPartiel;
+                if (!_isRetraitTotal &&
+                    maxPartiel != null &&
+                    montant > maxPartiel) {
+                  final pct = _periodeCourante?.pourcentageMaxPartiel ?? 0;
+                  if (pct > 0) {
+                    return 'Max ${pct.toStringAsFixed(0)} % du solde '
+                        '(${_formatAmountInput(maxPartiel)})';
+                  }
+                  return 'Montant maximum : ${_formatAmountInput(maxPartiel)}';
+                }
                 return null;
               },
             ),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
-              initialValue: _selectedTypeRetrait,
+              initialValue: _selectedModePaiement,
               decoration: _fieldDecoration(
-                label: 'Type de retrait',
+                label: 'Mode de paiement',
                 icon: Icons.account_balance_wallet_outlined,
+                helperText: _periodeCourante?.typeRetraitLabel,
               ),
-              items: _typeRetraitOptions
+              items: _modePaiementOptions
                   .map(
                     (type) => DropdownMenuItem(value: type, child: Text(type)),
                   )
@@ -581,7 +678,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
               onChanged: canWithdraw
                   ? (value) {
                       if (value != null) {
-                        setState(() => _selectedTypeRetrait = value);
+                        setState(() => _selectedModePaiement = value);
                       }
                     }
                   : null,
@@ -790,6 +887,46 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
     final wallet = _selectedWallet;
     if (wallet == null) return const SizedBox.shrink();
 
+    final maash = _maashCouverture;
+    final lines = <String>[];
+    if (wallet.hasRetenue) {
+      lines.add(
+        'Le retrait est limité au solde disponible. '
+        'Une partie du solde courant est retenue à la source '
+        'pour maintenir votre compte actif.',
+      );
+    } else {
+      lines.add(
+        'Seul le solde disponible peut être retiré. '
+        'Votre compte ne peut pas être vidé entièrement.',
+      );
+    }
+    if (AppFeatures.healthUiEnabled &&
+        maash != null &&
+        maash.hasRetenueMensuelle) {
+      final montantLabel = CurrencyFormatter.format(
+        amount: maash.montantRetenueMensuelle,
+        deviseId: maash.deviseId > 0 ? maash.deviseId : null,
+      );
+      final produit = maash.produitMaashNom.trim().isNotEmpty
+          ? maash.produitMaashNom
+          : 'MAASH';
+      final periode = maash.periodeCourante.trim().isNotEmpty
+          ? ' (${maash.periodeCourante})'
+          : '';
+      lines.add(
+        'Retenue $produit : $montantLabel / mois$periode'
+        '${maash.cotisationMaashPayeePourPeriodeCourante ? ' · payée' : ' · à prélever'}.',
+      );
+    }
+    final pct = _periodeCourante?.pourcentageMaxPartiel ?? 0;
+    if (_isRetraitPartiel && pct > 0) {
+      lines.add(
+        'Retrait partiel plafonné à ${pct.toStringAsFixed(0)} % '
+        'du solde disponible.',
+      );
+    }
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -810,12 +947,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              wallet.hasRetenue
-                  ? 'Le retrait est limité au solde disponible. '
-                      'Une partie du solde courant est retenue à la source '
-                      'pour maintenir votre compte actif.'
-                  : 'Seul le solde disponible peut être retiré. '
-                      'Votre compte ne peut pas être vidé entièrement.',
+              lines.join('\n'),
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.grey.shade800,
@@ -892,7 +1024,6 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
       );
     }
 
-    final periode = _periodeCourante!;
     final open = _windowOpen;
     final color = open ? AppColors.prosocGreen : AppColors.warningColor;
     final mainMessage = _periodeApiMessage;

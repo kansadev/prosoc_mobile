@@ -162,3 +162,122 @@ class PerceptionVirtuelleConfirmResultModel {
     return 0;
   }
 }
+
+/// Synthèse agents — GET /api/PerceptionVirtuelle/synthese-agents
+class PerceptionVirtuelleSyntheseAgent {
+  final int agentId;
+  final String agentNom;
+  final String agentMatricule;
+  final int nombreCollectesEnAttente;
+  final double montantEnAttente;
+  final String deviseCode;
+
+  const PerceptionVirtuelleSyntheseAgent({
+    required this.agentId,
+    required this.agentNom,
+    required this.agentMatricule,
+    required this.nombreCollectesEnAttente,
+    required this.montantEnAttente,
+    required this.deviseCode,
+  });
+
+  factory PerceptionVirtuelleSyntheseAgent.fromJson(Map<String, dynamic> json) {
+    return PerceptionVirtuelleSyntheseAgent(
+      agentId: _pvInt(json['agentId']),
+      agentNom: (json['agentNom'] ?? '').toString(),
+      agentMatricule: (json['agentMatricule'] ?? '').toString(),
+      nombreCollectesEnAttente: _pvInt(json['nombreCollectesEnAttente']),
+      montantEnAttente: _pvDouble(json['montantEnAttente']),
+      deviseCode: (json['deviseCode'] ?? 'CDF').toString(),
+    );
+  }
+
+  String get formattedMontantEnAttente => CurrencyFormatter.format(
+        amount: montantEnAttente,
+        deviseCode: deviseCode,
+      );
+}
+
+/// Historique remises — GET /api/PerceptionVirtuelle/historique
+class PerceptionVirtuelleHistoModel {
+  final int idPerceptionVirtuelle;
+  final int agentId;
+  final String agentNom;
+  final String agentMatricule;
+  final int percepteurUtilisateurId;
+  final String percepteurNom;
+  final double montantTotal;
+  final int deviseId;
+  final String deviseCode;
+  final int nombreCollectes;
+  final DateTime? datePerception;
+  final String observation;
+  final String statutMetier;
+  final String motifAnnulation;
+
+  const PerceptionVirtuelleHistoModel({
+    required this.idPerceptionVirtuelle,
+    required this.agentId,
+    required this.agentNom,
+    required this.agentMatricule,
+    required this.percepteurUtilisateurId,
+    required this.percepteurNom,
+    required this.montantTotal,
+    required this.deviseId,
+    required this.deviseCode,
+    required this.nombreCollectes,
+    this.datePerception,
+    required this.observation,
+    required this.statutMetier,
+    required this.motifAnnulation,
+  });
+
+  factory PerceptionVirtuelleHistoModel.fromJson(Map<String, dynamic> json) {
+    return PerceptionVirtuelleHistoModel(
+      idPerceptionVirtuelle: _pvInt(json['idPerceptionVirtuelle']),
+      agentId: _pvInt(json['agentId']),
+      agentNom: (json['agentNom'] ?? '').toString(),
+      agentMatricule: (json['agentMatricule'] ?? '').toString(),
+      percepteurUtilisateurId: _pvInt(json['percepteurUtilisateurId']),
+      percepteurNom: (json['percepteurNom'] ?? '').toString(),
+      montantTotal: _pvDouble(json['montantTotal']),
+      deviseId: _pvInt(json['deviseId']),
+      deviseCode: (json['deviseCode'] ?? 'CDF').toString(),
+      nombreCollectes: _pvInt(json['nombreCollectes']),
+      datePerception: _pvDate(json['datePerception']),
+      observation: (json['observation'] ?? '').toString(),
+      statutMetier: (json['statutMetier'] ?? '').toString(),
+      motifAnnulation: (json['motifAnnulation'] ?? '').toString(),
+    );
+  }
+
+  String get formattedMontant => CurrencyFormatter.format(
+        amount: montantTotal,
+        deviseId: deviseId,
+        deviseCode: deviseCode,
+      );
+
+  bool get isAnnulee {
+    final s = statutMetier.toUpperCase();
+    return s.contains('ANNUL');
+  }
+}
+
+int _pvInt(dynamic value) {
+  if (value is int) return value;
+  if (value is num) return value.toInt();
+  if (value is String) return int.tryParse(value.trim()) ?? 0;
+  return 0;
+}
+
+double _pvDouble(dynamic value) {
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value.trim()) ?? 0;
+  return 0;
+}
+
+DateTime? _pvDate(dynamic value) {
+  if (value == null) return null;
+  if (value is DateTime) return value;
+  return DateTime.tryParse(value.toString());
+}

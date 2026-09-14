@@ -10,7 +10,6 @@ import '../../../models/devise_model.dart';
 import '../../../models/prestation_model.dart';
 import '../../../models/adhesion_with_affilie_model.dart';
 import '../../../models/frais_model.dart';
-import '../../../models/wallet_agent_model.dart';
 import 'package:flutter/foundation.dart';
 import '../../../models/collecte_receipt_data.dart';
 import '../../../utils/api_error_helper.dart';
@@ -435,10 +434,6 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
   List<Frais> get _fraisAdhesionOptions => _frais
       .where((f) => f.statut && !f.estSupprime && f.isFraisAdhesion)
       .toList();
-
-  static const String _fraisAdhesionDeviseCode = 'USD';
-
-  int get _fraisAdhesionDeviseId => WalletAgentDeviseIds.usd;
 
   String _deviseCodeFor(int deviseId, {String? fallbackCode}) {
     if (fallbackCode != null && fallbackCode.isNotEmpty) return fallbackCode;
@@ -945,8 +940,14 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
     );
   }
 
-  String _fraisAdhesionLabel(Frais frais) =>
-      '${frais.libelle} ($_fraisAdhesionDeviseCode ${frais.montant})';
+  String _fraisAdhesionLabel(Frais frais) {
+    final code = _deviseCodeFor(frais.deviseId);
+    final montant = frais.montant.toStringAsFixed(
+      frais.montant == frais.montant.roundToDouble() ? 0 : 2,
+    );
+    if (code.isEmpty) return '${frais.libelle} ($montant)';
+    return '${frais.libelle} ($code $montant)';
+  }
 
   Widget _buildReadOnlyInfoField({
     required String label,
@@ -1963,8 +1964,8 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                       isRequired: true,
                       isLoading: _isLoadingFrais,
                       helperText:
-                          'Les frais d\'adhésion sont toujours libellés en '
-                          'dollars (USD).',
+                          'Devise du frais déterminée par le paramétrage '
+                          'métier (non modifiable ici).',
                     )
                   else
                     _buildDropdownField<Frais>(
@@ -1983,8 +1984,8 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
-                        'Les frais d\'adhésion sont toujours libellés en '
-                        'dollars (USD).',
+                        'Devise du frais déterminée par le paramétrage '
+                        'métier (non modifiable ici).',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade600,
@@ -3111,7 +3112,14 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         throw Exception('Veuillez sélectionner les frais d\'adhésion');
       }
 
-      final fraisDeviseId = _fraisAdhesionDeviseId;
+      final fraisDeviseId = _selectedFraisAdhesion!.deviseId > 0
+          ? _selectedFraisAdhesion!.deviseId
+          : (_selectedDevise?.idDevise ?? 0);
+      if (fraisDeviseId <= 0) {
+        throw Exception(
+          'Devise du frais d\'adhésion introuvable. Vérifiez le paramétrage.',
+        );
+      }
       final hasSouscription = _selectedPrestation != null;
       final prestationId = hasSouscription
           ? int.tryParse(_prestationIdController.text.trim())

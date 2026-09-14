@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import '../../../config/api.dart';
+import '../../../config/app_features.dart';
 import '../../../config/colors.dart';
 import '../../../services/auth_service.dart';
+import '../../../models/agent_maash_model.dart';
 import '../../../models/wallet_agent_model.dart';
 import '../../../utils/api_error_helper.dart';
+import '../../../utils/currency_formatter.dart';
 import '../../../utils/wallet_agent_loader.dart';
 import 'withdrawal_screen.dart';
 import '../Percepteur/percepteur_retraits_screen.dart';
@@ -27,6 +31,7 @@ class _WalletScreenState extends State<WalletScreen> {
   bool _isUsdSelected = false;
   Set<int> _availableDeviseIds = {};
   Map<int, WalletAgentModel> _walletsByDevise = {};
+  AgentMaashCouverture? _maashCouverture;
 
   int get _selectedDeviseId => _isUsdSelected
       ? WalletAgentDeviseIds.usd
@@ -97,6 +102,17 @@ class _WalletScreenState extends State<WalletScreen> {
               preferredDeviseId: _selectedDeviseId,
               cachedWallets: singleDeviseOnly ? _walletsByDevise : null,
             );
+
+      if (!singleDeviseOnly && AppFeatures.healthUiEnabled) {
+        try {
+          final maash = await ApiService.getAgentMaashCouverture(agentId);
+          if (maash.success) {
+            _maashCouverture = maash.data;
+          }
+        } catch (_) {
+          // Non bloquant : la carte wallet reste utilisable.
+        }
+      }
 
       setState(() {
         _availableDeviseIds = result.availableDeviseIds;
@@ -316,6 +332,19 @@ class _WalletScreenState extends State<WalletScreen> {
                   'Retenues à la source appliquées',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.65),
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+              if (AppFeatures.healthUiEnabled &&
+                  _maashCouverture != null &&
+                  _maashCouverture!.hasRetenueMensuelle) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'MAASH : ${CurrencyFormatter.format(amount: _maashCouverture!.montantRetenueMensuelle, deviseId: _maashCouverture!.deviseId > 0 ? _maashCouverture!.deviseId : null)} / mois'
+                  '${_maashCouverture!.cotisationMaashPayeePourPeriodeCourante ? ' · payée' : ''}',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.7),
                     fontSize: 11,
                   ),
                 ),

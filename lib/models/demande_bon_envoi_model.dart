@@ -17,6 +17,7 @@ class DemandeBonEnvoiModel {
   final String bonEnvoiNumero;
   final int jetonMedicalId;
   final String jetonMedicalCode;
+  final DateTime? jetonDateExpiration;
   final String qrCodePayload;
   final String qrCodeImageBase64;
   final DateTime? dateCreation;
@@ -41,6 +42,7 @@ class DemandeBonEnvoiModel {
     required this.bonEnvoiNumero,
     required this.jetonMedicalId,
     required this.jetonMedicalCode,
+    this.jetonDateExpiration,
     required this.qrCodePayload,
     required this.qrCodeImageBase64,
     this.dateCreation,
@@ -71,6 +73,12 @@ class DemandeBonEnvoiModel {
       jetonMedicalCode: json['jetonMedicalCode']?.toString() ??
           json['JetonMedicalCode']?.toString() ??
           '',
+      jetonDateExpiration: _parseDate(
+        json['jetonDateExpiration'] ??
+            json['JetonDateExpiration'] ??
+            json['dateExpirationJeton'] ??
+            json['dateExpiration'],
+      ),
       qrCodePayload: json['qrCodePayload']?.toString() ?? '',
       qrCodeImageBase64: json['qrCodeImageBase64']?.toString() ?? '',
       dateCreation: _parseDate(json['dateCreation']),

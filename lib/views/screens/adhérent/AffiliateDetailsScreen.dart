@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:prosoc/config/api.dart';
+import 'package:prosoc/config/app_features.dart';
 import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/dependant_model.dart';
 import 'package:prosoc/models/recent_affilie_model.dart';
@@ -238,6 +239,7 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
   }
 
   Future<void> _loadSouscriptions() async {
+    if (!AppFeatures.healthUiEnabled) return;
     setState(() {
       _isLoadingSouscriptions = true;
     });
@@ -606,8 +608,10 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
                             const SizedBox(height: 16),
                           ],
                           _buildArrieresCard(),
-                          const SizedBox(height: 16),
-                          _buildSouscriptionsCard(),
+                          if (AppFeatures.healthUiEnabled) ...[
+                            const SizedBox(height: 16),
+                            _buildSouscriptionsCard(),
+                          ],
 
                           if (_errorMessage != null) ...[
                             const SizedBox(height: 16),

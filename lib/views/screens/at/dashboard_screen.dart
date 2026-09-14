@@ -85,17 +85,24 @@ class _DashboardScreenState extends State<DashboardScreen>
       final results = await Future.wait([
         ApiService.getDashboardAgentTerrain(),
         ApiService.getDashboardAgentGraphs(),
+        ApiService.getDashboardAgentObjectifs(),
       ]);
       final terrainResponse =
           results[0] as ApiResponse<DashboardAgentModel>;
       final graphsResponse =
           results[1] as ApiResponse<DashboardAgentGraphsModel>;
+      final objectifsResponse =
+          results[2] as ApiResponse<DashboardAgentObjectifs>;
 
       if (!mounted) return;
 
       if (terrainResponse.success && terrainResponse.data != null) {
+        var dashboard = terrainResponse.data!;
+        if (objectifsResponse.success && objectifsResponse.data != null) {
+          dashboard = dashboard.copyWith(objectifs: objectifsResponse.data);
+        }
         setState(() {
-          _dashboardData = terrainResponse.data;
+          _dashboardData = dashboard;
           _graphsData = graphsResponse.success ? graphsResponse.data : null;
           _errorMessage = null;
           _isLoading = false;
@@ -407,6 +414,25 @@ class _DashboardScreenState extends State<DashboardScreen>
             objectifs.progressionCommissions,
           ),
         ),
+        if (objectifs.hasCotisationTarget) ...[
+          const SizedBox(height: 10),
+          _objectifCard(
+            label: 'Cotisations',
+            valeur: fmt(objectifs.progressionCotisations),
+            objectif: fmt(objectifs.cotisationObjectifEffectif),
+            progression: objectifs.cotisationObjectifEffectif > 0
+                ? (objectifs.progressionCotisations /
+                        objectifs.cotisationObjectifEffectif)
+                    .clamp(0, 1)
+                : _progressValue(objectifs.progressionCotisations),
+            progressionLabel: objectifs.cotisationObjectifEffectif > 0
+                ? '${fmt(objectifs.progressionCotisations)} / '
+                    '${fmt(objectifs.cotisationObjectifEffectif)}'
+                : DashboardAgentModel.formatRatioPercent(
+                    objectifs.progressionCotisations,
+                  ),
+          ),
+        ],
         if (graphs != null && graphs.hasData) ...[
           const SizedBox(height: 20),
           DashboardAgentChartsSection(

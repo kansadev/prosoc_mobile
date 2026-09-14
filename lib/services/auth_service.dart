@@ -22,6 +22,7 @@ class AuthService {
   static const String _nomCompletKey = 'nom_complet';
   static const String _idUtilisateurKey = 'id_utilisateur';
   static const String _paymentGatewayKey = 'payment_gateway';
+  static const String _permissionsKey = 'permissions';
   static const String _onboardingSeenKey = 'onboarding_seen';
 
   static AuthUserModel? _currentUser;
@@ -135,6 +136,11 @@ class AuthService {
         await prefs.remove(_paymentGatewayKey);
       }
 
+      await prefs.setString(
+        _permissionsKey,
+        jsonEncode(authUser.permissions),
+      );
+
       _currentUser = authUser;
       ApiService.token = authUser.accessToken;
 
@@ -221,6 +227,22 @@ class AuthService {
         }
       }
 
+      var permissions = <String>[];
+      final permissionsStr = prefs.getString(_permissionsKey);
+      if (permissionsStr != null && permissionsStr.isNotEmpty) {
+        try {
+          final decoded = jsonDecode(permissionsStr);
+          if (decoded is List) {
+            permissions = decoded
+                .map((e) => e.toString())
+                .where((e) => e.trim().isNotEmpty)
+                .toList();
+          }
+        } catch (_) {
+          permissions = [];
+        }
+      }
+
       _currentUser = AuthUserModel(
         success: true,
         message: '',
@@ -242,7 +264,7 @@ class AuthService {
           doitChangerMotDePasse: false,
         ),
         nomRole: nomRole ?? '',
-        permissions: [],
+        permissions: permissions,
         primaryRole: RoleModel(idRole: 0, nom: nomRole ?? '', description: '', niveau: 0, statut: true),
         roles: [],
         paymentGateway: paymentGateway,
@@ -285,6 +307,7 @@ class AuthService {
       await prefs.remove(_nomCompletKey);
       await prefs.remove(_idUtilisateurKey);
       await prefs.remove(_paymentGatewayKey);
+      await prefs.remove(_permissionsKey);
 
       _currentUser = null;
       _affilieDeviseCode = null;

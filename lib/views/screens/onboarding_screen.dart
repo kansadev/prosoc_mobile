@@ -1,14 +1,18 @@
 import 'package:flutter/material.dart';
 
+import '../../config/app_features.dart';
+
 class OnboardingData {
   final String title;
   final String description;
   final String imagePath;
+  final bool isHealthRelated;
 
   OnboardingData({
     required this.title,
     required this.description,
     required this.imagePath,
+    this.isHealthRelated = false,
   });
 }
 
@@ -25,59 +29,75 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   final PageController _pageController = PageController();
   int _currentPage = 0;
 
-  // Liste complète des 10 slides avec vos images indexées de 1 à 10
-  final List<OnboardingData> _pages = [
+  static final List<OnboardingData> _allPages = [
     OnboardingData(
       title: "Bienvenue chez Prosoc",
-      description: "Votre partenaire de confiance pour toutes vos garanties sociales et assistances. Découvrez une plateforme complète dédiée à votre bien-être et à celui de votre famille.",
+      description:
+          "Votre partenaire de confiance pour vos garanties sociales et assistances. "
+          "Découvrez une plateforme dédiée à la protection sociale de votre famille.",
       imagePath: "assets/images/1.png",
     ),
     OnboardingData(
       title: "Soins Médicaux Standard",
-      description: "Une couverture complète pour vos consultations, analyses et traitements médicaux. Accédez à un réseau de professionnels de santé qualifiés et bénéficiez de remboursements rapides.",
+      description:
+          "Une couverture complète pour vos consultations, analyses et traitements médicaux. Accédez à un réseau de professionnels de santé qualifiés et bénéficiez de remboursements rapides.",
       imagePath: "assets/images/2.png",
+      isHealthRelated: true,
     ),
     OnboardingData(
       title: "Soins Médicaux VIP",
-      description: "Des soins premium avec accès prioritaire aux spécialistes et cliniques de renom. Profitez d'une expérience médicale personnalisée avec consultations dans les meilleurs établissements.",
+      description:
+          "Des soins premium avec accès prioritaire aux spécialistes et cliniques de renom. Profitez d'une expérience médicale personnalisée avec consultations dans les meilleurs établissements.",
       imagePath: "assets/images/3.png",
+      isHealthRelated: true,
     ),
     OnboardingData(
       title: "Assistance Funérailles",
-      description: "Un accompagnement digne pour vos proches en cas de besoin, avec prise en charge complète. Nous gérons toutes les formalités pour vous offrir sérénité et respect.",
+      description:
+          "Un accompagnement digne pour vos proches en cas de besoin, avec prise en charge complète. Nous gérons toutes les formalités pour vous offrir sérénité et respect.",
       imagePath: "assets/images/4.png",
     ),
     OnboardingData(
       title: "Assistance Juridique",
-      description: "Un soutien juridique professionnel pour résoudre vos litiges et questions légales. Bénéficiez de conseils d'avocats experts disponibles à tout moment pour vous assister.",
+      description:
+          "Un soutien juridique professionnel pour résoudre vos litiges et questions légales. Bénéficiez de conseils d'avocats experts disponibles à tout moment pour vous assister.",
       imagePath: "assets/images/5.png",
     ),
     OnboardingData(
       title: "Retraite Complémentaire",
-      description: "Préparez votre avenir avec nos plans d'épargne retraite adaptés à vos besoins. Constituez-vous un capital supplémentaire sécurisé et flexible pour votre retraite.",
+      description:
+          "Préparez votre avenir avec nos plans d'épargne retraite adaptés à vos besoins. Constituez-vous un capital supplémentaire sécurisé et flexible pour votre retraite.",
       imagePath: "assets/images/6.png",
     ),
     OnboardingData(
       title: "Cantine Alimentaire",
-      description: "Un service de restauration équilibrée pour les employés et leurs familles. Des repas nutritifs et savoureux préparés quotidiennement selon vos préférences.",
+      description:
+          "Un service de restauration équilibrée pour les employés et leurs familles. Des repas nutritifs et savoureux préparés quotidiennement selon vos préférences.",
       imagePath: "assets/images/7.png",
     ),
     OnboardingData(
       title: "Microcrédit",
-      description: "Des prêts solidaires pour financer vos projets personnels et professionnels. Obtenez un financement rapide et sans complications pour concrétiser vos ambitions.",
+      description:
+          "Des prêts solidaires pour financer vos projets personnels et professionnels. Obtenez un financement rapide et sans complications pour concrétiser vos ambitions.",
       imagePath: "assets/images/8.png",
     ),
     OnboardingData(
       title: "Formations Professionnelles",
-      description: "Développez vos compétences avec nos programmes de formation certifiants. Accédez à des cours en ligne et en présentiel dispensés par des experts du secteur.",
+      description:
+          "Développez vos compétences avec nos programmes de formation certifiants. Accédez à des cours en ligne et en présentiel dispensés par des experts du secteur.",
       imagePath: "assets/images/9.png",
     ),
     OnboardingData(
       title: "Prêt à nous rejoindre ?",
-      description: "Créez votre compte en quelques minutes et profitez de tous vos avantages. Rejoignez des milliers de membres satisfaits qui font confiance à Prosoc pour leur sécurité.",
+      description:
+          "Créez votre compte en quelques minutes et profitez de tous vos avantages. Rejoignez des milliers de membres satisfaits qui font confiance à Prosoc pour leur sécurité.",
       imagePath: "assets/images/10.png",
     ),
   ];
+
+  List<OnboardingData> get _pages => AppFeatures.healthUiEnabled
+      ? _allPages
+      : _allPages.where((page) => !page.isHealthRelated).toList();
 
   @override
   void dispose() {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../config/api.dart';
+import '../../../config/app_features.dart';
 import '../../../config/colors.dart';
 import '../../../models/dashboard_affilie_model.dart';
 import '../../../models/arriere_affilie_model.dart';
@@ -277,7 +278,8 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           const SizedBox(height: 8),
           ...data.documentsEnAttente.take(3).map(_buildDocumentTile),
         ],
-        if (data.prestationsRecentes.isNotEmpty) ...[
+        if (AppFeatures.healthUiEnabled &&
+            data.prestationsRecentes.isNotEmpty) ...[
           const SizedBox(height: 24),
           _buildSectionTitle('Prestations récentes'),
           const SizedBox(height: 8),
@@ -376,6 +378,15 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
   }
 
   Widget _buildKpiRow(DashboardAffilieKpis kpis) {
+    if (!AppFeatures.healthUiEnabled) {
+      return _miniStat(
+        'Cotisations',
+        _money(kpis.totalCotisations),
+        Icons.payments_outlined,
+        AppColors.prosocGreen,
+      );
+    }
+
     return Row(
       children: [
         Expanded(
@@ -433,6 +444,32 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
   }
 
   Widget _buildQuickActions() {
+    final health = AppFeatures.healthUiEnabled;
+
+    if (!health) {
+      return Row(
+        children: [
+          Expanded(
+            child: _quickAction(
+              Icons.add_circle_outline,
+              'Payer',
+              AppColors.prosocGreen,
+              widget.onPayCotisation,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _quickAction(
+              Icons.people,
+              'Dépendants',
+              Colors.orange,
+              () => widget.onOpenDependants?.call(),
+            ),
+          ),
+        ],
+      );
+    }
+
     return Column(
       children: [
         Row(

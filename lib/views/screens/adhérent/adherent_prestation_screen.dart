@@ -115,16 +115,19 @@ class _AdherentPrestationScreenState extends State<AdherentPrestationScreen>
     });
 
     try {
-      final results = await Future.wait([
-        ApiService.getSouscriptionsPrestationByAffilie(affilieId),
-        ApiService.getDashboardAffilieResume(affilieId),
-      ]);
+      // Contrat affilié connecté : GET /api/Affilie/souscriptions (JWT).
+      // Fallback : by-affilie/{id} si l'endpoint « mes » n'est pas dispo.
+      ApiResponse<List<SouscriptionPrestationModel>> response =
+          await ApiService.getAffilieMesSouscriptions();
+      if (!response.success || response.data == null) {
+        response = await ApiService.getSouscriptionsPrestationByAffilie(
+          affilieId,
+        );
+      }
+      final resumeResponse =
+          await ApiService.getDashboardAffilieResume(affilieId);
       if (!mounted) return;
 
-      final response =
-          results[0] as ApiResponse<List<SouscriptionPrestationModel>>;
-      final resumeResponse =
-          results[1] as ApiResponse<DashboardAffilieResumeModel>;
       if (resumeResponse.success && resumeResponse.data != null) {
         AuthService.setAffilieDeviseCode(
           resumeResponse.data!.kpis.devisePrincipaleCode,

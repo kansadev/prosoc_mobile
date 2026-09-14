@@ -16,6 +16,7 @@ class BonEnvoiModel {
   final String qrCodeImageBase64;
   final int? jetonMedicalId;
   final String jetonMedicalCode;
+  final DateTime? jetonDateExpiration;
 
   BonEnvoiModel({
     required this.idBonEnvoi,
@@ -34,6 +35,7 @@ class BonEnvoiModel {
     required this.qrCodeImageBase64,
     this.jetonMedicalId,
     this.jetonMedicalCode = '',
+    this.jetonDateExpiration,
   });
 
   factory BonEnvoiModel.fromJson(Map<String, dynamic> json) {
@@ -58,6 +60,12 @@ class BonEnvoiModel {
       jetonMedicalCode: json['jetonMedicalCode']?.toString() ??
           json['JetonMedicalCode']?.toString() ??
           '',
+      jetonDateExpiration: _parseDate(
+        json['jetonDateExpiration'] ??
+            json['JetonDateExpiration'] ??
+            json['dateExpirationJeton'] ??
+            json['dateExpiration'],
+      ),
     );
   }
 

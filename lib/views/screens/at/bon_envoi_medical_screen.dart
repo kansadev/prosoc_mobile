@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:prosoc/config/api.dart';
 import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/demande_bon_envoi_model.dart';
+import 'package:prosoc/models/hopital_partenaire_model.dart';
 import 'package:prosoc/services/auth_service.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/formatters.dart';
@@ -12,6 +13,16 @@ import 'package:prosoc/views/widgets/empty_state_widget.dart';
 import 'package:prosoc/views/widgets/prosoc_resource_error_view.dart';
 
 enum _BonMedicalTab { enAttente, validees, traitees }
+
+class _BonEnvoiConfirmerResult {
+  const _BonEnvoiConfirmerResult({
+    required this.hopitalPartenaireId,
+    required this.observationAgent,
+  });
+
+  final int hopitalPartenaireId;
+  final String observationAgent;
+}
 
 /// Gestion agent : confirmation demandes → couple BonEnvoi + JetonMedical.
 class BonEnvoiMedicalScreen extends StatefulWidget {
@@ -116,14 +127,9 @@ class _BonEnvoiMedicalScreenState extends State<BonEnvoiMedicalScreen>
       return;
     }
 
-    final observation = await _askText(
-      title: 'Confirmer la demande',
-      label: 'Observation agent (optionnel)',
-      hint: 'Ex. Dossier conforme, bon émis',
-      confirmLabel: 'Confirmer et générer',
-    );
+    final form = await _askConfirmerDemande();
     if (!mounted) return;
-    if (observation == null) return;
+    if (form == null) return;
 
     setState(() => _actionDemandeId = demande.idDemande);
 
@@ -131,7 +137,9 @@ class _BonEnvoiMedicalScreenState extends State<BonEnvoiMedicalScreen>
       final response = await ApiService.confirmerDemandeBonEnvoi(
         demande.idDemande,
         agentId: agentId,
-        observationAgent: observation,
+        accepter: true,
+        hopitalPartenaireId: form.hopitalPartenaireId,
+        observationAgent: form.observationAgent,
       );
 
       if (!mounted) return;
@@ -235,6 +243,18 @@ class _BonEnvoiMedicalScreenState extends State<BonEnvoiMedicalScreen>
     }
   }
 
+  Future<_BonEnvoiConfirmerResult?> _askConfirmerDemande() {
+    return showModalBottomSheet<_BonEnvoiConfirmerResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => const _BonEnvoiConfirmerSheet(),
+    );
+  }
+
   Future<String?> _askText({
     required String title,
     required String label,
@@ -320,6 +340,16 @@ class _BonEnvoiMedicalScreenState extends State<BonEnvoiMedicalScreen>
                     color: AppColors.prosocGreen,
                   ),
                 ),
+                if (result.jetonDateExpiration != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    'Expire le : ${AppFormatters.formatDateTime(result.jetonDateExpiration)}',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ],
               ] else
                 const Padding(
                   padding: EdgeInsets.only(top: 12),
@@ -619,6 +649,277 @@ class _BonEnvoiMedicalScreenState extends State<BonEnvoiMedicalScreen>
             icon: const Icon(Icons.copy_rounded, size: 18),
           ),
       ],
+    );
+  }
+}
+
+class _BonEnvoiConfirmerSheet extends StatefulWidget {
+  const _BonEnvoiConfirmerSheet();
+
+  @override
+  State<_BonEnvoiConfirmerSheet> createState() =>
+      _BonEnvoiConfirmerSheetState();
+}
+
+class _BonEnvoiConfirmerSheetState extends State<_BonEnvoiConfirmerSheet> {
+  late final TextEditingController _observationController;
+  List<HopitalPartenaireModel> _hopitaux = [];
+  int? _selectedId;
+  bool _loading = true;
+  String? _loadError;
+  String? _hopitalError;
+  bool _submitted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _observationController = TextEditingController();
+    _loadHopitaux();
+  }
+
+  @override
+  void dispose() {
+    _observationController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadHopitaux() async {
+    setState(() {
+      _loading = true;
+      _loadError = null;
+    });
+
+    try {
+      final response = await ApiService.getHopitauxPartenairesActifs();
+      if (!mounted) return;
+
+      if (!response.success) {
+        setState(() {
+          _loading = false;
+          _loadError = response.message ??
+              'Impossible de charger les hôpitaux partenaires.';
+          _hopitaux = [];
+          _selectedId = null;
+        });
+        return;
+      }
+
+      final list = List<HopitalPartenaireModel>.from(response.data ?? [])
+        ..sort((a, b) => a.label.toLowerCase().compareTo(b.label.toLowerCase()));
+
+      setState(() {
+        _hopitaux = list;
+        _selectedId = list.length == 1 ? list.first.idHopital : null;
+        _loading = false;
+        _loadError = list.isEmpty
+            ? 'Aucun hôpital partenaire actif disponible.'
+            : null;
+      });
+    } catch (e, stackTrace) {
+      ApiErrorHelper.logException(
+        'BonEnvoi/hopitaux',
+        e,
+        stackTrace,
+        false,
+      );
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _loadError = ApiErrorHelper.userFacingNetwork();
+        _hopitaux = [];
+        _selectedId = null;
+      });
+    }
+  }
+
+  void _submit() {
+    if (_submitted || _loading) return;
+    final hopitalId = _selectedId;
+    if (hopitalId == null || hopitalId <= 0) {
+      setState(() => _hopitalError = 'Sélectionnez un hôpital partenaire');
+      return;
+    }
+    _submitted = true;
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context).pop(
+      _BonEnvoiConfirmerResult(
+        hopitalPartenaireId: hopitalId,
+        observationAgent: _observationController.text.trim(),
+      ),
+    );
+  }
+
+  void _cancel() {
+    if (_submitted) return;
+    _submitted = true;
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
+    final canSubmit =
+        !_loading && _selectedId != null && _loadError == null;
+
+    return SafeArea(
+      child: SingleChildScrollView(
+        padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + bottomInset),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Confirmer la demande',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'L’hôpital partenaire est obligatoire pour générer le bon et le jeton.',
+              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
+            ),
+            const SizedBox(height: 16),
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (_loadError != null) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.errorColor.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: AppColors.errorColor.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Text(
+                  _loadError!,
+                  style: const TextStyle(
+                    color: AppColors.errorColor,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: _loadHopitaux,
+                icon: const Icon(Icons.refresh_rounded),
+                label: const Text('Réessayer'),
+              ),
+            ] else
+              DropdownButtonFormField<int>(
+                key: ValueKey(
+                  'hopitaux-${_hopitaux.map((h) => h.idHopital).join('-')}',
+                ),
+                initialValue: _selectedId,
+                isExpanded: true,
+                decoration: InputDecoration(
+                  labelText: 'Hôpital partenaire *',
+                  errorText: _hopitalError,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(
+                      color: AppColors.prosocGreen,
+                      width: 2,
+                    ),
+                  ),
+                ),
+                items: _hopitaux
+                    .map(
+                      (h) => DropdownMenuItem<int>(
+                        value: h.idHopital,
+                        child: Text(
+                          h.label,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  setState(() {
+                    _selectedId = value;
+                    _hopitalError = null;
+                  });
+                },
+              ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _observationController,
+              maxLines: 3,
+              enabled: !_loading && _loadError == null,
+              textInputAction: TextInputAction.done,
+              decoration: InputDecoration(
+                labelText: 'Observation agent (optionnel)',
+                hintText: 'Ex. Dossier conforme, bon émis',
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: AppColors.prosocGreen,
+                    width: 2,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: _cancel,
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.textPrimary,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Annuler'),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: canSubmit ? _submit : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: AppColors.prosocGreen,
+                      disabledBackgroundColor:
+                          AppColors.prosocGreen.withValues(alpha: 0.4),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: const Text('Confirmer et générer'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

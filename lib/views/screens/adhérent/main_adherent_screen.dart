@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../config/app_features.dart';
 import '../../../config/colors.dart';
 import 'adherent_contributions_tab_screen.dart';
 import 'adherent_demande_bon_screen.dart';
@@ -8,21 +9,7 @@ import 'adherent_home_screen.dart';
 import 'adherent_profile_screen.dart';
 import 'adherent_prestation_screen.dart';
 
-/// Indices de la barre de navigation affilié.
-///
-/// Ordre UI :
-/// 0 Accueil · 1 Cotisations · 2 Souscriptions · 3 Dépendants · 4 Profil
-abstract final class _AdherentTabs {
-  static const accueil = 0;
-  static const cotisations = 1;
-  static const souscriptions = 2;
-  static const dependants = 3;
-  static const profil = 4;
-}
-
-// ============================================
-// SHELL NAVIGATION — RÔLE ADHÉRENT / AFFILIÉ
-// ============================================
+/// Shell navigation — rôle Adhérent / Affilié.
 class MainAdherentScreen extends StatefulWidget {
   final VoidCallback? onLogout;
 
@@ -33,60 +20,105 @@ class MainAdherentScreen extends StatefulWidget {
 }
 
 class _MainAdherentScreenState extends State<MainAdherentScreen> {
-  int _currentIndex = _AdherentTabs.accueil;
+  int _currentIndex = 0;
 
   void _afterLogout() {
     widget.onLogout?.call();
   }
 
   void _goToTab(int index) {
-    if (index < 0 || index > _AdherentTabs.profil) return;
+    if (index < 0 || index >= _navItems.length) return;
     setState(() => _currentIndex = index);
+  }
+
+  int get _cotisationsIndex => 1;
+
+  int? get _souscriptionsIndex =>
+      AppFeatures.healthUiEnabled ? 2 : null;
+
+  int get _dependantsIndex => AppFeatures.healthUiEnabled ? 3 : 2;
+
+  List<Widget> get _pages {
+    return [
+      AdherentHomeScreen(
+        onPayCotisation: () => _goToTab(_cotisationsIndex),
+        onOpenSouscriptions: AppFeatures.healthUiEnabled
+            ? () => _goToTab(_souscriptionsIndex!)
+            : null,
+        onOpenDependants: () => _goToTab(_dependantsIndex),
+        onOpenDemandeBon: AppFeatures.healthUiEnabled
+            ? () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const AdherentDemandeBonScreen(),
+                  ),
+                );
+              }
+            : null,
+      ),
+      const KeyedSubtree(
+        key: ValueKey('tab_cotisations'),
+        child: AdherentContributionsTabScreen(),
+      ),
+      if (AppFeatures.healthUiEnabled)
+        const KeyedSubtree(
+          key: ValueKey('tab_souscriptions'),
+          child: AdherentPrestationScreen(),
+        ),
+      const KeyedSubtree(
+        key: ValueKey('tab_dependants'),
+        child: AdherentDependantsScreen(),
+      ),
+      AdherentProfileScreen(
+        onLogout: _afterLogout,
+        onOpenDependants: () => _goToTab(_dependantsIndex),
+      ),
+    ];
+  }
+
+  List<BottomNavigationBarItem> get _navItems {
+    return [
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.home_outlined),
+        activeIcon: Icon(Icons.home),
+        label: 'Accueil',
+      ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.payments_outlined),
+        activeIcon: Icon(Icons.payments),
+        label: 'Cotisations',
+      ),
+      if (AppFeatures.healthUiEnabled)
+        const BottomNavigationBarItem(
+          icon: Icon(Icons.medical_services_outlined),
+          activeIcon: Icon(Icons.medical_services),
+          label: 'Souscriptions',
+        ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.people_outline),
+        activeIcon: Icon(Icons.people),
+        label: 'Dépendants',
+      ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.person_outline),
+        activeIcon: Icon(Icons.person),
+        label: 'Profil',
+      ),
+    ];
   }
 
   @override
   Widget build(BuildContext context) {
+    final pages = _pages;
+    final safeIndex = _currentIndex.clamp(0, pages.length - 1);
+
     return Scaffold(
       body: IndexedStack(
-        index: _currentIndex,
-        children: [
-          // 0 — Accueil
-          AdherentHomeScreen(
-            onPayCotisation: () => _goToTab(_AdherentTabs.cotisations),
-            onOpenSouscriptions: () => _goToTab(_AdherentTabs.souscriptions),
-            onOpenDependants: () => _goToTab(_AdherentTabs.dependants),
-            onOpenDemandeBon: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (_) => const AdherentDemandeBonScreen(),
-                ),
-              );
-            },
-          ),
-          // 1 — Cotisations (paiements périodiques)
-          const KeyedSubtree(
-            key: ValueKey('tab_cotisations'),
-            child: AdherentContributionsTabScreen(),
-          ),
-          // 2 — Souscriptions (prestations)
-          const KeyedSubtree(
-            key: ValueKey('tab_souscriptions'),
-            child: AdherentPrestationScreen(),
-          ),
-          // 3 — Dépendants
-          const KeyedSubtree(
-            key: ValueKey('tab_dependants'),
-            child: AdherentDependantsScreen(),
-          ),
-          // 4 — Profil
-          AdherentProfileScreen(
-            onLogout: _afterLogout,
-            onOpenDependants: () => _goToTab(_AdherentTabs.dependants),
-          ),
-        ],
+        index: safeIndex,
+        children: pages,
       ),
       bottomNavigationBar: BottomNavigationBar(
-        currentIndex: _currentIndex,
+        currentIndex: safeIndex,
         onTap: _goToTab,
         type: BottomNavigationBarType.fixed,
         backgroundColor: Colors.white,
@@ -95,33 +127,7 @@ class _MainAdherentScreenState extends State<MainAdherentScreen> {
         selectedFontSize: 12,
         unselectedFontSize: 12,
         elevation: 8,
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(Icons.home_outlined),
-            activeIcon: Icon(Icons.home),
-            label: 'Accueil',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.payments_outlined),
-            activeIcon: Icon(Icons.payments),
-            label: 'Cotisations',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.medical_services_outlined),
-            activeIcon: Icon(Icons.medical_services),
-            label: 'Souscriptions',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.people_outline),
-            activeIcon: Icon(Icons.people),
-            label: 'Dépendants',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            activeIcon: Icon(Icons.person),
-            label: 'Profil',
-          ),
-        ],
+        items: _navItems,
       ),
     );
   }
