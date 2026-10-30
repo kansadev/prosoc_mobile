@@ -71,15 +71,15 @@ class ChefEquipeKpisDto {
     return ChefEquipeKpisDto(
       zoneSocialeId: _asInt(json['zoneSocialeId'] ?? json['ZoneSocialeId']),
       zoneSocialeNom: json['zoneSocialeNom'] ?? json['ZoneSocialeNom'],
-      nombreAgentsAt:
-          _asInt(json['nombreAgentsAt'] ?? json['NombreAgentsAt']),
-      collectesMoisZone:
-          _asInt(json['collectesMoisZone'] ?? json['CollectesMoisZone']),
+      nombreAgentsAt: _asInt(json['nombreAgentsAt'] ?? json['NombreAgentsAt']),
+      collectesMoisZone: _asInt(
+        json['collectesMoisZone'] ?? json['CollectesMoisZone'],
+      ),
       totalCollectesMoisZone: _asDouble(
         json['totalCollectesMoisZone'] ?? json['TotalCollectesMoisZone'],
       ),
-      devisePrincipaleCode: json['devisePrincipaleCode'] ??
-          json['DevisePrincipaleCode'],
+      devisePrincipaleCode:
+          json['devisePrincipaleCode'] ?? json['DevisePrincipaleCode'],
       collectesEnAttenteZone: _asInt(
         json['collectesEnAttenteZone'] ?? json['CollectesEnAttenteZone'],
       ),
@@ -101,6 +101,11 @@ class ChefEquipeAgentResumeDto {
   final double totalCollectesMois;
   final int collectesEnAttente;
 
+  /// Agrégats journaliers, exposés si la plateforme les fournit ; sinon le
+  /// suivi du jour est calculé côté mobile depuis les collectes récentes.
+  final int? collectesJour;
+  final double? montantJour;
+
   ChefEquipeAgentResumeDto({
     required this.agentId,
     required this.nomComplet,
@@ -110,27 +115,36 @@ class ChefEquipeAgentResumeDto {
     required this.collectesMois,
     required this.totalCollectesMois,
     required this.collectesEnAttente,
+    this.collectesJour,
+    this.montantJour,
   });
 
-  factory ChefEquipeAgentResumeDto.fromJson(
-    Map<String, dynamic> json,
-  ) {
+  factory ChefEquipeAgentResumeDto.fromJson(Map<String, dynamic> json) {
     return ChefEquipeAgentResumeDto(
       agentId: _asInt(json['agentId'] ?? json['AgentId']),
-      nomComplet:
-          _asString(json['nomComplet'] ?? json['NomComplet'], fallback: ''),
-      matricule:
-          _asString(json['matricule'] ?? json['Matricule'], fallback: ''),
+      nomComplet: _asString(
+        json['nomComplet'] ?? json['NomComplet'],
+        fallback: '',
+      ),
+      matricule: _asString(
+        json['matricule'] ?? json['Matricule'],
+        fallback: '',
+      ),
       telephone: json['telephone'] ?? json['Telephone'],
       statut: _asBool(json['statut'] ?? json['Statut'], fallback: false),
-      collectesMois:
-          _asInt(json['collectesMois'] ?? json['CollectesMois']),
+      collectesMois: _asInt(json['collectesMois'] ?? json['CollectesMois']),
       totalCollectesMois: _asDouble(
         json['totalCollectesMois'] ?? json['TotalCollectesMois'],
       ),
       collectesEnAttente: _asInt(
         json['collectesEnAttente'] ?? json['CollectesEnAttente'],
       ),
+      collectesJour: json['collectesJour'] == null
+          ? null
+          : _asInt(json['collectesJour']),
+      montantJour: json['montantJour'] == null
+          ? null
+          : _asDouble(json['montantJour']),
     );
   }
 }
@@ -163,11 +177,9 @@ class ChefEquipeCollecteResumeDto {
       agentNom: json['agentNom'] ?? json['AgentNom'],
       affilieNom: json['affilieNom'] ?? json['AffilieNom'],
       montant: _asDouble(json['montant'] ?? json['Montant']),
-      statutPaiement:
-          json['statutPaiement'] ?? json['StatutPaiement'],
+      statutPaiement: json['statutPaiement'] ?? json['StatutPaiement'],
       modePaiement: json['modePaiement'] ?? json['ModePaiement'],
-      dateCollecte:
-          _asDateTime(json['dateCollecte'] ?? json['DateCollecte']),
+      dateCollecte: _asDateTime(json['dateCollecte'] ?? json['DateCollecte']),
     );
   }
 }
@@ -201,8 +213,9 @@ class AgentCommissionMouvementDto {
       montant: _asDouble(json['montant'] ?? json['Montant']),
       source: _asString(json['source'] ?? json['Source'], fallback: ''),
       description: json['description'] ?? json['Description'],
-      dateOperation:
-          _asDateTime(json['dateOperation'] ?? json['DateOperation']),
+      dateOperation: _asDateTime(
+        json['dateOperation'] ?? json['DateOperation'],
+      ),
       nomAffilie: json['nomAffilie'] ?? json['NomAffilie'],
       montantCollecteLiee: montantCollecteLieeRaw == null
           ? null
@@ -227,7 +240,8 @@ class AgentCommissionsResumeDto {
   });
 
   factory AgentCommissionsResumeDto.fromJson(Map<String, dynamic> json) {
-    final mouvementsRaw = json['mouvementsRecents'] ??
+    final mouvementsRaw =
+        json['mouvementsRecents'] ??
         json['MouvementsRecents'] ??
         json['mouvements'] ??
         json['Mouvements'];
@@ -262,4 +276,3 @@ class AgentCommissionsResumeDto {
     );
   }
 }
-

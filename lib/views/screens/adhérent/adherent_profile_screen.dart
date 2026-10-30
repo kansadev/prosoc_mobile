@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/api.dart';
 import '../../../config/colors.dart';
 import '../../../models/dashboard_affilie_model.dart';
+import '../../../models/agent_model.dart';
 import '../../../services/auth_service.dart';
 import '../../../utils/api_error_helper.dart';
 import '../../../utils/formatters.dart';
@@ -32,10 +34,42 @@ class _AdherentProfileScreenState extends State<AdherentProfileScreen> {
   bool _isLoading = true;
   String? _errorMessage;
 
+  /// Contact de l'agent territorial gestionnaire, chargé via
+  /// `GET /api/Agent/{id}` : non bloquant, la carte reste utile sans lui.
+  AgentModel? _agentGestionnaire;
+  bool _isLoadingAgent = false;
+
   @override
   void initState() {
     super.initState();
     _loadProfile();
+    _loadAgentGestionnaire();
+  }
+
+  /// `AgentReadDto` n'expose que `phone` et `emailAgent` côté contact.
+  Future<void> _loadAgentGestionnaire() async {
+    final agentId = AuthService.currentUser?.utilisateur.idAgentGestionnaireCompte;
+    if (agentId == null || agentId <= 0) return;
+
+    setState(() => _isLoadingAgent = true);
+
+    try {
+      final response = await ApiService.getAgentDetail(agentId);
+      if (!mounted) return;
+      setState(() {
+        _isLoadingAgent = false;
+        _agentGestionnaire = response.success ? response.data : null;
+      });
+    } catch (e, stackTrace) {
+      if (!mounted) return;
+      ApiErrorHelper.logException(
+        'AdherentProfileScreen',
+        e,
+        stackTrace,
+        false,
+      );
+      setState(() => _isLoadingAgent = false);
+    }
   }
 
   Future<void> _loadProfile({bool silent = false}) async {
@@ -157,32 +191,47 @@ class _AdherentProfileScreenState extends State<AdherentProfileScreen> {
     required IconData icon,
     required String label,
     required String value,
+    bool isAction = false,
+    VoidCallback? onTap,
   }) {
     final empty = value.trim().isEmpty;
+    final valueColor = empty
+        ? Colors.grey.shade400
+        : isAction
+            ? AppColors.prosocGreen
+            : AppColors.textPrimary;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: AppColors.prosocGreen),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              label,
-              style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
-            ),
-          ),
-          Flexible(
-            child: Text(
-              empty ? '—' : value,
-              textAlign: TextAlign.end,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-                color: empty ? Colors.grey.shade400 : AppColors.textPrimary,
+      child: InkWell(
+        onTap: isAction && !empty ? onTap : null,
+        borderRadius: BorderRadius.circular(8),
+        child: Row(
+          children: [
+            Icon(icon, size: 18, color: AppColors.prosocGreen),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade600),
               ),
             ),
-          ),
-        ],
+            Flexible(
+              child: Text(
+                empty ? '—' : value,
+                textAlign: TextAlign.end,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: valueColor,
+                  decoration: isAction && !empty
+                      ? TextDecoration.underline
+                      : TextDecoration.none,
+                  decorationColor: AppColors.prosocGreen,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -312,7 +361,7 @@ class _AdherentProfileScreenState extends State<AdherentProfileScreen> {
     final doitChangerMotDePasse = currentUser?.doitChangerMotDePasse ?? false;
     final info = _data?.informations;
     final estActif = info?.estActif ?? _data?.kpis.estActif ?? true;
-    final dependantsCount = info?.nombreBeneficiaires ?? 0;
+    final dependantsCount = _data?.nombrePersonnesACharge ?? 0;
 
     final userEmail = info?.email.trim().isNotEmpty == true
         ? info!.email
@@ -558,7 +607,7 @@ class _AdherentProfileScreenState extends State<AdherentProfileScreen> {
                 _menuTile(
                   icon: Icons.people_outline,
                   title: 'Personnes à charge',
-                  trailing: dependantsCount > 0 ? '$dependantsCount' : null,
+                  trailing: '$dependantsCount',
                   onTap: _openDependants,
                 ),
                 const Divider(height: 1),
@@ -616,6 +665,9 @@ class _AdherentProfileScreenState extends State<AdherentProfileScreen> {
 
     if (!hasAgent && agentNom.isEmpty) return null;
 
+    final agentPhone = _agentGestionnaire?.phone.trim() ?? '';
+    final agentEmail = _agentGestionnaire?.emailAgent?.trim() ?? '';
+
     return _card(
       title: 'Agent territorial',
       children: [
@@ -669,7 +721,38 @@ class _AdherentProfileScreenState extends State<AdherentProfileScreen> {
             label: 'Matricule',
             value: matricule,
           ),
+        if (_isLoadingAgent)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: LinearProgressIndicator(minHeight: 2),
+          ),
+        if (agentPhone.isNotEmpty)
+          _compactRow(
+            icon: Icons.phone_outlined,
+            label: 'Téléphone',
+            value: agentPhone,
+            isAction: true,
+            onTap: () => _callAgent(agentPhone),
+          ),
+        if (agentEmail.isNotEmpty)
+          _compactRow(
+            icon: Icons.email_outlined,
+            label: 'Email',
+            value: agentEmail,
+            isAction: true,
+            onTap: () => _mailAgent(agentEmail),
+          ),
       ],
     );
+  }
+
+  void _callAgent(String phone) {
+    launchUrl(
+      Uri(scheme: 'tel', path: phone.replaceAll(' ', '')),
+    );
+  }
+
+  void _mailAgent(String email) {
+    launchUrl(Uri(scheme: 'mailto', path: email));
   }
 }

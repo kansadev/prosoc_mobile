@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:prosoc/utils/medical_permissions.dart';
+import 'package:prosoc/views/screens/medical/admin/medical_admin_home_screen.dart';
 
 import '../../../config/colors.dart';
 import '../../../services/auth_service.dart';
@@ -162,6 +164,23 @@ class SuperviseurProfileScreen extends StatelessWidget {
                         const SizedBox(height: 16),
                         _infoCard(
                           children: [
+                            if (MedicalPermissions.peutAdministrerCatalogue) ...[
+                              ListTile(
+                                leading: const Icon(Icons.local_hospital_outlined),
+                                title: const Text('Catalogue médical'),
+                                trailing: const Icon(Icons.chevron_right),
+                                onTap: () {
+                                  Navigator.push<void>(
+                                    context,
+                                    MaterialPageRoute<void>(
+                                      builder: (context) =>
+                                          const MedicalAdminHomeScreen(),
+                                    ),
+                                  );
+                                },
+                              ),
+                              const Divider(height: 1),
+                            ],
                             ListTile(
                               leading: const Icon(Icons.lock_outline),
                               title: const Text('Changer le mot de passe'),

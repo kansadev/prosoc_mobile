@@ -11,12 +11,15 @@ import 'package:prosoc/utils/collecte_agent_resolver.dart';
 import 'package:prosoc/utils/collecte_montant_helper.dart';
 import 'package:prosoc/utils/collecte_receipt_helper.dart';
 import 'package:prosoc/utils/currency_formatter.dart';
+import 'package:prosoc/offline/offline_write_gateway.dart';
 import 'package:prosoc/utils/electronic_payment_error_handler.dart';
 import 'package:prosoc/utils/phone_utils.dart';
 import 'package:prosoc/views/screens/at/flex_pay_payment_waiting_screen.dart';
 import 'package:prosoc/views/screens/at/payment_webview_screen.dart';
 import 'package:prosoc/views/widgets/flex_pay_card_payment_bottom_sheet.dart';
+import 'package:prosoc/views/widgets/devise_paiement_selector.dart';
 import 'package:prosoc/views/widgets/flex_pay_payment_error_dialog.dart';
+import '../../../../services/auth_service.dart';
 
 /// Paiement d'un frais affilié (`typeCollecte = Frais`).
 class PayerFraisScreen extends StatefulWidget {
@@ -62,6 +65,8 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
   late String? _selectedModePaiement;
   String? _selectedDevise;
   int? _selectedDeviseId;
+  /// Devise de paiement Mobile Money et conversion depuis la devise du frais.
+  late final DevisePaiementController _devisePaiement;
   int? _agentId;
   double? _montantAttendu;
   bool _isLoading = false;
@@ -87,12 +92,20 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
     if (tel != null && tel.isNotEmpty) {
       _telephonePaiementController.text = tel;
     }
+    _devisePaiement = DevisePaiementController(
+      operation: () => (
+        deviseId: _selectedDeviseId,
+        montant: double.tryParse(_montantController.text.trim()),
+      ),
+      triggers: _montantController,
+    )..loadDevises();
     _loadAgentId();
     _loadFrais();
   }
 
   @override
   void dispose() {
+    _devisePaiement.dispose();
     _montantController.dispose();
     _observationController.dispose();
     _telephonePaiementController.dispose();
@@ -439,6 +452,16 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
               keyboardType: TextInputType.phone,
             ),
           ),
+          const SizedBox(height: 16),
+          _buildFormField(
+            label: 'Devise de paiement',
+            icon: Icons.currency_exchange,
+            required: true,
+            child: DevisePaiementSelector(
+              controller: _devisePaiement,
+              decoration: _inputDecoration('Devise de paiement'),
+            ),
+          ),
         ],
         const SizedBox(height: 16),
         _buildFormField(
@@ -658,12 +681,25 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
           return;
         }
 
+        // Paiement dans une autre devise : la collecte porte la devise et le
+        // montant converti ; le serveur vérifie l'égalité avec le tarif.
+        final paiement = await _devisePaiement.resolve(
+          enabled: _isMobileMoneyPayment,
+        );
+        if (!mounted) return;
+        if (!paiement.isReady) {
+          _showErrorSnackBar(paiement.blockingMessage!);
+          return;
+        }
+        final devisePaiementId = paiement.deviseId!;
+        final converti = devisePaiementId != deviseId;
+
         final collecte = _buildCollecteBody(
-          montantRecu: montantPaye,
-          montantAttendu: montantAttendu,
+          montantRecu: paiement.montant!,
+          montantAttendu: converti ? paiement.montant! : montantAttendu,
           fraisId: fraisId,
           referencePaiement: referencePaiement,
-          deviseId: deviseId,
+          deviseId: devisePaiementId,
           modePaiement: modePaiement,
           statutPaiement: statutPaiement,
           now: now,
@@ -674,7 +710,7 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
               collecte: collecte,
               modePaiement: modePaiement,
               telephonePaiement: telephonePaiement,
-              devisePaiementId: deviseId,
+              devisePaiementId: devisePaiementId,
             );
 
         if (!mounted) return;
@@ -696,8 +732,8 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
         return;
       }
 
-      final response = await ApiService.createCollecte(
-        typeCollecte: 'Frais',
+      final outcome = await OfflineWriteGateway.collecte(
+        typeCollecte: AdhesionApiValues.typeCollecteFrais,
         affilieId: widget.affilieId,
         agentId: collecteAgentId,
         fraisId: fraisId,
@@ -714,38 +750,56 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
         phone: _telephonePaiementController.text.trim().isNotEmpty
             ? PhoneUtils.normalizeDrcPhone(_telephonePaiementController.text)
             : null,
+        label: 'Frais ${frais.libelle} — ${widget.affiliePrenom}',
       );
 
       if (!mounted) return;
 
-      if (response.success) {
-        final idCollecte = CollecteReceiptHelper.parseId(
-          response.data is Map ? (response.data as Map)['idCollecte'] : null,
-        );
-        await CollecteReceiptHelper.open(
-          context,
-          receipt: CollecteReceiptData(
-            operation: CollecteReceiptOperation.frais,
-            montant: montantPaye,
-            deviseId: deviseId,
-            reference: response.data is Map
-                ? (response.data as Map)['referencePaiement']?.toString()
-                : null,
-            modePaiement: modePaiement,
-            affilieNom: '${widget.affiliePrenom} ${widget.affilieNom}'.trim(),
-            idCollecte: idCollecte,
-            statutPaiement: statutPaiement,
+      if (outcome is OfflineQueued) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Paiement enregistré hors ligne (${outcome.label}). '
+              'Il sera synchronisé dès le retour du réseau.',
+            ),
+            backgroundColor: const Color(0xFFF59E0B),
           ),
-          popResult: true,
         );
         if (mounted) Navigator.pop(context, true);
-      } else {
+        return;
+      }
+
+      if (outcome is OfflineFailed) {
+        setState(() => _isLoading = false);
         await FlexPayPaymentErrorDialog.show(
           context,
-          message: response.message,
-          statusCode: response.statusCode,
+          message: outcome.message,
+          statusCode: outcome.statusCode,
         );
+        return;
       }
+
+      final data = outcome is OfflineSynced ? outcome.data : null;
+      final idCollecte = CollecteReceiptHelper.parseId(
+        data?['idCollecte'],
+      );
+      await CollecteReceiptHelper.open(
+        context,
+        receipt: CollecteReceiptData(
+          operation: CollecteReceiptOperation.frais,
+          montant: montantPaye,
+          deviseId: deviseId,
+          reference: data?['referencePaiement']?.toString(),
+          modePaiement: modePaiement,
+          affilieNom: '${widget.affiliePrenom} ${widget.affilieNom}'.trim(),
+          agentNom: AuthService.currentUser?.utilisateur.nomComplet ?? 'Inconnu',
+          idCollecte: idCollecte,
+          statutPaiement: statutPaiement,
+        ),
+        popResult: true,
+      );
+      if (mounted) Navigator.pop(context, true);
     } catch (e, stackTrace) {
       ApiErrorHelper.logException('PayerFrais/submit', e, stackTrace);
       if (!mounted) return;

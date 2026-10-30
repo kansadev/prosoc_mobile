@@ -18,6 +18,14 @@ class AdhesionApiValues {
   static const statutDossierEnAttente = 'En Attente';
   /// Adhésion en ligne (accès libre) — spec PROCESSUS.
   static const statutDossierEnLigne = 'EN ATTENTE';
+
+  /// Sexe de l'affilié (champ `sexe` des endpoints d'adhésion).
+  static const sexeMasculin = 'M';
+  static const sexeFeminin = 'F';
+  static const Map<String, String> sexeOptions = {
+    sexeMasculin: 'Masculin',
+    sexeFeminin: 'Féminin',
+  };
 }
 
 class AdhesionWithAffilieRequest {
@@ -26,6 +34,7 @@ class AdhesionWithAffilieRequest {
   final String prenom;
   final String postnom;
   final DateTime dateNaissance;
+  final String? sexe;
   final String telephone;
   final String? emailAffilie;
   final String provinceResidence;
@@ -56,6 +65,7 @@ class AdhesionWithAffilieRequest {
     required this.prenom,
     required this.postnom,
     required this.dateNaissance,
+    this.sexe,
     required this.telephone,
     this.emailAffilie,
     required this.provinceResidence,
@@ -104,6 +114,7 @@ class AdhesionWithAffilieRequest {
     };
 
     if (codeAdhesion != null) payload['codeAdhesion'] = codeAdhesion;
+    if (sexe != null) payload['sexe'] = sexe;
     if (emailAffilie != null) payload['emailAffilie'] = emailAffilie;
     if (communeResidence != null) payload['communeResidence'] = communeResidence;
     if (quartierResidence != null) {
@@ -387,6 +398,9 @@ class AdhesionElectronicPaymentResponse {
   final String? message;
   final PaymentGatewayConfig? paymentGateway;
 
+  /// Prestataire réellement utilisé (`FlexPay`, `MokoAfrika`), si renvoyé.
+  final String? providerEffectif;
+
   AdhesionElectronicPaymentResponse({
     this.idCollecteEnAttente,
     this.orderNumberFlexPay,
@@ -401,6 +415,7 @@ class AdhesionElectronicPaymentResponse {
     this.flexPayAccepted = false,
     this.message,
     this.paymentGateway,
+    this.providerEffectif,
   });
 
   factory AdhesionElectronicPaymentResponse.fromJson(Map<String, dynamic> json) {
@@ -430,6 +445,7 @@ class AdhesionElectronicPaymentResponse {
       flexPayAccepted: json['flexPayAccepted'] == true,
       message: json['message']?.toString(),
       paymentGateway: gateway,
+      providerEffectif: json['providerEffectif']?.toString(),
     );
   }
 }

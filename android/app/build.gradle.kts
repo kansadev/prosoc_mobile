@@ -1,4 +1,5 @@
 import java.io.FileInputStream
+import java.util.Base64
 import java.util.Properties
 
 plugins {
@@ -14,6 +15,30 @@ val hasReleaseKeystore = keystorePropertiesFile.exists()
 
 if (hasReleaseKeystore) {
     keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
+// Un build release doit choisir son API explicitement (--dart-define=APP_ENV=dev|uat|prod) :
+// sans cela l'application pointerait silencieusement en dev (voir lib/config/app_environment.dart).
+val allowedAppEnvs = setOf("dev", "uat", "prod")
+val isReleaseBuild = gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) }
+if (isReleaseBuild) {
+    val dartDefines = (project.findProperty("dart-defines") as String?)
+        ?.split(",")
+        ?.filter { it.isNotBlank() }
+        ?.map { String(Base64.getDecoder().decode(it)) }
+        .orEmpty()
+    val appEnv = dartDefines.firstOrNull { it.startsWith("APP_ENV=") }
+        ?.substringAfter("=")
+        ?.trim()
+        ?.lowercase()
+    if (appEnv !in allowedAppEnvs) {
+        throw GradleException(
+            "APP_ENV manquant ou invalide (${appEnv ?: "absent"}) pour un build release. " +
+                "Ajoutez --dart-define=APP_ENV=dev|uat|prod, ex. : " +
+                "flutter build appbundle --dart-define=APP_ENV=prod"
+        )
+    }
+    logger.lifecycle("Prosoc : build release pour APP_ENV=$appEnv")
 }
 
 android {

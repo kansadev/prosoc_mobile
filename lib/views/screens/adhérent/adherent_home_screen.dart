@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../config/api.dart';
-import '../../../config/app_features.dart';
 import '../../../config/colors.dart';
 import '../../../models/dashboard_affilie_model.dart';
 import '../../../models/arriere_affilie_model.dart';
@@ -11,6 +10,8 @@ import '../../../utils/api_error_helper.dart';
 import '../../../utils/cotisation_montant_helper.dart';
 import '../../../utils/currency_formatter.dart';
 import '../../../utils/formatters.dart';
+import '../../../utils/medical_permissions.dart';
+import '../medical/medical_home_screen.dart';
 import '../../widgets/prosoc_shimmer_loading.dart';
 import '../../../widgets/souscription_bottom_sheet.dart';
 import 'arrieres_affilie_screen.dart';
@@ -267,6 +268,17 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
         _buildSectionTitle('Actions rapides'),
         const SizedBox(height: 12),
         _buildQuickActions(),
+        // Nouveau circuit médical : visible selon les permissions, quel que
+        // soit le flag de build santé.
+        if (MedicalPermissions.peutConsulterSouscriptions) ...[
+          const SizedBox(height: 10),
+          _quickAction(
+            Icons.local_hospital_outlined,
+            'Prestations médicales',
+            Colors.teal,
+            _openPrestationsMedicales,
+          ),
+        ],
         const SizedBox(height: 20),
         _buildArrieresSection(),
         const SizedBox(height: 20),
@@ -278,8 +290,7 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           const SizedBox(height: 8),
           ...data.documentsEnAttente.take(3).map(_buildDocumentTile),
         ],
-        if (AppFeatures.healthUiEnabled &&
-            data.prestationsRecentes.isNotEmpty) ...[
+        if (data.prestationsRecentes.isNotEmpty) ...[
           const SizedBox(height: 24),
           _buildSectionTitle('Prestations récentes'),
           const SizedBox(height: 8),
@@ -378,15 +389,6 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
   }
 
   Widget _buildKpiRow(DashboardAffilieKpis kpis) {
-    if (!AppFeatures.healthUiEnabled) {
-      return _miniStat(
-        'Cotisations',
-        _money(kpis.totalCotisations),
-        Icons.payments_outlined,
-        AppColors.prosocGreen,
-      );
-    }
-
     return Row(
       children: [
         Expanded(
@@ -444,32 +446,6 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
   }
 
   Widget _buildQuickActions() {
-    final health = AppFeatures.healthUiEnabled;
-
-    if (!health) {
-      return Row(
-        children: [
-          Expanded(
-            child: _quickAction(
-              Icons.add_circle_outline,
-              'Payer',
-              AppColors.prosocGreen,
-              widget.onPayCotisation,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _quickAction(
-              Icons.people,
-              'Dépendants',
-              Colors.orange,
-              () => widget.onOpenDependants?.call(),
-            ),
-          ),
-        ],
-      );
-    }
-
     return Column(
       children: [
         Row(
@@ -522,6 +498,25 @@ class _AdherentHomeScreenState extends State<AdherentHomeScreen> {
           ],
         ),
       ],
+    );
+  }
+
+  /// Nouveau circuit médical (offres par hôpital, couverture mensuelle).
+  void _openPrestationsMedicales() {
+    final affilieId = AuthService.affilieId;
+    if (affilieId == null || affilieId <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profil affilié introuvable.'),
+          backgroundColor: AppColors.errorColor,
+        ),
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => MedicalHomeScreen(affilieId: affilieId),
+      ),
     );
   }
 

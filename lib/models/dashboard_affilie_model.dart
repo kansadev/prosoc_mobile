@@ -86,6 +86,30 @@ class DashboardAffilieResumeModel {
           : null,
     );
   }
+
+  /// Nombre de personnes à charge réellement enregistrées, affilié exclu.
+  ///
+  /// L'API expose deux agrégats `nombreBeneficiaires` (dans `kpis` et dans
+  /// `informations`) qui incluent l'affilié lui-même et ne sont pas
+  /// systématiquement renseignés. Le tableau `beneficiaires` porte le
+  /// drapeau `estPrincipal` : c'est donc la source la plus fiable. Repli sur
+  /// les agrégats quand le tableau est vide.
+  int get nombrePersonnesACharge {
+    final charges = beneficiaires.where((b) => !b.estPrincipal).length;
+    if (beneficiaires.isNotEmpty) {
+      return charges;
+    }
+    final fromInformations = informations.nombreBeneficiaires;
+    if (fromInformations > 0) {
+      // L'agrégat inclut l'affilié : on retire sa présence.
+      return fromInformations > 1 ? fromInformations - 1 : 0;
+    }
+    final fromKpis = kpis.nombreBeneficiaires;
+    if (fromKpis > 0) {
+      return fromKpis > 1 ? fromKpis - 1 : 0;
+    }
+    return 0;
+  }
 }
 
 List<T> _mapList<T>(

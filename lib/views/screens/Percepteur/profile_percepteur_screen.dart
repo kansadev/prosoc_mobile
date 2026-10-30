@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:prosoc/utils/medical_permissions.dart';
+import 'package:prosoc/views/screens/medical/admin/medical_admin_home_screen.dart';
 
 import '../../../config/colors.dart';
 import '../../../services/auth_service.dart';
@@ -20,7 +22,6 @@ class ProfilePercepteurScreen extends StatefulWidget {
 }
 
 class _ProfilePercepteurScreenState extends State<ProfilePercepteurScreen> {
-
   static const double _headerBandHeight = 120;
   static const double _avatarRadius = 45;
   static const double _avatarOverlap = 45;
@@ -93,11 +94,41 @@ class _ProfilePercepteurScreenState extends State<ProfilePercepteurScreen> {
     if (updated == true && mounted) setState(() {});
   }
 
+  /// Badge du rôle effectif affiché sur le profil.
+  ///
+  /// Un utilisateur peut cumuler plusieurs rôles (ex. Percepteur + Superviseur
+  /// d'équipe) : `nomRole` reflète alors le rôle principal, pas celui sous
+  /// lequel le profil est consulté. On privilégie donc le rôle Percepteur
+  /// présent dans la liste des rôles, avec repli sur le rôle principal.
+  String get _roleBadge {
+    final user = AuthService.currentUser;
+    if (user == null) return 'Percepteur';
+
+    for (final role in user.roles) {
+      final nom = role.nom.toLowerCase();
+      final description = role.description.toLowerCase();
+      if (nom.contains('percepteur') || description.contains('percepteur')) {
+        return role.description.trim().isNotEmpty
+            ? role.description.trim()
+            : role.nom.trim();
+      }
+    }
+
+    if (user.nomRole.trim().isNotEmpty) return user.nomRole.trim();
+    if (user.primaryRole.description.trim().isNotEmpty) {
+      return user.primaryRole.description.trim();
+    }
+    if (user.primaryRole.nom.trim().isNotEmpty) {
+      return user.primaryRole.nom.trim();
+    }
+    return 'Percepteur';
+  }
+
   @override
   Widget build(BuildContext context) {
     final currentUser = AuthService.currentUser;
     final userName = currentUser?.utilisateur.nomComplet ?? 'Percepteur';
-    final userRole = currentUser?.nomRole ?? 'Non défini';
+    final userRole = _roleBadge;
     final userEmail = currentUser?.utilisateur.email ?? '';
     final userPhone = currentUser?.utilisateur.telephone ?? '';
     final userPhotoUrl = currentUser?.utilisateur.photoUrl;
@@ -161,10 +192,7 @@ class _ProfilePercepteurScreenState extends State<ProfilePercepteurScreen> {
                   const SizedBox(height: 4),
                   Text(
                     userRole,
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: Colors.grey.shade600,
-                    ),
+                    style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
                   ),
                   const SizedBox(height: 12),
                   Row(
@@ -268,6 +296,20 @@ class _ProfilePercepteurScreenState extends State<ProfilePercepteurScreen> {
                   _sectionCard(
                     title: 'Paramètres',
                     children: [
+                      if (MedicalPermissions.peutAdministrerCatalogue)
+                        _actionTile(
+                          icon: Icons.local_hospital_outlined,
+                          title: 'Catalogue médical',
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const MedicalAdminHomeScreen(),
+                              ),
+                            );
+                          },
+                        ),
                       _actionTile(
                         icon: Icons.lock_outline_rounded,
                         title: 'Sécurité et accès',
@@ -402,10 +444,7 @@ class _ProfilePercepteurScreenState extends State<ProfilePercepteurScreen> {
     );
   }
 
-  Widget _sectionCard({
-    required String title,
-    required List<Widget> children,
-  }) {
+  Widget _sectionCard({required String title, required List<Widget> children}) {
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 16),

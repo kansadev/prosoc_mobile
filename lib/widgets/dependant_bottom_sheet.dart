@@ -102,16 +102,6 @@ class _DependantBottomSheetState extends State<DependantBottomSheet> {
     return parts.join(' ');
   }
 
-  int _computeAge(DateTime birthDate) {
-    final now = DateTime.now();
-    var age = now.year - birthDate.year;
-    if (now.month < birthDate.month ||
-        (now.month == birthDate.month && now.day < birthDate.day)) {
-      age--;
-    }
-    return age;
-  }
-
   Future<void> _pickCertificat(ImageSource source) async {
     final picked = await PickedImageData.pick(source: source);
     if (picked != null && mounted) {
@@ -141,19 +131,6 @@ class _DependantBottomSheetState extends State<DependantBottomSheet> {
 
     if (nom.isEmpty || lien == null || date == null) {
       await _showError('Veuillez remplir le nom, le lien de parenté et la date de naissance.');
-      return;
-    }
-
-    final age = _computeAge(date);
-    if (lien != 'Conjoint(e)' && age > 25) {
-      await ProsocMessageDialog.show(
-        context,
-        variant: ProsocMessageVariant.warning,
-        title: 'Âge invalide',
-        message:
-            'Un dépendant avec le lien « $lien » ne peut pas dépasser 25 ans.',
-        hint: 'Âge actuel : $age ans',
-      );
       return;
     }
 

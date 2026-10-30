@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../../config/colors.dart';
 import '../../../models/dashboard_superviseur_model.dart';
 import 'superviseur_controller.dart';
-import 'widgets/superviseur_recharge_wallet_sheet.dart';
 import '../../widgets/prosoc_resource_error_view.dart';
 import '../../widgets/prosoc_shimmer_loading.dart';
 
@@ -88,7 +87,6 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
         surfaceTintColor: Colors.white,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
-        
       ),
       body: Column(
         children: [
@@ -108,9 +106,7 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
               ),
             ),
           ),
-          Expanded(
-            child: _buildBody(isLoading, errorMessage),
-          ),
+          Expanded(child: _buildBody(isLoading, errorMessage)),
         ],
       ),
     );
@@ -290,17 +286,16 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
   }
 
   Widget _buildSousSuperviseurCard(SuperviseurHierarchieModel sous) {
-    final initial =
-        sous.nomSuperviseur.isNotEmpty ? sous.nomSuperviseur[0].toUpperCase() : 'S';
+    final initial = sous.nomSuperviseur.isNotEmpty
+        ? sous.nomSuperviseur[0].toUpperCase()
+        : 'S';
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: AppColors.prosocGreen.withValues(alpha: 0.2),
-        ),
+        border: Border.all(color: AppColors.prosocGreen.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
@@ -356,8 +351,9 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
   }
 
   Widget _buildAgentCard(SuperviseurAgentPerformance agent) {
-    final initial =
-        agent.nomAgent.isNotEmpty ? agent.nomAgent[0].toUpperCase() : 'A';
+    final initial = agent.nomAgent.isNotEmpty
+        ? agent.nomAgent[0].toUpperCase()
+        : 'A';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -408,8 +404,10 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
                 ),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.prosocGreen.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(20),
@@ -428,12 +426,17 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
           const SizedBox(height: 14),
           Row(
             children: [
-              _metricChip('Montant', '${agent.montantTotal.toStringAsFixed(0)}'),
+              _metricChip(
+                'Montant',
+                '${agent.montantTotal.toStringAsFixed(0)}',
+              ),
               const SizedBox(width: 8),
               _metricChip('Tx', '${agent.nombreTransactions}'),
               const SizedBox(width: 8),
               _metricChip(
-                  'Objectif', '${agent.atteinteObjectif.toStringAsFixed(0)}%'),
+                'Objectif',
+                '${agent.atteinteObjectif.toStringAsFixed(0)}%',
+              ),
             ],
           ),
           if (agent.nombreJoursActifs > 0) ...[
@@ -443,40 +446,9 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
               style: TextStyle(color: Colors.grey[500], fontSize: 12),
             ),
           ],
-          const SizedBox(height: 12),
-          SizedBox(
-            width: double.infinity,
-            child: OutlinedButton.icon(
-              onPressed: agent.agentId > 0
-                  ? () => _openRechargeWallet(agent)
-                  : null,
-              icon: const Icon(Icons.account_balance_wallet_outlined, size: 18),
-              label: const Text('Recharger'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.prosocGreen,
-                side: BorderSide(
-                  color: AppColors.prosocGreen.withValues(alpha: 0.4),
-                ),
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
-  }
-
-  Future<void> _openRechargeWallet(SuperviseurAgentPerformance agent) async {
-    final recharged = await SuperviseurRechargeWalletSheet.show(
-      context,
-      agentId: agent.agentId,
-      agentNom: agent.nomAgent,
-    );
-    if (!mounted || !recharged) return;
-    await widget.controller.load(force: true);
   }
 
   Widget _metricChip(String label, String value) {
@@ -489,11 +461,14 @@ class _SuperviseurTeamScreenState extends State<SuperviseurTeamScreen> {
         ),
         child: Column(
           children: [
-            Text(value,
-                style:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            Text(label,
-                style: TextStyle(color: Colors.grey[600], fontSize: 10)),
+            Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            Text(
+              label,
+              style: TextStyle(color: Colors.grey[600], fontSize: 10),
+            ),
           ],
         ),
       ),

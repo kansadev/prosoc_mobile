@@ -1,18 +1,15 @@
 import 'package:flutter/material.dart';
 
-import '../../config/app_features.dart';
 
 class OnboardingData {
   final String title;
   final String description;
   final String imagePath;
-  final bool isHealthRelated;
 
   OnboardingData({
     required this.title,
     required this.description,
     required this.imagePath,
-    this.isHealthRelated = false,
   });
 }
 
@@ -42,14 +39,12 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       description:
           "Une couverture complète pour vos consultations, analyses et traitements médicaux. Accédez à un réseau de professionnels de santé qualifiés et bénéficiez de remboursements rapides.",
       imagePath: "assets/images/2.png",
-      isHealthRelated: true,
     ),
     OnboardingData(
       title: "Soins Médicaux VIP",
       description:
           "Des soins premium avec accès prioritaire aux spécialistes et cliniques de renom. Profitez d'une expérience médicale personnalisée avec consultations dans les meilleurs établissements.",
       imagePath: "assets/images/3.png",
-      isHealthRelated: true,
     ),
     OnboardingData(
       title: "Assistance Funérailles",
@@ -95,9 +90,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     ),
   ];
 
-  List<OnboardingData> get _pages => AppFeatures.healthUiEnabled
-      ? _allPages
-      : _allPages.where((page) => !page.isHealthRelated).toList();
+  List<OnboardingData> get _pages => _allPages;
 
   @override
   void dispose() {

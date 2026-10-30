@@ -1,7 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:prosoc/config/api.dart';
-import 'package:prosoc/config/app_features.dart';
 import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/dependant_model.dart';
 import 'package:prosoc/models/recent_affilie_model.dart';
@@ -9,13 +8,14 @@ import 'package:prosoc/models/arriere_affilie_model.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/arriere_payment_navigator.dart';
 import 'package:prosoc/utils/formatters.dart';
+import 'package:prosoc/utils/medical_permissions.dart';
+import 'package:prosoc/views/screens/medical/medical_home_screen.dart';
 import 'package:prosoc/utils/paginated_response_helper.dart';
 import 'widgets/payer_contributionScreen.dart';
 import 'widgets/payer_souscription_screen.dart';
 import 'widgets/payer_frais_screen.dart';
 import 'arrieres_affilie_screen.dart';
 import 'adherent_demande_bon_screen.dart';
-import 'package:prosoc/widgets/antecedent_bottom_sheet.dart';
 import 'package:prosoc/widgets/dependant_bottom_sheet.dart';
 import 'package:prosoc/widgets/souscription_bottom_sheet.dart';
 import 'package:prosoc/widgets/popup_menu_widget.dart';
@@ -239,7 +239,6 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
   }
 
   Future<void> _loadSouscriptions() async {
-    if (!AppFeatures.healthUiEnabled) return;
     setState(() {
       _isLoadingSouscriptions = true;
     });
@@ -608,9 +607,11 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
                             const SizedBox(height: 16),
                           ],
                           _buildArrieresCard(),
-                          if (AppFeatures.healthUiEnabled) ...[
+                          const SizedBox(height: 16),
+                          _buildSouscriptionsCard(),
+                          if (MedicalPermissions.peutConsulterSouscriptions) ...[
                             const SizedBox(height: 16),
-                            _buildSouscriptionsCard(),
+                            _buildCouvertureMedicaleCard(nomComplet),
                           ],
 
                           if (_errorMessage != null) ...[
@@ -683,7 +684,6 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
           onDependants: _isSoloAdhesion ? null : _showAddDependantBottomSheet,
           onSouscription: _showSouscriptionBottomSheet,
           onDemandeBon: _openDemandeBonScreen,
-          onAntecedents: _showAddAntecedentBottomSheet,
           onArrieres: _navigateToArrieresScreen,
         ),
       ],
@@ -1229,8 +1229,10 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
                 ),
                 if (_arrieresImpayesCount > 0)
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: AppColors.warningColor.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(999),
@@ -1257,154 +1259,191 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
             child: _isLoadingArrieres
                 ? const Center(child: CircularProgressIndicator())
                 : _arrieres.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            children: [
-                              Icon(
-                                Icons.check_circle_outline,
-                                size: 48,
-                                color: Colors.grey.shade400,
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                'Aucun arriéré',
-                                style: TextStyle(color: Colors.grey.shade600),
-                              ),
-                            ],
-                          ),
-                        ),
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
                         children: [
-                          if (_arrieresImpayesCount > 0)
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(12),
-                              margin: const EdgeInsets.only(bottom: 12),
-                              decoration: BoxDecoration(
-                                color: AppColors.warningColor
-                                    .withValues(alpha: 0.08),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Text(
-                                'Reste à payer : ${AppFormatters.formatCurrencyDollar(_arrieresTotalReste)}',
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.warningColor,
-                                ),
-                              ),
-                            ),
-                          ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: previewItems.length,
-                            separatorBuilder: (context, index) =>
-                                const Divider(),
-                            itemBuilder: (context, index) {
-                              final arriere = previewItems[index];
-                              final isImpaye = arriere.estImpaye;
-                              final statusColor = isImpaye
-                                  ? AppColors.warningColor
-                                  : AppColors.prosocGreen;
-
-                              return Column(
-                                children: [
-                                  ListTile(
-                                    contentPadding: EdgeInsets.zero,
-                                    leading: CircleAvatar(
-                                      backgroundColor:
-                                          statusColor.withValues(alpha: 0.1),
-                                      child: Icon(
-                                        Icons.receipt_long_outlined,
-                                        color: statusColor,
-                                        size: 20,
-                                      ),
-                                    ),
-                                    title: Text(
-                                      arriere.titre,
-                                      style: const TextStyle(
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    subtitle: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          arriere.typeObligationLabel,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.grey.shade600,
-                                          ),
-                                        ),
-                                        if (arriere.periode.isNotEmpty)
-                                          Text(
-                                            arriere.periode,
-                                            style: TextStyle(
-                                              fontSize: 12,
-                                              color: Colors.grey.shade600,
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                    trailing: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-                                      children: [
-                                        Text(
-                                          AppFormatters.formatCurrencyDollar(
-                                            arriere.restAPayer,
-                                          ),
-                                          style: TextStyle(
-                                            fontWeight: FontWeight.w700,
-                                            color: statusColor,
-                                          ),
-                                        ),
-                                        Text(
-                                          arriere.statutPaiement.isNotEmpty
-                                              ? arriere.statutPaiement
-                                              : (isImpaye ? 'Impayé' : 'Payé'),
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.grey.shade600,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  if (isImpaye)
-                                    Align(
-                                      alignment: Alignment.centerRight,
-                                      child: TextButton.icon(
-                                        onPressed: () => _payerArriere(arriere),
-                                        icon: const Icon(
-                                          Icons.payments_outlined,
-                                          size: 18,
-                                        ),
-                                        label: const Text('Payer'),
-                                      ),
-                                    ),
-                                ],
-                              );
-                            },
+                          Icon(
+                            Icons.check_circle_outline,
+                            size: 48,
+                            color: Colors.grey.shade400,
                           ),
-                          if (hasMore || _arrieres.isNotEmpty)
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: TextButton(
-                                onPressed: _navigateToArrieresScreen,
-                                child: const Text('Voir tout'),
-                              ),
-                            ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Aucun arriéré',
+                            style: TextStyle(color: Colors.grey.shade600),
+                          ),
                         ],
                       ),
+                    ),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (_arrieresImpayesCount > 0)
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          margin: const EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            color: AppColors.warningColor.withValues(
+                              alpha: 0.08,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            'Reste à payer : ${AppFormatters.formatCurrencyDollar(_arrieresTotalReste)}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.warningColor,
+                            ),
+                          ),
+                        ),
+                      ListView.separated(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        itemCount: previewItems.length,
+                        separatorBuilder: (context, index) => const Divider(),
+                        itemBuilder: (context, index) {
+                          final arriere = previewItems[index];
+                          final isImpaye = arriere.estImpaye;
+                          final statusColor = isImpaye
+                              ? AppColors.warningColor
+                              : AppColors.prosocGreen;
+
+                          return Column(
+                            children: [
+                              ListTile(
+                                contentPadding: EdgeInsets.zero,
+                                leading: CircleAvatar(
+                                  backgroundColor: statusColor.withValues(
+                                    alpha: 0.1,
+                                  ),
+                                  child: Icon(
+                                    Icons.receipt_long_outlined,
+                                    color: statusColor,
+                                    size: 20,
+                                  ),
+                                ),
+                                title: Text(
+                                  arriere.titre,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      arriere.typeObligationLabel,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                    if (arriere.periode.isNotEmpty)
+                                      Text(
+                                        arriere.periode,
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey.shade600,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                trailing: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    Text(
+                                      AppFormatters.formatCurrencyDollar(
+                                        arriere.restAPayer,
+                                      ),
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: statusColor,
+                                      ),
+                                    ),
+                                    Text(
+                                      arriere.statutPaiement.isNotEmpty
+                                          ? arriere.statutPaiement
+                                          : (isImpaye ? 'Impayé' : 'Payé'),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.grey.shade600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (isImpaye)
+                                Align(
+                                  alignment: Alignment.centerRight,
+                                  child: TextButton.icon(
+                                    onPressed: () => _payerArriere(arriere),
+                                    icon: const Icon(
+                                      Icons.payments_outlined,
+                                      size: 18,
+                                    ),
+                                    label: const Text('Payer'),
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                      if (hasMore || _arrieres.isNotEmpty)
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: TextButton(
+                            onPressed: _navigateToArrieresScreen,
+                            child: const Text('Voir tout'),
+                          ),
+                        ),
+                    ],
+                  ),
           ),
         ],
+      ),
+    );
+  }
+
+  /// Nouveau circuit médical : souscriptions, périodes, encaissement guichet
+  /// et traitement des prises en charge de l'affilié.
+  Widget _buildCouvertureMedicaleCard(String nomComplet) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      elevation: 1,
+      shadowColor: Colors.black.withValues(alpha: 0.2),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        leading: Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: Colors.teal.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(Icons.local_hospital_outlined, color: Colors.teal.shade700),
+        ),
+        title: const Text(
+          'Couverture médicale',
+          style: TextStyle(fontWeight: FontWeight.w700),
+        ),
+        subtitle: const Text(
+          'Offres par hôpital, mois à payer et prises en charge',
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (_) => MedicalHomeScreen(
+              affilieId: widget.affilieId,
+              affilieNom: nomComplet.isEmpty ? null : nomComplet,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1804,15 +1843,6 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
           affilieNomComplet: name.isNotEmpty ? name : null,
         ),
       ),
-    );
-  }
-
-  Future<void> _showAddAntecedentBottomSheet() async {
-    await AntecedentBottomSheet.show(
-      context,
-      affilieId: widget.affilieId,
-      affilieNom: widget.preview?.nom ?? '',
-      affiliePrenom: widget.preview?.prenom ?? '',
     );
   }
 }

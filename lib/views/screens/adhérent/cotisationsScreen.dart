@@ -57,6 +57,10 @@ class _ContributionsScreenState extends State<ContributionsScreen>
 
   static const _historiquePageSize = 20;
 
+  /// Nombre max de pages parcourues à la recherche de lignes correspondant à
+  /// l'année filtrée, avant d'afficher un état vide.
+  static const _historiqueMaxPageProbe = 25;
+
   @override
   void initState() {
     super.initState();
@@ -98,13 +102,21 @@ class _ContributionsScreenState extends State<ContributionsScreen>
               p.affilieId == 0 || p.affilieId == widget.affilieId,
         )
         .where((p) => p.annee == 0 || p.annee == _selectedYear)
-        // Onglet Cotisations : uniquement les collectes de type cotisation.
-        .where((p) {
-          final type = p.typeCollecte.trim().toLowerCase();
-          if (type.isEmpty) return true;
-          return type.contains('cotisation');
-        })
+        // Onglet Cotisations : uniquement les collectes de type COTISATION
+        // (enum API `TypeCollecte` : FRAIS | SOUSCRIPTION | COTISATION).
+        .where((p) => _isCotisationType(p.typeCollecte))
         .toList();
+  }
+
+  /// Compare au enum API `TypeCollecte`. Une valeur inconnue n'est pas rejetée
+  /// silencieusement : sans type exploitable, la ligne est conservée.
+  static bool _isCotisationType(String rawType) {
+    final type = rawType.trim().toUpperCase();
+    if (type.isEmpty) return true;
+    if (type == 'COTISATION') return true;
+    // Some deployments suffix the type (ex. "COTISATION_ST"). On ne retient
+    // que ce qui contient explicitement COTISATION.
+    return type.contains('COTISATION');
   }
 
   String _historiqueErrorMessage(ApiResponse<Map<String, dynamic>> response) {
@@ -127,15 +139,35 @@ class _ContributionsScreenState extends State<ContributionsScreen>
     }
 
     try {
-      final response = await ApiService.getAffiliePaiementsHistorique(
-        page: reset ? 1 : _historiquePage,
-        pageSize: _historiquePageSize,
-      );
+      final collected = <AffiliePaiementHistoriqueModel>[];
+      var hasNext = false;
+      var nextPage = reset ? 1 : _historiquePage;
+      ApiResponse<Map<String, dynamic>>? failure;
+      var page = nextPage;
 
-      if (!mounted) return;
+      // Le filtre année + type est appliqué côté client alors que la
+      // pagination est côté serveur : une page peut être vide alors que des
+      // lignes valides figurent sur les pages suivantes. On avance donc
+      // jusqu'à trouver des lignes ou épuiser la pagination (borné pour ne
+      // pas boucler si l'API signale `hasNextPage` à tort).
+      for (var attempt = 0; attempt < _historiqueMaxPageProbe; attempt++) {
+        // Scopé sur l'affilié via le path : sans ce scope, l'API renvoie la
+        // page 1 de l'historique global et les cotisations de l'affilié
+        // seraient absentes du résultat affiché.
+        final response = await ApiService.getCollecteByAffiliePaginated(
+          affilieId: widget.affilieId,
+          page: page,
+          pageSize: _historiquePageSize,
+          sortBy: 'dateCollecte',
+          sortDirection: 'desc',
+        );
 
-      final payload = response.data;
-      if (response.success && payload != null) {
+        if (!response.success || response.data == null) {
+          failure = response;
+          break;
+        }
+
+        final payload = response.data!;
         final rows = PaginatedResponseHelper.extractRows(payload);
         final parsed = <AffiliePaiementHistoriqueModel>[];
         for (final item in rows) {
@@ -150,33 +182,42 @@ class _ContributionsScreenState extends State<ContributionsScreen>
           }
         }
 
-        final filtered = _filterHistoriqueForAffilie(parsed);
+        collected.addAll(_filterHistoriqueForAffilie(parsed));
 
-        setState(() {
-          if (reset) {
-            _historique = filtered;
-          } else {
-            _historique = [..._historique, ...filtered];
-          }
-          _historiqueHasNext = PaginatedResponseHelper.extractHasNext(payload);
-          if (_historiqueHasNext) {
-            _historiquePage =
-                PaginatedResponseHelper.extractCurrentPage(payload) + 1;
-          }
-          _errorHistorique = null;
-          _loadingHistorique = false;
-          _loadingHistoriqueMore = false;
-        });
-      } else {
+        hasNext = PaginatedResponseHelper.extractHasNext(payload);
+        if (!hasNext) {
+          nextPage = page + 1;
+          break;
+        }
+        nextPage = PaginatedResponseHelper.extractCurrentPage(payload) + 1;
+        page = nextPage;
+
+        // Page non vide pour l'année courante : inutile d'aller plus loin.
+        if (collected.isNotEmpty) break;
+      }
+
+      if (!mounted) return;
+
+      if (failure != null) {
         setState(() {
           if (reset) {
             _historique = [];
-            _errorHistorique = _historiqueErrorMessage(response);
+            _errorHistorique = _historiqueErrorMessage(failure!);
           }
           _loadingHistorique = false;
           _loadingHistoriqueMore = false;
         });
+        return;
       }
+
+      setState(() {
+        _historique = reset ? collected : [..._historique, ...collected];
+        _historiqueHasNext = hasNext;
+        _historiquePage = nextPage;
+        _errorHistorique = null;
+        _loadingHistorique = false;
+        _loadingHistoriqueMore = false;
+      });
     } catch (e, st) {
       ApiErrorHelper.logException('Paiements/historique', e, st, false);
       if (!mounted) return;
@@ -348,8 +389,8 @@ class _ContributionsScreenState extends State<ContributionsScreen>
         onRefresh: () => _loadHistorique(reset: true),
         child: EmptyStateScrollable(
           icon: Icons.history,
-          title: 'Aucun paiement',
-          subtitle: 'Aucun paiement enregistré pour $_selectedYear.',
+          title: 'Aucune cotisation',
+          subtitle: 'Aucune cotisation enregistrée pour $_selectedYear.',
         ),
       );
     }

@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:prosoc/config/api.dart';
-import 'package:prosoc/config/app_features.dart';
 import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/utils/affilie_id_helper.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
@@ -461,7 +460,7 @@ class _PercepteurEncaissementScreenState
                         ],
                       ),
                     ),
-                    if (widget.souscriptionOnly && AppFeatures.healthUiEnabled)
+                    if (widget.souscriptionOnly)
                       Icon(
                         Icons.medical_services_outlined,
                         color: AppColors.prosocGreen.withValues(alpha: 0.8),

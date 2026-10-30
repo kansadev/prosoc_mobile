@@ -60,6 +60,7 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
   Frais? _selectedFrais;
   Prestation? _selectedPrestation;
   Devise? _selectedDevise;
+  String? _selectedSexe;
   String _selectedModePaiement = AffiliePaymentModes.mobileMoney;
 
   PickedImageData? _photo;
@@ -91,6 +92,16 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
     _dateNController.dispose();
     _telephonePaiementController.dispose();
     super.dispose();
+  }
+
+  String get _fraisDeviseCode {
+    final deviseId = _selectedFrais?.deviseId ?? 0;
+    return _devises
+            .where((d) => d.idDevise == deviseId)
+            .map((d) => d.code)
+            .firstOrNull ??
+        _selectedDevise?.code ??
+        '—';
   }
 
   bool get _isMobileMoney =>
@@ -317,6 +328,24 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
       return;
     }
 
+    // Le serveur exige une devise unique pour toutes les collectes
+    // (devisePaiementId) ; sans session, aucune conversion n'est possible.
+    final fraisDeviseId = _selectedFrais!.deviseId;
+    final prestationDeviseId = _selectedPrestation?.deviseId ?? 0;
+    if (hasSouscription &&
+        souscriptionMontant > 0 &&
+        fraisDeviseId > 0 &&
+        prestationDeviseId > 0 &&
+        prestationDeviseId != fraisDeviseId) {
+      _showSnack(
+        'Les frais d\'adhésion et la prestation choisie ne sont pas dans la '
+        'même devise : paiement en ligne impossible. Retirez la prestation ou '
+        'adressez-vous à un agent Prosoc.',
+        isError: true,
+      );
+      return;
+    }
+
     final telephonePaiement = _isMobileMoney
         ? PhoneUtils.normalizeDrcPhone(_telephonePaiementController.text)
         : telAffilie;
@@ -333,6 +362,7 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
       prenom: _prenomController.text.trim(),
       postnom: _postnomController.text.trim(),
       dateNaissance: dateNaissance,
+      sexe: _selectedSexe,
       telephone: PhoneUtils.toInternationalFormat(telAffilie) ?? telAffilie,
       emailAffilie: EmailUtils.isValid(_emailController.text)
           ? _emailController.text.trim()
@@ -379,7 +409,8 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
             statutPaiement: 'EN_ATTENTE',
             montantRecu: souscriptionMontant,
             montantAttendu: souscriptionMontant,
-            deviseId: _selectedPrestation!.deviseId > 0
+            // Prestation gratuite : même devise que le frais (devise unique).
+            deviseId: _selectedPrestation!.deviseId > 0 && souscriptionMontant > 0
                 ? _selectedPrestation!.deviseId
                 : _selectedFrais!.deviseId,
             referencePaiement: reference,
@@ -396,7 +427,12 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
         adhesion: request,
         modePaiement: _selectedModePaiement,
         telephonePaiement: telephonePaiement,
-        devisePaiementId: _selectedDevise!.idDevise,
+        // Parcours anonyme : l'aperçu de conversion exige une session, le
+        // paiement se fait donc dans la devise du frais
+        // (devisePaiementId == collecte.deviseId).
+        devisePaiementId: _selectedFrais!.deviseId > 0
+            ? _selectedFrais!.deviseId
+            : _selectedDevise!.idDevise,
       );
 
       if (!mounted) return;
@@ -676,6 +712,18 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
               initialDateFallback: DateTime(1990),
             ),
             const SizedBox(height: 12),
+            DropdownButtonFormField<String>(
+              initialValue: _selectedSexe,
+              decoration: _inputDecoration('Sexe *'),
+              items: AdhesionApiValues.sexeOptions.entries
+                  .map(
+                    (e) => DropdownMenuItem(value: e.key, child: Text(e.value)),
+                  )
+                  .toList(),
+              validator: (v) => v == null ? 'Champ obligatoire' : null,
+              onChanged: (v) => setState(() => _selectedSexe = v),
+            ),
+            const SizedBox(height: 12),
             _textField(
               _telephoneController,
               'Téléphone *',
@@ -936,20 +984,17 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
             if (_isLoadingCatalog) ...[
               const SizedBox(height: 12),
               _dropdownShimmer(),
-            ] else if (_devises.length > 1) ...[
+            ] else if (_selectedFrais != null) ...[
               const SizedBox(height: 12),
-              DropdownButtonFormField<Devise>(
-                value: _selectedDevise,
+              InputDecorator(
                 decoration: _inputDecoration('Devise de paiement'),
-                items: _devises
-                    .map(
-                      (d) => DropdownMenuItem(
-                        value: d,
-                        child: Text(d.code),
-                      ),
-                    )
-                    .toList(),
-                onChanged: (v) => setState(() => _selectedDevise = v),
+                child: Text(_fraisDeviseCode),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Le paiement en ligne se fait dans la devise des frais. Pour '
+                'payer dans une autre devise, adressez-vous à un agent Prosoc.',
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
               ),
             ],
             if (_isMobileMoney) ...[

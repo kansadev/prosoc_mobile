@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../config/colors.dart';
+import '../../utils/api_error_helper.dart';
 
 /// Variante visuelle du dialogue message Prosoc.
 enum ProsocMessageVariant {
@@ -178,7 +179,11 @@ class ProsocMessageDialog extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            message,
+            ApiErrorHelper.sanitizeForDisplay(
+                  message,
+                  statusCode: statusCode,
+                ) ??
+                message,
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: 15,

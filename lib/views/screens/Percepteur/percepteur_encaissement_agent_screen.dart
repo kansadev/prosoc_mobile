@@ -57,6 +57,13 @@ class _PercepteurEncaissementAgentScreenState
   bool _isOpeningSession = false;
   bool _isCloturingSession = false;
 
+  /// Synthèse des collectes en attente par agent (encaissement du total).
+  final Map<int, PerceptionVirtuelleSyntheseAgent> _syntheseParAgent = {};
+
+  /// Vrai quand on arrive sur un agent via « Encaisser le total » : toutes
+  /// les collectes en attente sont alors pré-sélectionnées.
+  bool _encaisserTotalEnCours = false;
+
   static const _pageSize = 15;
   static const _sessionCaisseRequise = 'SESSION_CAISSIER_REQUISE';
 
@@ -66,6 +73,7 @@ class _PercepteurEncaissementAgentScreenState
     _scrollController.addListener(_onScroll);
     _loadAgents(reset: true);
     _loadSessionCaisse();
+    _loadSynthese();
   }
 
   @override
@@ -180,17 +188,19 @@ class _PercepteurEncaissementAgentScreenState
     }
   }
 
-  void _selectAgent(AgentModel agent) {
+  void _selectAgent(AgentModel agent, {bool encaisserTotal = false}) {
     setState(() {
       _selectedAgent = agent;
       _selectedCollecteIds.clear();
       _collectes = [];
       _collectesError = null;
       _searchController.clear();
+      _encaisserTotalEnCours = encaisserTotal;
     });
     if (_scrollController.hasClients) {
       _scrollController.jumpTo(0);
     }
+
     _loadCollectes(reset: true);
   }
 
@@ -199,6 +209,7 @@ class _PercepteurEncaissementAgentScreenState
       _selectedAgent = null;
       _collectes = [];
       _selectedCollecteIds.clear();
+      _encaisserTotalEnCours = false;
       _collectesError = null;
       _searchController.clear();
     });
@@ -233,11 +244,12 @@ class _PercepteurEncaissementAgentScreenState
     final pageToLoad = reset ? 1 : _collectesPage + 1;
 
     try {
-      final response = await ApiService.getPerceptionVirtuelleCollectesEnAttente(
-        agentId: agent.id,
-        page: pageToLoad,
-        pageSize: _pageSize,
-      );
+      final response =
+          await ApiService.getPerceptionVirtuelleCollectesEnAttente(
+            agentId: agent.id,
+            page: pageToLoad,
+            pageSize: _pageSize,
+          );
 
       if (!mounted) return;
 
@@ -254,6 +266,12 @@ class _PercepteurEncaissementAgentScreenState
           _collectesHasNext = PaginatedResponseHelper.extractHasNext(payload);
           _isLoadingCollectes = false;
           _isLoadingMoreCollectes = false;
+
+          // « Encaisser le total » : tout est pré-sélectionné au chargement.
+          if (reset && _encaisserTotalEnCours && _collectes.isNotEmpty) {
+            _selectedCollecteIds.addAll(_collectes.map((c) => c.idCollecte));
+            _encaisserTotalEnCours = false;
+          }
         });
       } else {
         setState(() {
@@ -282,6 +300,24 @@ class _PercepteurEncaissementAgentScreenState
     }
   }
 
+  /// Synthèse par agent (nombre de collectes en attente + montant total) :
+  /// source de l'action « Encaisser le total ».
+  Future<void> _loadSynthese() async {
+    try {
+      final response = await ApiService.getPerceptionVirtuelleSyntheseAgents();
+      if (!mounted) return;
+      if (!response.success || response.data == null) return;
+      setState(() {
+        _syntheseParAgent.clear();
+        for (final row in response.data!) {
+          if (row.agentId > 0) _syntheseParAgent[row.agentId] = row;
+        }
+      });
+    } catch (_) {
+      // La synthèse est une aide d'affichage : son échec n'est pas bloquant.
+    }
+  }
+
   List<CollecteEnAttenteModel> get _selectedCollectes => _collectes
       .where((c) => _selectedCollecteIds.contains(c.idCollecte))
       .toList();
@@ -302,10 +338,7 @@ class _PercepteurEncaissementAgentScreenState
     if (_totalsByDevise.isEmpty) return '0';
     return _totalsByDevise.entries
         .map(
-          (e) => CurrencyFormatter.format(
-            amount: e.value,
-            deviseCode: e.key,
-          ),
+          (e) => CurrencyFormatter.format(amount: e.value, deviseCode: e.key),
         )
         .join(' + ');
   }
@@ -340,8 +373,9 @@ class _PercepteurEncaissementAgentScreenState
       if (response.success) {
         final session = response.data;
         setState(() {
-          _sessionCaisse =
-              (session != null && session.isOuverte) ? session : null;
+          _sessionCaisse = (session != null && session.isOuverte)
+              ? session
+              : null;
           _isLoadingSession = false;
         });
       } else {
@@ -391,7 +425,9 @@ class _PercepteurEncaissementAgentScreenState
             const SizedBox(height: 16),
             TextField(
               controller: controller,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: const InputDecoration(
                 labelText: 'Solde d\'ouverture',
                 border: OutlineInputBorder(),
@@ -417,9 +453,7 @@ class _PercepteurEncaissementAgentScreenState
 
     if (confirmed != true || !mounted) return false;
 
-    final solde = double.tryParse(
-      controller.text.trim().replaceAll(',', '.'),
-    );
+    final solde = double.tryParse(controller.text.trim().replaceAll(',', '.'));
     if (solde == null || solde < 0) {
       _showSnack('Solde d\'ouverture invalide.', isError: true);
       return false;
@@ -483,8 +517,9 @@ class _PercepteurEncaissementAgentScreenState
           children: [
             TextField(
               controller: controller,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              keyboardType: const TextInputType.numberWithOptions(
+                decimal: true,
+              ),
               decoration: const InputDecoration(
                 labelText: 'Solde réel de clôture',
                 border: OutlineInputBorder(),
@@ -519,9 +554,7 @@ class _PercepteurEncaissementAgentScreenState
 
     if (confirmed != true || !mounted) return;
 
-    final solde = double.tryParse(
-      controller.text.trim().replaceAll(',', '.'),
-    );
+    final solde = double.tryParse(controller.text.trim().replaceAll(',', '.'));
     if (solde == null || solde < 0) {
       _showSnack('Solde de clôture invalide.', isError: true);
       return;
@@ -710,7 +743,8 @@ class _PercepteurEncaissementAgentScreenState
         extras: {
           'Collectes perçues': '${result.nombreCollectes}',
           'Solde virtuel restant': solde,
-          if (result.message.trim().isNotEmpty) 'Message': result.message.trim(),
+          if (result.message.trim().isNotEmpty)
+            'Message': result.message.trim(),
           if (result.perceptionVirtuelleId > 0)
             'Perception #': '${result.perceptionVirtuelleId}',
         },
@@ -771,11 +805,12 @@ class _PercepteurEncaissementAgentScreenState
           ),
         ],
       ),
-      body: selected == null ? _buildAgentsBody() : _buildCollectesBody(selected),
-      bottomNavigationBar:
-          selected != null && _selectedCollecteIds.isNotEmpty
-              ? _buildConfirmBar()
-              : null,
+      body: selected == null
+          ? _buildAgentsBody()
+          : _buildCollectesBody(selected),
+      bottomNavigationBar: selected != null && _selectedCollecteIds.isNotEmpty
+          ? _buildConfirmBar()
+          : null,
     );
   }
 
@@ -811,8 +846,7 @@ class _PercepteurEncaissementAgentScreenState
 
   Widget _buildSessionCaisseBanner() {
     final hasSession = _sessionCaisse != null && _sessionCaisse!.isOuverte;
-    final busy =
-        _isLoadingSession || _isOpeningSession || _isCloturingSession;
+    final busy = _isLoadingSession || _isOpeningSession || _isCloturingSession;
 
     return Container(
       width: double.infinity,
@@ -843,9 +877,9 @@ class _PercepteurEncaissementAgentScreenState
               busy
                   ? 'Vérification de la session caisse…'
                   : hasSession
-                      ? 'Session caisse ouverte'
-                          '${_sessionCaisse!.deviseCode != null ? ' · ${_sessionCaisse!.deviseCode}' : ''}'
-                      : 'Aucune session caisse — requise pour confirmer',
+                  ? 'Session caisse ouverte'
+                        '${_sessionCaisse!.deviseCode != null ? ' · ${_sessionCaisse!.deviseCode}' : ''}'
+                  : 'Aucune session caisse — requise pour confirmer',
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
@@ -895,7 +929,10 @@ class _PercepteurEncaissementAgentScreenState
 
     return RefreshIndicator(
       color: AppColors.prosocGreen,
-      onRefresh: () => _loadAgents(reset: true, search: _agentsSearch),
+      onRefresh: () async {
+        await _loadAgents(reset: true, search: _agentsSearch);
+        await _loadSynthese();
+      },
       child: ListView.separated(
         controller: _scrollController,
         physics: const AlwaysScrollableScrollPhysics(),
@@ -923,6 +960,7 @@ class _PercepteurEncaissementAgentScreenState
           final initial = agent.nomComplet.trim().isNotEmpty
               ? agent.nomComplet.trim()[0].toUpperCase()
               : 'A';
+          final synthese = _syntheseParAgent[agent.id];
 
           return Material(
             color: Colors.white,
@@ -932,46 +970,99 @@ class _PercepteurEncaissementAgentScreenState
               borderRadius: BorderRadius.circular(16),
               child: Padding(
                 padding: const EdgeInsets.all(16),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    CircleAvatar(
-                      backgroundColor:
-                          AppColors.prosocGreen.withValues(alpha: 0.12),
-                      child: Text(
-                        initial,
-                        style: const TextStyle(
-                          color: AppColors.prosocGreen,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            agent.nomComplet,
+                    Row(
+                      children: [
+                        CircleAvatar(
+                          backgroundColor: AppColors.prosocGreen.withValues(
+                            alpha: 0.12,
+                          ),
+                          child: Text(
+                            initial,
                             style: const TextStyle(
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
+                              color: AppColors.prosocGreen,
+                              fontWeight: FontWeight.bold,
                             ),
                           ),
-                          if (agent.matricule.isNotEmpty)
-                            Text(
-                              agent.matricule,
-                              style: TextStyle(
-                                color: Colors.grey.shade600,
-                                fontSize: 13,
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                agent.nomComplet,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              if (agent.matricule.isNotEmpty)
+                                Text(
+                                  agent.matricule,
+                                  style: TextStyle(
+                                    color: Colors.grey.shade600,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        Icon(
+                          Icons.chevron_right_rounded,
+                          color: Colors.grey.shade400,
+                        ),
+                      ],
+                    ),
+                    if (synthese != null &&
+                        synthese.nombreCollectesEnAttente > 0) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF5F7FA),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.inbox_outlined,
+                              size: 15,
+                              color: Colors.grey.shade600,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '${synthese.nombreCollectesEnAttente} '
+                                'collecte(s) en attente · '
+                                '${CurrencyFormatter.format(amount: synthese.montantEnAttente, deviseCode: synthese.deviseCode)}',
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
                             ),
-                        ],
+                            TextButton(
+                              onPressed: () =>
+                                  _selectAgent(agent, encaisserTotal: true),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppColors.prosocGreen,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                ),
+                                minimumSize: const Size(0, 32),
+                              ),
+                              child: const Text('Encaisser le total'),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      color: Colors.grey.shade400,
-                    ),
+                    ],
                   ],
                 ),
               ),
@@ -1029,7 +1120,8 @@ class _PercepteurEncaissementAgentScreenState
             child: Row(
               children: [
                 Checkbox(
-                  value: _selectedCollecteIds.length == _collectes.length &&
+                  value:
+                      _selectedCollecteIds.length == _collectes.length &&
                       _collectes.isNotEmpty,
                   tristate: true,
                   onChanged: (_) => _toggleSelectAll(),
@@ -1099,20 +1191,20 @@ class _PercepteurEncaissementAgentScreenState
           }
 
           final collecte = _collectes[index];
-          final isSelected =
-              _selectedCollecteIds.contains(collecte.idCollecte);
+          final isSelected = _selectedCollecteIds.contains(collecte.idCollecte);
 
           return Material(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
             child: CheckboxListTile(
               value: isSelected,
-              onChanged: (value) =>
-                  _toggleCollecte(collecte.idCollecte, value),
+              onChanged: (value) => _toggleCollecte(collecte.idCollecte, value),
               activeColor: AppColors.prosocGreen,
               controlAffinity: ListTileControlAffinity.leading,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 4,
+              ),
               title: Text(
                 collecte.affilieNom.isNotEmpty
                     ? collecte.affilieNom
@@ -1125,17 +1217,11 @@ class _PercepteurEncaissementAgentScreenState
                   const SizedBox(height: 4),
                   Text(
                     collecte.typeCollecte,
-                    style: TextStyle(
-                      color: Colors.grey.shade700,
-                      fontSize: 12,
-                    ),
+                    style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
                   ),
                   Text(
                     _formatCollecteDate(collecte.dateCollecte),
-                    style: TextStyle(
-                      color: Colors.grey.shade500,
-                      fontSize: 11,
-                    ),
+                    style: TextStyle(color: Colors.grey.shade500, fontSize: 11),
                   ),
                   if (collecte.referencePaiement != null &&
                       collecte.referencePaiement!.isNotEmpty)

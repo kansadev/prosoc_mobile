@@ -11,6 +11,17 @@ import '../../../services/auth_service.dart';
 import '../../../utils/api_error_helper.dart';
 import 'widgets/dashboard_agent_charts_section.dart';
 
+/// Période du réalisé affiché sur les objectifs Agent AT.
+enum _ObjectifPeriode {
+  jour('Aujourd\'hui'),
+  semaine('7 derniers jours'),
+  mois('Mois en cours');
+
+  const _ObjectifPeriode(this.label);
+
+  final String label;
+}
+
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
 
@@ -26,6 +37,42 @@ class _DashboardScreenState extends State<DashboardScreen>
   bool _isRefreshing = false;
   String? _errorMessage;
   DateTime? _lastUpdatedAt;
+
+  /// Période du « réalisé » affiché sur les objectifs.
+  ///
+  /// L'objectif reste toujours mensuel : `GET /api/DashboardAgent/objectifs`
+  /// n'accepte que `mois` et `annee`. Le réalisé jour / 7 jours est reconstruit
+  /// à partir de `graphs.activiteQuotidienne` (30 derniers jours).
+  _ObjectifPeriode _objectifPeriode = _ObjectifPeriode.mois;
+
+  /// Agrégats du réalisé sur la période sélectionnée.
+  ({double montant, int collectes, int adhesions})? get _realisePeriode {
+    final activite = _graphsData?.activiteQuotidienne;
+    if (activite == null || activite.isEmpty) return null;
+
+    final now = DateTime.now();
+    final debutJour = DateTime(now.year, now.month, now.day);
+    final cutoff = switch (_objectifPeriode) {
+      _ObjectifPeriode.jour => debutJour,
+      _ObjectifPeriode.semaine => debutJour.subtract(const Duration(days: 6)),
+      _ObjectifPeriode.mois => DateTime(now.year, now.month, 1),
+    };
+
+    var montant = 0.0;
+    var collectes = 0;
+    var adhesions = 0;
+    for (final entry in activite) {
+      final date = entry.date?.toLocal();
+      if (date == null) continue;
+      final jour = DateTime(date.year, date.month, date.day);
+      if (jour.isBefore(cutoff)) continue;
+      if (jour.isAfter(debutJour)) continue;
+      montant += entry.montantCollectes;
+      collectes += entry.nombreCollectes;
+      adhesions += entry.nombreAdhesions;
+    }
+    return (montant: montant, collectes: collectes, adhesions: adhesions);
+  }
 
   @override
   void initState() {
@@ -274,6 +321,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     final commissions = dashboard.commissions;
     final primes = dashboard.primes;
     final objectifs = dashboard.objectifs;
+    final realise = _realisePeriode;
     final devise = dashboard.devisePrincipaleCode.toUpperCase();
     final fmt = dashboard.formatMontant;
 
@@ -378,35 +426,47 @@ class _DashboardScreenState extends State<DashboardScreen>
             ),
           ],
         ),
+        _buildCommissionDefinitionCard(commissions, fmt),
         const SizedBox(height: 20),
         _sectionTitle(
           'Objectifs · ${DateFormat.MMMM('fr_FR').format(DateTime(objectifs.annee, objectifs.mois))} ${objectifs.annee}',
         ),
         const SizedBox(height: 10),
+        _buildObjectifPeriodeSelector(),
+        const SizedBox(height: 12),
+        _buildObjectifScopeNote(),
+        const SizedBox(height: 12),
         _objectifCard(
-          label: 'Collectes',
-          valeur: fmt(kpis.totalCollectesMois),
+          label: 'Collectes — ${_objectifPeriode.label}',
+          valeur: fmt(realise?.montant ?? kpis.totalCollectesMois),
           objectif: fmt(objectifs.objectifCollectes),
-          progression: _progressValue(objectifs.progressionCollectes),
+          progression: _progressValue(_ratio(
+            realise?.montant ?? kpis.totalCollectesMois,
+            objectifs.objectifCollectes,
+          )),
           progressionLabel: DashboardAgentModel.formatRatioPercent(
-            objectifs.progressionCollectes,
+            _ratio(
+              realise?.montant ?? kpis.totalCollectesMois,
+              objectifs.objectifCollectes,
+            ),
           ),
         ),
         const SizedBox(height: 10),
         _objectifCard(
-          label: 'Adhésions',
-          valeur: '${objectifs.progressionAdhesions}',
+          label: 'Adhésions — ${_objectifPeriode.label}',
+          valeur: '${realise?.adhesions ?? objectifs.progressionAdhesions}',
           objectif: '${objectifs.objectifAdhesions}',
-          progression: objectifs.objectifAdhesions > 0
-              ? (objectifs.progressionAdhesions / objectifs.objectifAdhesions)
-                  .clamp(0, 1)
-              : 0,
+          progression: _progressValue(_ratio(
+            (realise?.adhesions ?? objectifs.progressionAdhesions).toDouble(),
+            objectifs.objectifAdhesions.toDouble(),
+          )),
           progressionLabel:
-              '${objectifs.progressionAdhesions} / ${objectifs.objectifAdhesions}',
+              '${realise?.adhesions ?? objectifs.progressionAdhesions} / '
+              '${objectifs.objectifAdhesions}',
         ),
         const SizedBox(height: 10),
         _objectifCard(
-          label: 'Commissions',
+          label: 'Commissions du mois',
           valeur: fmt(commissions.totalCommissionsMois),
           objectif: fmt(objectifs.objectifCommissions),
           progression: _progressValue(objectifs.progressionCommissions),
@@ -582,12 +642,27 @@ class _DashboardScreenState extends State<DashboardScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'Solde commissions',
-            style: TextStyle(
-              color: Colors.white.withValues(alpha: 0.85),
-              fontSize: 13,
-            ),
+          Row(
+            children: [
+              Text(
+                'Solde commission disponible',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.85),
+                  fontSize: 13,
+                ),
+              ),
+              const SizedBox(width: 6),
+              Tooltip(
+                message:
+                    'Montant de commission actuellement disponible sur votre '
+                    'wallet, après les retraits et paiements déjà effectués.',
+                child: Icon(
+                  Icons.info_outline_rounded,
+                  size: 15,
+                  color: Colors.white.withValues(alpha: 0.75),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           Text(
@@ -603,7 +678,7 @@ class _DashboardScreenState extends State<DashboardScreen>
             children: [
               Expanded(
                 child: _heroMetric(
-                  label: 'Collectes',
+                  label: 'Collectes du mois',
                   value: collectesMois,
                   sub: '$operations op.',
                 ),
@@ -615,14 +690,106 @@ class _DashboardScreenState extends State<DashboardScreen>
               ),
               Expanded(
                 child: _heroMetric(
-                  label: 'Commissions',
+                  label: 'Commissions du mois',
                   value: commissionsMois,
+                  sub: 'générées',
                 ),
               ),
             ],
           ),
         ],
       ),
+    );
+  }
+
+  /// Précise la différence entre les montants de commission, qui étaient
+  /// précédemment affichés côte à côte sans définition.
+  Widget _buildCommissionDefinitionCard(
+    DashboardAgentCommissions commissions,
+    String Function(double, {bool withSign}) fmt,
+  ) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.info_outline_rounded,
+                size: 18,
+                color: AppColors.prosocGreen,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Comprendre vos commissions',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _definitionRow(
+            'Solde commission disponible',
+            'Montant actuellement disponible sur votre wallet, après les '
+                'retraits et paiements déjà effectués.',
+            fmt(commissions.soldeWallet),
+          ),
+          const SizedBox(height: 10),
+          _definitionRow(
+            'Commissions du mois',
+            'Montant total des commissions générées et acquises sur le mois '
+                'en cours.',
+            fmt(commissions.totalCommissionsMois),
+          ),
+          const SizedBox(height: 10),
+          _definitionRow(
+            'Commissions de l\'année',
+            'Cumul des commissions générées depuis le début de l\'année.',
+            fmt(commissions.totalCommissionsAnnee),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _definitionRow(String label, String description, String montant) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Flexible(
+              child: Text(
+                label,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              montant,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.prosocGreen,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          description,
+          style: TextStyle(color: Colors.grey[600], fontSize: 11, height: 1.35),
+        ),
+      ],
     );
   }
 
@@ -699,6 +866,81 @@ class _DashboardScreenState extends State<DashboardScreen>
           Text(
             label,
             style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  double _ratio(num realisable, num objectif) {
+    if (objectif <= 0) return 0;
+    return (realisable / objectif).clamp(0, 1).toDouble();
+  }
+
+  /// Sélecteur de période du réalisé (l'objectif reste mensuel).
+  Widget _buildObjectifPeriodeSelector() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: _ObjectifPeriode.values.map((periode) {
+          final selected = periode == _objectifPeriode;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _objectifPeriode = periode),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 160),
+                padding: const EdgeInsets.symmetric(vertical: 9),
+                decoration: BoxDecoration(
+                  color: selected ? AppColors.prosocGreen : Colors.transparent,
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Text(
+                  periode.label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: selected ? Colors.white : Colors.grey.shade700,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  /// Rappel explicite : les objectifs restent mensuels quelle que soit la
+  /// période du réalisé, l'API n'exposant pas d'objectif par jour ou semaine.
+  Widget _buildObjectifScopeNote() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFFE082)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(
+            Icons.info_outline_rounded,
+            size: 16,
+            color: Color(0xFFB26A00),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Réalisé : ${_objectifPeriode.label.toLowerCase()}. '
+              'Objectif : mensuel (aucun objectif jour/semaine n\'est '
+              'fourni par la plateforme).',
+              style: const TextStyle(fontSize: 11.5, height: 1.35),
+            ),
           ),
         ],
       ),

@@ -4,10 +4,11 @@ import 'package:intl/intl.dart';
 
 import '../../config/colors.dart';
 import '../../models/collecte_receipt_data.dart';
+import '../../utils/collecte_receipt_pdf_service.dart';
 import '../../utils/currency_formatter.dart';
 
 /// Reçu / facture locale après une opération de collecte (frontend only).
-class CollecteReceiptScreen extends StatelessWidget {
+class CollecteReceiptScreen extends StatefulWidget {
   const CollecteReceiptScreen({
     super.key,
     required this.receipt,
@@ -24,19 +25,69 @@ class CollecteReceiptScreen extends StatelessWidget {
   }) {
     return Navigator.of(context).push<T>(
       MaterialPageRoute(
-        builder: (_) => CollecteReceiptScreen(
-          receipt: receipt,
-          popResult: popResult,
-        ),
+        builder: (_) =>
+            CollecteReceiptScreen(receipt: receipt, popResult: popResult),
       ),
     );
   }
 
-  String get _montantLabel => CurrencyFormatter.format(
-        amount: receipt.montant,
-        deviseCode: receipt.deviseCode,
-        deviseId: receipt.deviseId,
+  @override
+  State<CollecteReceiptScreen> createState() => _CollecteReceiptScreenState();
+}
+
+class _CollecteReceiptScreenState extends State<CollecteReceiptScreen> {
+  CollecteReceiptData get receipt => widget.receipt;
+  Object? get popResult => widget.popResult;
+
+  bool _isBusy = false;
+
+  /// Ouvre la boîte d'impression système (« enregistrer en PDF » inclus).
+  Future<void> _print(BuildContext context) async {
+    if (_isBusy) return;
+    setState(() => _isBusy = true);
+    try {
+      await CollecteReceiptPdfService.printReceipt(receipt);
+    } catch (e, stackTrace) {
+      CollecteReceiptPdfService.logFailure(
+        'CollecteReceiptScreen.print',
+        e,
+        stackTrace,
       );
+      if (context.mounted) _showError(context, 'Impression impossible.');
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
+  /// Partage le PDF via la feuille système du mobile.
+  Future<void> _share(BuildContext context) async {
+    if (_isBusy) return;
+    setState(() => _isBusy = true);
+    try {
+      await CollecteReceiptPdfService.shareReceipt(receipt);
+    } catch (e, stackTrace) {
+      CollecteReceiptPdfService.logFailure(
+        'CollecteReceiptScreen.share',
+        e,
+        stackTrace,
+      );
+      if (context.mounted) _showError(context, 'Partage impossible.');
+    } finally {
+      if (mounted) setState(() => _isBusy = false);
+    }
+  }
+
+  void _showError(BuildContext context, String message) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  String get _montantLabel => CurrencyFormatter.format(
+    amount: receipt.montant,
+    deviseCode: receipt.deviseCode,
+    deviseId: receipt.deviseId,
+  );
 
   String get _dateLabel =>
       DateFormat('dd/MM/yyyy HH:mm', 'fr_FR').format(receipt.date.toLocal());
@@ -53,6 +104,14 @@ class CollecteReceiptScreen extends StatelessWidget {
     if (receipt.codeAdhesion != null &&
         receipt.codeAdhesion!.trim().isNotEmpty) {
       buffer.writeln('Code adhésion : ${receipt.codeAdhesion!.trim()}');
+    }
+    final collecteur = receipt.collecteurNom?.trim().isNotEmpty == true
+        ? receipt.collecteurNom!.trim()
+        : (receipt.agentNom?.trim().isNotEmpty == true
+            ? receipt.agentNom!.trim()
+            : '');
+    if (collecteur.isNotEmpty) {
+      buffer.writeln('Collecteur / Agent collecteur : $collecteur');
     }
     if (receipt.modePaiement != null &&
         receipt.modePaiement!.trim().isNotEmpty) {
@@ -92,7 +151,9 @@ class CollecteReceiptScreen extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      backgroundColor: isDark ? const Color(0xFF0F172A) : const Color(0xFFF8FAFC),
+      backgroundColor: isDark
+          ? const Color(0xFF0F172A)
+          : const Color(0xFFF8FAFC),
       appBar: AppBar(
         title: const Text('Reçu'),
         backgroundColor: AppColors.prosocGreen,
@@ -107,13 +168,13 @@ class CollecteReceiptScreen extends StatelessWidget {
       ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
           children: [
             Container(
-              padding: const EdgeInsets.all(22),
+              padding: const EdgeInsets.all(26),
               decoration: BoxDecoration(
                 color: isDark ? const Color(0xFF1E293B) : Colors.white,
-                borderRadius: BorderRadius.circular(20),
+                borderRadius: BorderRadius.circular(24),
                 border: Border.all(
                   color: AppColors.prosocGreen.withValues(alpha: 0.25),
                 ),
@@ -131,7 +192,7 @@ class CollecteReceiptScreen extends StatelessWidget {
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(12),
+                        padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
                           color: AppColors.prosocGreen.withValues(alpha: 0.12),
                           shape: BoxShape.circle,
@@ -139,10 +200,10 @@ class CollecteReceiptScreen extends StatelessWidget {
                         child: const Icon(
                           Icons.receipt_long_rounded,
                           color: AppColors.prosocGreen,
-                          size: 28,
+                          size: 34,
                         ),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 14),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -150,7 +211,7 @@ class CollecteReceiptScreen extends StatelessWidget {
                             Text(
                               receipt.title,
                               style: TextStyle(
-                                fontSize: 18,
+                                fontSize: 20,
                                 fontWeight: FontWeight.w800,
                                 color: isDark
                                     ? Colors.white
@@ -161,7 +222,7 @@ class CollecteReceiptScreen extends StatelessWidget {
                             Text(
                               'N° ${receipt.numeroRecu}',
                               style: TextStyle(
-                                fontSize: 13,
+                                fontSize: 13.5,
                                 color: Colors.grey.shade600,
                               ),
                             ),
@@ -170,30 +231,30 @@ class CollecteReceiptScreen extends StatelessWidget {
                       ),
                     ],
                   ),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 22),
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 16,
-                      vertical: 18,
+                      vertical: 22,
                     ),
                     decoration: BoxDecoration(
                       color: AppColors.prosocGreen.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(16),
                     ),
                     child: Column(
                       children: [
                         Text(
                           'Montant',
                           style: TextStyle(
-                            fontSize: 13,
+                            fontSize: 13.5,
                             color: Colors.grey.shade700,
                           ),
                         ),
-                        const SizedBox(height: 4),
+                        const SizedBox(height: 6),
                         Text(
                           _montantLabel,
                           style: const TextStyle(
-                            fontSize: 28,
+                            fontSize: 34,
                             fontWeight: FontWeight.w800,
                             color: AppColors.prosocGreen,
                           ),
@@ -208,7 +269,11 @@ class CollecteReceiptScreen extends StatelessWidget {
                   if (receipt.codeAdhesion?.trim().isNotEmpty == true)
                     _row('Code adhésion', receipt.codeAdhesion!.trim(), isDark),
                   if (receipt.modePaiement?.trim().isNotEmpty == true)
-                    _row('Mode de paiement', receipt.modePaiement!.trim(), isDark),
+                    _row(
+                      'Mode de paiement',
+                      receipt.modePaiement!.trim(),
+                      isDark,
+                    ),
                   if (receipt.reference?.trim().isNotEmpty == true)
                     _row('Référence', receipt.reference!.trim(), isDark),
                   if (receipt.idCollecte != null)
@@ -251,6 +316,42 @@ class CollecteReceiptScreen extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isBusy ? null : () => _print(context),
+                    icon: const Icon(Icons.print_outlined),
+                    label: const Text('Imprimer'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.prosocGreen,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: const BorderSide(color: AppColors.prosocGreen),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: _isBusy ? null : () => _share(context),
+                    icon: const Icon(Icons.ios_share_rounded),
+                    label: const Text('Partager'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.prosocGreen,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      side: const BorderSide(color: AppColors.prosocGreen),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop(popResult),
               style: ElevatedButton.styleFrom(
@@ -271,18 +372,15 @@ class CollecteReceiptScreen extends StatelessWidget {
 
   Widget _row(String label, String value, bool isDark) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.only(bottom: 14),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 120,
+            width: 132,
             child: Text(
               label,
-              style: TextStyle(
-                fontSize: 13,
-                color: Colors.grey.shade600,
-              ),
+              style: TextStyle(fontSize: 13.5, color: Colors.grey.shade600),
             ),
           ),
           Expanded(
@@ -290,8 +388,9 @@ class CollecteReceiptScreen extends StatelessWidget {
               value,
               textAlign: TextAlign.right,
               style: TextStyle(
-                fontSize: 14,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
+                height: 1.35,
                 color: isDark ? Colors.white : AppColors.textPrimary,
               ),
             ),

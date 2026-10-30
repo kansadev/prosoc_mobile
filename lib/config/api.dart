@@ -27,7 +27,14 @@ import '../models/jeton_medical_model.dart';
 import '../models/kpi_agent_model.dart';
 import '../models/agent_model.dart';
 import '../models/devise_model.dart';
+import '../models/conversion_preview_model.dart';
+import '../models/medical/catalogue_medical_model.dart';
+import '../models/medical/medical_json.dart';
+import '../models/medical/paiement_medical_model.dart';
+import '../models/medical/prise_en_charge_medicale_model.dart';
+import '../models/medical/souscription_medicale_model.dart';
 import '../models/perception_virtuelle_model.dart';
+import '../models/demande_recharge_wallet_virtuel_model.dart';
 import '../models/agent_maash_model.dart';
 import '../models/session_caisse_model.dart';
 import '../models/retrait_agent_model.dart';
@@ -37,8 +44,11 @@ import '../models/arriere_affilie_model.dart';
 import '../models/penalite_affilie_model.dart';
 import '../models/adhesion_en_ligne_model.dart';
 import '../models/agent_affecter_affilies_model.dart';
+import '../models/agent_affilie_row_model.dart';
+import '../models/zone_sociale_model.dart';
 import '../models/prestation_model.dart';
 import '../models/hopital_partenaire_model.dart';
+import '../offline/sync_models.dart';
 import 'app_environment.dart';
 
 // ============================================
@@ -46,7 +56,8 @@ import 'app_environment.dart';
 // ============================================
 
 class ApiConfig {
-  /// URL de base selon l'environnement (`APP_ENV=dev` ou `uat`).
+  /// URL de base de l'environnement actif (`--dart-define=APP_ENV`, défaut dev),
+  /// voir `AppEnvironmentConfig`.
   static String get baseUrl => AppEnvironmentConfig.baseUrl;
 
   static AppEnvironment get environment => AppEnvironmentConfig.current;
@@ -77,14 +88,18 @@ class ApiResponse<T> {
   final String? errorCode;
   final PaymentChannelConflict? paymentConflict;
 
+  /// Les messages d'échec techniques (HTML serveur, exceptions) sont remplacés
+  /// ici par un message utilisateur : aucun appelant ne peut les afficher.
   ApiResponse({
     required this.success,
     this.data,
-    this.message,
+    String? message,
     this.statusCode,
     this.errorCode,
     this.paymentConflict,
-  });
+  }) : message = success
+           ? message
+           : ApiErrorHelper.sanitizeForDisplay(message, statusCode: statusCode);
 
   factory ApiResponse.success(T data, {int? statusCode}) {
     return ApiResponse(
@@ -247,10 +262,7 @@ class ApiService {
 
   /// POST /api/Utilisateur/logout
   /// Déconnexion utilisateur
-  static Future<void> logout({
-    int? idUtilisateur,
-    String? refreshToken,
-  }) async {
+  static Future<void> logout({int? idUtilisateur, String? refreshToken}) async {
     if (_token == null || _token!.isEmpty) {
       return;
     }
@@ -433,6 +445,122 @@ class ApiService {
     );
   }
 
+  /// GET /api/ZoneSociale — Zones sociales avec leur chef d'équipe, typé
+  ///
+  /// Complète [getZoneSociales] (liste brute) en exposant `chefEquipeAgentId`
+  /// et `chefEquipeNom`, absents du DTO de l'ancienne route.
+  static Future<ApiResponse<({List<ZoneSocialeModel> rows, bool hasNext})>>
+  getZoneSocialesAvecChefs({
+    int page = 1,
+    int pageSize = 50,
+    String? search,
+  }) async {
+    final queryParams = <String, String>{
+      'Page': page.toString(),
+      'PageSize': pageSize.toString(),
+      if (search != null && search.isNotEmpty) 'Search': search,
+    };
+
+    final response = await _get<Map<String, dynamic>>(
+      '/api/ZoneSociale',
+      queryParams: queryParams,
+    );
+
+    final data = response.data;
+    if (!response.success || data == null) {
+      return ApiResponse.error(
+        response.message ?? 'Impossible de charger les zones sociales',
+        statusCode: response.statusCode,
+      );
+    }
+
+    final rows = PaginatedResponseHelper.extractRows(data)
+        .whereType<Map>()
+        .map((row) => ZoneSocialeModel.fromJson(Map<String, dynamic>.from(row)))
+        .toList();
+
+    return ApiResponse.success((
+      rows: rows,
+      hasNext: PaginatedResponseHelper.extractHasNext(data),
+    ), statusCode: response.statusCode);
+  }
+
+  /// PUT /api/ZoneSociale/{id}/chef-equipe — Affecte un chef d'équipe
+  static Future<ApiResponse<ZoneSocialeModel>> affecterChefEquipeZone(
+    int zoneId,
+    int agentId,
+  ) async {
+    final response = await _put<dynamic>(
+      '/api/ZoneSociale/$zoneId/chef-equipe',
+      <String, dynamic>{'agentId': agentId},
+    );
+
+    final data = response.data;
+    if (!response.success || data is! Map) {
+      return ApiResponse.error(
+        response.message ?? 'Échec de l\'affectation du chef d\'équipe',
+        statusCode: response.statusCode,
+      );
+    }
+
+    return ApiResponse.success(
+      ZoneSocialeModel.fromJson(Map<String, dynamic>.from(data)),
+      statusCode: response.statusCode,
+    );
+  }
+
+  /// DELETE /api/ZoneSociale/{id}/chef-equipe — Retire le chef d'équipe
+  static Future<ApiResponse<bool>> retirerChefEquipeZone(int zoneId) async {
+    final response = await _delete('/api/ZoneSociale/$zoneId/chef-equipe');
+
+    return ApiResponse.success(
+      response.success,
+      statusCode: response.statusCode,
+    );
+  }
+
+  /// GET /api/Agent/{agentId}/affilies - Liste typée des affiliés d'un agent
+  ///
+  /// Utilisée pour la réaffectation : la liste est rattachée à l'agent source,
+  /// qui est ensuite transmis via `sourceAgentId`.
+  static Future<ApiResponse<({List<AgentAffilieRow> rows, bool hasNext})>>
+  getAgentAffiliesRows(
+    int agentId, {
+    int page = 1,
+    int pageSize = 20,
+    String? search,
+  }) async {
+    final response = await getAffiliesByAgent(
+      agentId,
+      page: page,
+      pageSize: pageSize,
+      search: search,
+    );
+
+    final data = response.data;
+    if (!response.success || data == null) {
+      return ApiResponse.error(
+        response.message ?? 'Impossible de charger les affiliés de l\'agent',
+        statusCode: response.statusCode,
+      );
+    }
+
+    return ApiResponse.success((
+      rows: parseAgentAffilieRows(data),
+      hasNext: PaginatedResponseHelper.extractHasNext(data),
+    ), statusCode: response.statusCode);
+  }
+
+  static List<AgentAffilieRow> parseAgentAffilieRows(
+    Map<String, dynamic> payload,
+  ) {
+    final rows = PaginatedResponseHelper.extractRows(payload);
+    return rows
+        .whereType<Map>()
+        .map((row) => AgentAffilieRow.fromJson(Map<String, dynamic>.from(row)))
+        .toList();
+  }
+
   /// GET /api/WalletAgent/by-agent/{agentId}?deviseId= — Wallet agent pour une devise
   static Future<ApiResponse<WalletAgentModel>> getWalletAgentByAgentAndDevise(
     int agentId, {
@@ -526,7 +654,9 @@ class ApiService {
     final context = 'WalletVirtuelAgent/by-agent/$agentId';
     try {
       final response = await _httpGet(
-        Uri.parse('${ApiConfig.baseUrl}/api/WalletVirtuelAgent/by-agent/$agentId'),
+        Uri.parse(
+          '${ApiConfig.baseUrl}/api/WalletVirtuelAgent/by-agent/$agentId',
+        ),
         context: context,
       );
 
@@ -550,7 +680,7 @@ class ApiService {
 
   /// PUT /api/WalletVirtuelAgent/{id}/ajouter-solde — Recharge compte virtuel agent
   static Future<ApiResponse<WalletVirtuelAjouterSoldeResult>>
-      ajouterSoldeWalletVirtuelAgent(
+  ajouterSoldeWalletVirtuelAgent(
     int idWalletVirtuelAgent, {
     required double montant,
     String? observation,
@@ -637,7 +767,7 @@ class ApiService {
 
   /// GET /api/WalletVirtuelAgent/by-agent/{agentId}/mouvements/paginated
   static Future<ApiResponse<Map<String, dynamic>>>
-      getWalletVirtuelMouvementsPaginated(
+  getWalletVirtuelMouvementsPaginated(
     int agentId, {
     int page = 1,
     int pageSize = 10,
@@ -688,7 +818,7 @@ class ApiService {
 
   /// GET /api/PerceptionVirtuelle/collectes-en-attente
   static Future<ApiResponse<Map<String, dynamic>>>
-      getPerceptionVirtuelleCollectesEnAttente({
+  getPerceptionVirtuelleCollectesEnAttente({
     required int agentId,
     int page = 1,
     int pageSize = 20,
@@ -727,16 +857,15 @@ class ApiService {
     return PaginatedResponseHelper.extractRows(payload)
         .whereType<Map>()
         .map(
-          (item) => CollecteEnAttenteModel.fromJson(
-            Map<String, dynamic>.from(item),
-          ),
+          (item) =>
+              CollecteEnAttenteModel.fromJson(Map<String, dynamic>.from(item)),
         )
         .toList();
   }
 
   /// POST /api/PerceptionVirtuelle/confirmer
   static Future<ApiResponse<PerceptionVirtuelleConfirmResultModel>>
-      confirmerPerceptionVirtuelle({
+  confirmerPerceptionVirtuelle({
     required int agentId,
     required List<int> collecteIds,
     String? observation,
@@ -750,7 +879,11 @@ class ApiService {
 
     try {
       if (kDebugMode) {
-        ApiErrorHelper.logRequest(context, body, endpoint: '/api/PerceptionVirtuelle/confirmer');
+        ApiErrorHelper.logRequest(
+          context,
+          body,
+          endpoint: '/api/PerceptionVirtuelle/confirmer',
+        );
       }
 
       final response = await _withAuthRetry(
@@ -791,10 +924,9 @@ class ApiService {
       // 400 métier (ex. SESSION_CAISSIER_REQUISE) : parser codeErreur.
       try {
         final decoded = jsonDecode(response.body);
-        final map = _unwrapPerceptionConfirmMap(decoded) ??
-            (decoded is Map
-                ? Map<String, dynamic>.from(decoded)
-                : null);
+        final map =
+            _unwrapPerceptionConfirmMap(decoded) ??
+            (decoded is Map ? Map<String, dynamic>.from(decoded) : null);
         if (map != null &&
             (map.containsKey('codeErreur') || map.containsKey('CodeErreur'))) {
           final result = PerceptionVirtuelleConfirmResultModel.fromJson(map);
@@ -847,7 +979,7 @@ class ApiService {
 
   /// GET /api/PerceptionVirtuelle/synthese-agents
   static Future<ApiResponse<List<PerceptionVirtuelleSyntheseAgent>>>
-      getPerceptionVirtuelleSyntheseAgents() async {
+  getPerceptionVirtuelleSyntheseAgents() async {
     final response = await _get<dynamic>(
       '/api/PerceptionVirtuelle/synthese-agents',
     );
@@ -883,7 +1015,7 @@ class ApiService {
 
   /// GET /api/PerceptionVirtuelle/historique
   static Future<ApiResponse<Map<String, dynamic>>>
-      getPerceptionVirtuelleHistorique({
+  getPerceptionVirtuelleHistorique({
     int page = 1,
     int pageSize = 20,
     int? agentId,
@@ -920,12 +1052,211 @@ class ApiService {
     for (final item in rows) {
       if (item is! Map) continue;
       parsed.add(
-        PerceptionVirtuelleHistoModel.fromJson(
-          Map<String, dynamic>.from(item),
-        ),
+        PerceptionVirtuelleHistoModel.fromJson(Map<String, dynamic>.from(item)),
       );
     }
     return parsed;
+  }
+
+  /// POST /api/DemandeRechargeWalletVirtuel
+  ///
+  /// Le serveur calcule le montant : seuls `agentId` et `motif` sont acceptés.
+  static Future<ApiResponse<DemandeRechargeWalletVirtuel>>
+  createDemandeRechargeWalletVirtuel({
+    required int agentId,
+    String? motif,
+  }) async {
+    final response = await _post<dynamic>(
+      '/api/DemandeRechargeWalletVirtuel',
+      <String, dynamic>{
+        'agentId': agentId,
+        if (motif != null && motif.trim().isNotEmpty) 'motif': motif.trim(),
+      },
+      logContext: 'POST /api/DemandeRechargeWalletVirtuel',
+    );
+
+    if (!response.success || response.data == null) {
+      return ApiResponse<DemandeRechargeWalletVirtuel>(
+        success: false,
+        message: response.message,
+        statusCode: response.statusCode,
+      );
+    }
+
+    final data = response.data;
+    if (data is! Map) {
+      return ApiResponse<DemandeRechargeWalletVirtuel>(
+        success: false,
+        message: response.message ?? 'Réponse inattendue du serveur',
+        statusCode: response.statusCode,
+      );
+    }
+
+    return ApiResponse<DemandeRechargeWalletVirtuel>(
+      success: true,
+      data: DemandeRechargeWalletVirtuel.fromJson(
+        Map<String, dynamic>.from(data),
+      ),
+      statusCode: response.statusCode,
+    );
+  }
+
+  /// GET /api/DemandeRechargeWalletVirtuel/en-attente
+  ///
+  /// File d'attente Superviseur : uniquement les demandes en attente.
+  static Future<ApiResponse<List<DemandeRechargeWalletVirtuel>>>
+  getDemandesRechargeEnAttente() async {
+    final response = await _get<dynamic>(
+      '/api/DemandeRechargeWalletVirtuel/en-attente',
+    );
+
+    if (!response.success) {
+      return ApiResponse<List<DemandeRechargeWalletVirtuel>>(
+        success: false,
+        message: response.message,
+        statusCode: response.statusCode,
+      );
+    }
+
+    final rows = response.data is List
+        ? response.data as List
+        : PaginatedResponseHelper.extractRows(response.data);
+    final parsed = <DemandeRechargeWalletVirtuel>[];
+    for (final item in rows) {
+      if (item is! Map) continue;
+      try {
+        parsed.add(
+          DemandeRechargeWalletVirtuel.fromJson(
+            Map<String, dynamic>.from(item),
+          ),
+        );
+      } catch (_) {
+        // Ignore les lignes illisibles plutôt que de bloquer la file.
+      }
+    }
+    parsed.sort((a, b) {
+      final ad = a.dateDemande ?? a.dateCreation;
+      final bd = b.dateDemande ?? b.dateCreation;
+      if (ad == null && bd == null) return b.idDemande.compareTo(a.idDemande);
+      if (ad == null) return 1;
+      if (bd == null) return -1;
+      final byDate = bd.compareTo(ad);
+      return byDate != 0 ? byDate : b.idDemande.compareTo(a.idDemande);
+    });
+
+    return ApiResponse<List<DemandeRechargeWalletVirtuel>>(
+      success: true,
+      data: parsed,
+      statusCode: response.statusCode,
+    );
+  }
+
+  /// POST /api/DemandeRechargeWalletVirtuel/{id}/confirmer — Crédite le wallet.
+  static Future<ApiResponse<DemandeRechargeWalletVirtuel>>
+  confirmerDemandeRecharge(int idDemande) async {
+    final response = await _post<dynamic>(
+      '/api/DemandeRechargeWalletVirtuel/$idDemande/confirmer',
+      const <String, dynamic>{},
+      logContext: 'POST confirmer demande recharge #$idDemande',
+    );
+
+    if (!response.success) {
+      return ApiResponse<DemandeRechargeWalletVirtuel>(
+        success: false,
+        message: response.message,
+        statusCode: response.statusCode,
+      );
+    }
+
+    final data = response.data;
+    if (data is! Map) {
+      return ApiResponse<DemandeRechargeWalletVirtuel>(
+        success: true,
+        statusCode: response.statusCode,
+      );
+    }
+
+    return ApiResponse<DemandeRechargeWalletVirtuel>(
+      success: true,
+      data: DemandeRechargeWalletVirtuel.fromJson(
+        Map<String, dynamic>.from(data),
+      ),
+      statusCode: response.statusCode,
+    );
+  }
+
+  /// POST /api/DemandeRechargeWalletVirtuel/{id}/rejeter — Rejette la demande.
+  static Future<ApiResponse<DemandeRechargeWalletVirtuel>>
+  rejeterDemandeRecharge(int idDemande, {required String motif}) async {
+    final response = await _post<dynamic>(
+      '/api/DemandeRechargeWalletVirtuel/$idDemande/rejeter',
+      <String, dynamic>{'motif': motif.trim()},
+      logContext: 'POST rejeter demande recharge #$idDemande',
+    );
+
+    if (!response.success) {
+      return ApiResponse<DemandeRechargeWalletVirtuel>(
+        success: false,
+        message: response.message,
+        statusCode: response.statusCode,
+      );
+    }
+
+    final data = response.data;
+    if (data is! Map) {
+      return ApiResponse<DemandeRechargeWalletVirtuel>(
+        success: true,
+        statusCode: response.statusCode,
+      );
+    }
+
+    return ApiResponse<DemandeRechargeWalletVirtuel>(
+      success: true,
+      data: DemandeRechargeWalletVirtuel.fromJson(
+        Map<String, dynamic>.from(data),
+      ),
+      statusCode: response.statusCode,
+    );
+  }
+
+  /// GET /api/DemandeRechargeWalletVirtuel/by-agent/{agentId}
+  static Future<ApiResponse<List<DemandeRechargeWalletVirtuel>>>
+  getDemandesRechargeWalletByAgent(int agentId) async {
+    final response = await _get<dynamic>(
+      '/api/DemandeRechargeWalletVirtuel/by-agent/$agentId',
+    );
+
+    if (!response.success) {
+      return ApiResponse<List<DemandeRechargeWalletVirtuel>>(
+        success: false,
+        message: response.message,
+        statusCode: response.statusCode,
+      );
+    }
+
+    final rows = response.data is List ? response.data as List : const [];
+    final parsed = <DemandeRechargeWalletVirtuel>[];
+    for (final item in rows) {
+      if (item is! Map) continue;
+      parsed.add(
+        DemandeRechargeWalletVirtuel.fromJson(Map<String, dynamic>.from(item)),
+      );
+    }
+    parsed.sort((a, b) {
+      final ad = a.dateDemande ?? a.dateCreation;
+      final bd = b.dateDemande ?? b.dateCreation;
+      if (ad == null && bd == null) return b.idDemande.compareTo(a.idDemande);
+      if (ad == null) return 1;
+      if (bd == null) return -1;
+      final byDate = bd.compareTo(ad);
+      return byDate != 0 ? byDate : b.idDemande.compareTo(a.idDemande);
+    });
+
+    return ApiResponse<List<DemandeRechargeWalletVirtuel>>(
+      success: true,
+      data: parsed,
+      statusCode: response.statusCode,
+    );
   }
 
   /// GET /api/WalletMouvement/by-agent/{agentId}/paginated
@@ -967,9 +1298,8 @@ class ApiService {
     return PaginatedResponseHelper.extractRows(payload)
         .whereType<Map>()
         .map(
-          (item) => WalletMouvementModel.fromJson(
-            Map<String, dynamic>.from(item),
-          ),
+          (item) =>
+              WalletMouvementModel.fromJson(Map<String, dynamic>.from(item)),
         )
         .toList();
   }
@@ -984,7 +1314,9 @@ class ApiService {
   static Future<ApiResponse<WalletMouvementModel>> getWalletMouvementById(
     int id,
   ) async {
-    final response = await _get<Map<String, dynamic>>('/api/WalletMouvement/$id');
+    final response = await _get<Map<String, dynamic>>(
+      '/api/WalletMouvement/$id',
+    );
     if (response.success && response.data != null) {
       return ApiResponse.success(
         WalletMouvementModel.fromJson(response.data!),
@@ -1030,10 +1362,7 @@ class ApiService {
 
   /// GET /api/DashboardAffilie/resume/{affilieId}?annee=
   static Future<ApiResponse<DashboardAffilieResumeModel>>
-      getDashboardAffilieResume(
-    int affilieId, {
-    int? annee,
-  }) async {
+  getDashboardAffilieResume(int affilieId, {int? annee}) async {
     final context = 'DashboardAffilie/resume/$affilieId';
     try {
       final query = annee != null ? '?annee=$annee' : '';
@@ -1064,11 +1393,7 @@ class ApiService {
 
   /// GET /api/DashboardAffilie/cotisations/{affilieId}?mois=&annee=
   static Future<ApiResponse<List<DashboardAffilieCotisation>>>
-      getDashboardAffilieCotisations(
-    int affilieId, {
-    int? mois,
-    int? annee,
-  }) async {
+  getDashboardAffilieCotisations(int affilieId, {int? mois, int? annee}) async {
     final context = 'DashboardAffilie/cotisations/$affilieId';
     try {
       final params = <String, String>{};
@@ -1098,7 +1423,7 @@ class ApiService {
 
   /// GET /api/DashboardAffilie/cotisations/recentes/{affilieId}?limit=
   static Future<ApiResponse<List<DashboardAffilieCotisation>>>
-      getDashboardAffilieCotisationsRecentes(
+  getDashboardAffilieCotisationsRecentes(
     int affilieId, {
     int limit = 10,
   }) async {
@@ -1125,11 +1450,7 @@ class ApiService {
 
   /// GET /api/DashboardAffilie/prestations/{affilieId}?mois=&annee=
   static Future<ApiResponse<List<DashboardAffiliePrestation>>>
-      getDashboardAffiliePrestations(
-    int affilieId, {
-    int? mois,
-    int? annee,
-  }) async {
+  getDashboardAffiliePrestations(int affilieId, {int? mois, int? annee}) async {
     final context = 'DashboardAffilie/prestations/$affilieId';
     try {
       final params = <String, String>{};
@@ -1159,7 +1480,7 @@ class ApiService {
 
   /// GET /api/DashboardAffilie/prestations/recentes/{affilieId}?limit=
   static Future<ApiResponse<List<DashboardAffiliePrestation>>>
-      getDashboardAffiliePrestationsRecentes(
+  getDashboardAffiliePrestationsRecentes(
     int affilieId, {
     int limit = 10,
   }) async {
@@ -1186,7 +1507,8 @@ class ApiService {
 
   /// GET /api/Affilie/paiements/historique — historique paginé des paiements.
   /// Essaie d'abord une requête minimale (évite certains 500 liés aux filtres).
-  static Future<ApiResponse<Map<String, dynamic>>> getAffiliePaiementsHistorique({
+  static Future<ApiResponse<Map<String, dynamic>>>
+  getAffiliePaiementsHistorique({
     int page = 1,
     int pageSize = 20,
     String? sortBy,
@@ -1320,9 +1642,8 @@ class ApiService {
   }
 
   /// GET /api/Superviseur/hierarchie/{superviseurId} — Hiérarchie équipe
-  static Future<ApiResponse<SuperviseurHierarchieModel>> getSuperviseurHierarchie(
-    int superviseurId,
-  ) async {
+  static Future<ApiResponse<SuperviseurHierarchieModel>>
+  getSuperviseurHierarchie(int superviseurId) async {
     final context = 'Superviseur/hierarchie/$superviseurId';
     try {
       final response = await _httpGet(
@@ -1456,9 +1777,7 @@ class ApiService {
 
   /// GET /api/DashboardSuperviseur/indicateurs-performance/{superviseurId}
   static Future<ApiResponse<SuperviseurIndicateursPerformance>>
-      getDashboardSuperviseurIndicateursPerformance(
-    int superviseurId,
-  ) async {
+  getDashboardSuperviseurIndicateursPerformance(int superviseurId) async {
     final context =
         'DashboardSuperviseur/indicateurs-performance/$superviseurId';
     try {
@@ -1493,10 +1812,7 @@ class ApiService {
 
   /// GET /api/DashboardSuperviseur/top-agents/{superviseurId}?limit=
   static Future<ApiResponse<List<SuperviseurAgentPerformance>>>
-      getDashboardSuperviseurTopAgents(
-    int superviseurId, {
-    int? limit,
-  }) async {
+  getDashboardSuperviseurTopAgents(int superviseurId, {int? limit}) async {
     final context = 'DashboardSuperviseur/top-agents/$superviseurId';
     try {
       final query = limit != null ? '?limit=$limit' : '';
@@ -1562,7 +1878,7 @@ class ApiService {
 
   /// GET /api/DashboardChefEquipe/agents — Agents AT (résumé) de la zone
   static Future<ApiResponse<List<ChefEquipeAgentResumeDto>>>
-      getChefEquipeAgents() async {
+  getChefEquipeAgents() async {
     const context = 'DashboardChefEquipe/agents';
     try {
       final response = await _httpGet(
@@ -1575,13 +1891,16 @@ class ApiService {
         final rows = decoded is List
             ? decoded
             : decoded is Map
-                ? PaginatedResponseHelper.extractRows(decoded)
-                : const [];
+            ? PaginatedResponseHelper.extractRows(decoded)
+            : const [];
 
         final agents = rows
             .whereType<Map>()
-            .map((row) =>
-                ChefEquipeAgentResumeDto.fromJson(Map<String, dynamic>.from(row)))
+            .map(
+              (row) => ChefEquipeAgentResumeDto.fromJson(
+                Map<String, dynamic>.from(row),
+              ),
+            )
             .toList();
 
         return ApiResponse.success(agents, statusCode: response.statusCode);
@@ -1595,10 +1914,7 @@ class ApiService {
 
   /// GET /api/DashboardChefEquipe/agents/{agentId}/mouvements-wallet?limit=20
   static Future<ApiResponse<AgentCommissionsResumeDto>>
-      getChefEquipeMouvementsWallet(
-    int agentId, {
-    int limit = 20,
-  }) async {
+  getChefEquipeMouvementsWallet(int agentId, {int limit = 20}) async {
     final context = 'DashboardChefEquipe/agents/$agentId/mouvements-wallet';
     try {
       final query = limit > 0 ? '?limit=$limit' : '';
@@ -1634,10 +1950,7 @@ class ApiService {
 
   /// GET /api/DashboardChefEquipe/agents/{agentId}/collectes?limit=50
   static Future<ApiResponse<List<ChefEquipeCollecteResumeDto>>>
-      getChefEquipeCollectes(
-    int agentId, {
-    int limit = 50,
-  }) async {
+  getChefEquipeCollectes(int agentId, {int limit = 50}) async {
     final context = 'DashboardChefEquipe/agents/$agentId/collectes';
     try {
       final query = limit > 0 ? '?limit=$limit' : '';
@@ -1653,20 +1966,19 @@ class ApiService {
         final rows = decoded is List
             ? decoded
             : decoded is Map
-                ? PaginatedResponseHelper.extractRows(decoded)
-                : const [];
+            ? PaginatedResponseHelper.extractRows(decoded)
+            : const [];
 
         final collectes = rows
             .whereType<Map>()
-            .map((row) => ChefEquipeCollecteResumeDto.fromJson(
-                  Map<String, dynamic>.from(row),
-                ))
+            .map(
+              (row) => ChefEquipeCollecteResumeDto.fromJson(
+                Map<String, dynamic>.from(row),
+              ),
+            )
             .toList();
 
-        return ApiResponse.success(
-          collectes,
-          statusCode: response.statusCode,
-        );
+        return ApiResponse.success(collectes, statusCode: response.statusCode);
       }
 
       return _errorResponse(response, context: context);
@@ -1677,7 +1989,7 @@ class ApiService {
 
   /// GET /api/DashboardPercepteur/summary — Dashboard percepteur (token JWT)
   static Future<ApiResponse<DashboardPercepteurModel>>
-      getDashboardPercepteurSummary() async {
+  getDashboardPercepteurSummary() async {
     const context = 'DashboardPercepteur/summary';
     try {
       final response = await _httpGet(
@@ -1709,9 +2021,7 @@ class ApiService {
 
   /// GET /api/DashboardPercepteur/transactions — Transactions récentes percepteur
   static Future<ApiResponse<List<PercepteurTransaction>>>
-      getDashboardPercepteurTransactions({
-    int limit = 5,
-  }) async {
+  getDashboardPercepteurTransactions({int limit = 5}) async {
     const context = 'DashboardPercepteur/transactions';
     try {
       final response = await _httpGet(
@@ -1747,9 +2057,7 @@ class ApiService {
 
   /// GET /api/DashboardPercepteur/evolution-transactions — Évolution par période
   static Future<ApiResponse<List<PercepteurEvolutionTransaction>>>
-      getDashboardPercepteurEvolutionTransactions({
-    int mois = 6,
-  }) async {
+  getDashboardPercepteurEvolutionTransactions({int mois = 6}) async {
     const context = 'DashboardPercepteur/evolution-transactions';
     try {
       final response = await _httpGet(
@@ -1772,10 +2080,7 @@ class ApiService {
               ),
             )
             .toList();
-        return ApiResponse.success(
-          evolution,
-          statusCode: response.statusCode,
-        );
+        return ApiResponse.success(evolution, statusCode: response.statusCode);
       }
       return _errorResponse(response, context: context);
     } catch (e, stackTrace) {
@@ -1784,9 +2089,12 @@ class ApiService {
   }
 
   /// GET /api/DashboardAgent/performance - Performance du dashboard agent (agentID from token)
-  static Future<ApiResponse<DashboardAgentModel>> getDashboardAgentPerformance(
-  ) {
-    return _getDashboardAgent('performance', context: 'DashboardAgent/performance');
+  static Future<ApiResponse<DashboardAgentModel>>
+  getDashboardAgentPerformance() {
+    return _getDashboardAgent(
+      'performance',
+      context: 'DashboardAgent/performance',
+    );
   }
 
   /// GET /api/DashboardAgent/terrain - Dashboard terrain agent (agentID from token)
@@ -1795,18 +2103,17 @@ class ApiService {
   }
 
   /// GET /api/DashboardAgent/objectifs — Objectifs mensuels agent (mois/annee optionnels).
-  static Future<ApiResponse<DashboardAgentObjectifs>> getDashboardAgentObjectifs({
-    int? mois,
-    int? annee,
-  }) async {
+  static Future<ApiResponse<DashboardAgentObjectifs>>
+  getDashboardAgentObjectifs({int? mois, int? annee}) async {
     const context = 'DashboardAgent/objectifs';
     try {
       final query = <String, String>{
         if (mois != null) 'mois': mois.toString(),
         if (annee != null) 'annee': annee.toString(),
       };
-      final uri = Uri.parse('${ApiConfig.baseUrl}/api/DashboardAgent/objectifs')
-          .replace(queryParameters: query.isEmpty ? null : query);
+      final uri = Uri.parse(
+        '${ApiConfig.baseUrl}/api/DashboardAgent/objectifs',
+      ).replace(queryParameters: query.isEmpty ? null : query);
       final response = await _httpGet(uri, context: context);
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
@@ -1814,9 +2121,7 @@ class ApiService {
         if (decoded is Map) {
           final raw = Map<String, dynamic>.from(decoded);
           final nested = raw['data'] ?? raw['Data'] ?? raw['objectifs'];
-          map = nested is Map
-              ? Map<String, dynamic>.from(nested)
-              : raw;
+          map = nested is Map ? Map<String, dynamic>.from(nested) : raw;
         }
         if (map == null) {
           return ApiResponse.error(
@@ -1834,7 +2139,7 @@ class ApiService {
 
   /// GET /api/DashboardAgent/graphs - Graphiques du dashboard agent (agentID from token)
   static Future<ApiResponse<DashboardAgentGraphsModel>>
-      getDashboardAgentGraphs() async {
+  getDashboardAgentGraphs() async {
     const context = 'DashboardAgent/graphs';
     try {
       final response = await _httpGet(
@@ -1951,9 +2256,11 @@ class ApiService {
         return ApiResponse.success(
           rows
               .whereType<Map>()
-              .map((json) => RecentAffilieModel.fromJson(
-                    Map<String, dynamic>.from(json),
-                  ))
+              .map(
+                (json) => RecentAffilieModel.fromJson(
+                  Map<String, dynamic>.from(json),
+                ),
+              )
               .toList(),
         );
       } else {
@@ -2119,7 +2426,7 @@ class ApiService {
 
   /// POST /api/Adhesion/with-affilie-paiement-electronique — Mobile Money / FlexPay
   static Future<ApiResponse<AdhesionElectronicPaymentResponse>>
-      createAdhesionWithAffiliePaiementElectronique({
+  createAdhesionWithAffiliePaiementElectronique({
     required AdhesionWithAffilieRequest adhesion,
     required String modePaiement,
     required String telephonePaiement,
@@ -2133,15 +2440,11 @@ class ApiService {
         'telephonePaiement': telephonePaiement,
         'devisePaiementId': devisePaiementId,
       });
-      ApiErrorHelper.logRequest(
-        context,
-        {
-          'modePaiement': modePaiement,
-          'telephonePaiement': telephonePaiement,
-          'devisePaiementId': devisePaiementId,
-        },
-        endpoint: '/api/Adhesion/with-affilie-paiement-electronique',
-      );
+      ApiErrorHelper.logRequest(context, {
+        'modePaiement': modePaiement,
+        'telephonePaiement': telephonePaiement,
+        'devisePaiementId': devisePaiementId,
+      }, endpoint: '/api/Adhesion/with-affilie-paiement-electronique');
 
       final response = await http.post(
         Uri.parse(
@@ -2164,12 +2467,13 @@ class ApiService {
         );
         final data = jsonDecode(response.body);
         if (data is Map<String, dynamic>) {
-          final payload = data.containsKey('idCollecteEnAttente') ||
+          final payload =
+              data.containsKey('idCollecteEnAttente') ||
                   data.containsKey('flexPayAccepted')
               ? data
               : (data['data'] is Map<String, dynamic>
-                  ? data['data'] as Map<String, dynamic>
-                  : data);
+                    ? data['data'] as Map<String, dynamic>
+                    : data);
           return ApiResponse.success(
             AdhesionElectronicPaymentResponse.fromJson(payload),
             statusCode: response.statusCode,
@@ -2202,10 +2506,7 @@ class ApiService {
 
   /// GET /api/Adhesion/en-ligne-sans-gestionnaire — File d'attente (Superviseur)
   static Future<ApiResponse<PaginatedAdhesionsEnLigne>>
-      getAdhesionsEnLigneSansGestionnaire({
-    int page = 1,
-    int pageSize = 20,
-  }) async {
+  getAdhesionsEnLigneSansGestionnaire({int page = 1, int pageSize = 20}) async {
     const context = 'Adhesion/en-ligne-sans-gestionnaire';
     final query =
         '?page=$page&pageSize=$pageSize&pageNumber=$page&Page=$page&PageSize=$pageSize';
@@ -2252,7 +2553,7 @@ class ApiService {
 
   /// PUT /api/Agent/{agentId}/affecter-affilies — Affectation affiliés vers AT
   static Future<ApiResponse<AgentAffecterAffiliesResultModel>>
-      affecterAffiliesToAgent(
+  affecterAffiliesToAgent(
     int agentId, {
     required List<int> affilieIds,
     int? sourceAgentId,
@@ -2275,7 +2576,23 @@ class ApiService {
         ),
       );
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 ||
+          response.statusCode == 201 ||
+          response.statusCode == 204) {
+        // 204 No Content : l'affectation est enregistrée sans corps renvoyé.
+        if (response.body.trim().isEmpty) {
+          return ApiResponse.success(
+            AgentAffecterAffiliesResultModel(
+              agentId: agentId,
+              totalDemandes: sourceAgentId != null ? 1 : affilieIds.length,
+              totalReussites: sourceAgentId != null ? 1 : affilieIds.length,
+              totalEchecs: 0,
+              resultats: const [],
+            ),
+            statusCode: response.statusCode,
+          );
+        }
+
         final decoded = jsonDecode(response.body);
         if (decoded is Map) {
           final map = decoded is Map<String, dynamic>
@@ -2318,9 +2635,8 @@ class ApiService {
         final items = list
             .whereType<Map>()
             .map(
-              (row) => LienParenteModel.fromJson(
-                Map<String, dynamic>.from(row),
-              ),
+              (row) =>
+                  LienParenteModel.fromJson(Map<String, dynamic>.from(row)),
             )
             .toList();
         return ApiResponse.success(items, statusCode: response.statusCode);
@@ -2660,7 +2976,8 @@ class ApiService {
   }
 
   /// GET /api/TarifCotisation/{id}/montant-total?nombreDependants={n}
-  static Future<ApiResponse<Map<String, dynamic>>> getTarifCotisationMontantTotal(
+  static Future<ApiResponse<Map<String, dynamic>>>
+  getTarifCotisationMontantTotal(
     int tarifId, {
     int nombreDependants = 0,
   }) async {
@@ -2727,12 +3044,13 @@ class ApiService {
         final decoded = jsonDecode(response.body);
         Map<String, dynamic>? payload;
         if (decoded is Map<String, dynamic>) {
-          payload = decoded.containsKey('success') ||
+          payload =
+              decoded.containsKey('success') ||
                   decoded.containsKey('alreadyProcessed')
               ? decoded
               : (decoded['data'] is Map
-                  ? Map<String, dynamic>.from(decoded['data'] as Map)
-                  : decoded);
+                    ? Map<String, dynamic>.from(decoded['data'] as Map)
+                    : decoded);
         }
         if (payload == null) {
           return ApiResponse.error(
@@ -2746,10 +3064,7 @@ class ApiService {
         );
       }
 
-      return _errorResponse<FlexPayVerifierResult>(
-        response,
-        context: context,
-      );
+      return _errorResponse<FlexPayVerifierResult>(response, context: context);
     } catch (e, stackTrace) {
       return _errorFromException(e, stackTrace, context);
     }
@@ -2877,7 +3192,7 @@ class ApiService {
 
   /// POST /api/Collecte/with-paiement-electronique — Mobile Money / Carte (FlexPay)
   static Future<ApiResponse<AdhesionElectronicPaymentResponse>>
-      createCollecteWithPaiementElectronique({
+  createCollecteWithPaiementElectronique({
     required Map<String, dynamic> collecte,
     required String modePaiement,
     required String telephonePaiement,
@@ -2891,16 +3206,12 @@ class ApiService {
         'telephonePaiement': telephonePaiement,
         'devisePaiementId': devisePaiementId,
       });
-      ApiErrorHelper.logRequest(
-        context,
-        {
-          'modePaiement': modePaiement,
-          'telephonePaiement': telephonePaiement,
-          'devisePaiementId': devisePaiementId,
-          'typeCollecte': collecte['typeCollecte'],
-        },
-        endpoint: '/api/Collecte/with-paiement-electronique',
-      );
+      ApiErrorHelper.logRequest(context, {
+        'modePaiement': modePaiement,
+        'telephonePaiement': telephonePaiement,
+        'devisePaiementId': devisePaiementId,
+        'typeCollecte': collecte['typeCollecte'],
+      }, endpoint: '/api/Collecte/with-paiement-electronique');
 
       final response = await http.post(
         Uri.parse(
@@ -2923,12 +3234,13 @@ class ApiService {
         );
         final data = jsonDecode(response.body);
         if (data is Map<String, dynamic>) {
-          final payload = data.containsKey('idCollecteEnAttente') ||
+          final payload =
+              data.containsKey('idCollecteEnAttente') ||
                   data.containsKey('flexPayAccepted')
               ? data
               : (data['data'] is Map<String, dynamic>
-                  ? data['data'] as Map<String, dynamic>
-                  : data);
+                    ? data['data'] as Map<String, dynamic>
+                    : data);
           return ApiResponse.success(
             AdhesionElectronicPaymentResponse.fromJson(payload),
             statusCode: response.statusCode,
@@ -2991,6 +3303,100 @@ class ApiService {
   // ============================================
   // DEVISES
   // ============================================
+
+  /// GET /api/Devise/actives — devises actives (identifiants à retrouver par code).
+  static Future<ApiResponse<List<Devise>>> getDevisesActives() async {
+    final response = await _get<dynamic>('/api/Devise/actives');
+    if (!response.success || response.data == null) {
+      return ApiResponse.error(
+        response.message ?? 'Impossible de charger les devises.',
+        statusCode: response.statusCode,
+      );
+    }
+    final rows = response.data is List
+        ? response.data as List
+        : PaginatedResponseHelper.extractRows(response.data);
+    final devises = rows
+        .whereType<Map>()
+        .map((e) => Devise.fromJson(Map<String, dynamic>.from(e)))
+        .where((d) => d.idDevise > 0 && d.code.isNotEmpty && d.statut)
+        .toList();
+    return ApiResponse.success(devises, statusCode: response.statusCode);
+  }
+
+  /// GET /api/Devise/preview-conversion — montant à payer dans la devise cible.
+  ///
+  /// Source = devise du tarif, cible = devise de paiement (toujours précisée,
+  /// sinon l'API utilise la devise principale). Le taux n'est pas réservé.
+  static Future<ApiResponse<ConversionPreview>> previewConversion({
+    required String codeDeviseSource,
+    required double montant,
+    required String codeDeviseCible,
+  }) async {
+    final response = await _get<Map<String, dynamic>>(
+      '/api/Devise/preview-conversion',
+      queryParams: {
+        'codeDeviseSource': codeDeviseSource,
+        'montant': montant.toString(),
+        'codeDeviseCible': codeDeviseCible,
+      },
+    );
+    if (!response.success || response.data == null) {
+      return ApiResponse.error(
+        response.message ?? 'Conversion indisponible.',
+        statusCode: response.statusCode,
+      );
+    }
+    return ApiResponse.success(
+      ConversionPreview.fromJson(response.data!),
+      statusCode: response.statusCode,
+    );
+  }
+
+  /// Écart maximal accepté par le serveur, dans la devise du tarif.
+  static const double toleranceConversion = 0.01;
+
+  /// Aperçu suivi d'un contrôle aller-retour.
+  ///
+  /// Le serveur reconvertit le montant payé vers la devise du tarif et refuse
+  /// un écart supérieur à [toleranceConversion]. Si les taux configurés dans
+  /// les deux sens divergent, ou si l'arrondi de la devise de paiement est
+  /// trop grossier (ex. 200 CDF ≈ 0,09 USD), le paiement serait refusé : on
+  /// le détecte avant l'envoi. Si le contrôle retour échoue (réseau), l'aperçu
+  /// est renvoyé tel quel et le serveur reste juge.
+  static Future<ApiResponse<ConversionPreview>> previewConversionVerifiee({
+    required String codeDeviseSource,
+    required double montant,
+    required String codeDeviseCible,
+  }) async {
+    final aller = await previewConversion(
+      codeDeviseSource: codeDeviseSource,
+      montant: montant,
+      codeDeviseCible: codeDeviseCible,
+    );
+    if (!aller.success || aller.data == null) return aller;
+
+    final retour = await previewConversion(
+      codeDeviseSource: codeDeviseCible,
+      montant: aller.data!.montantConverti,
+      codeDeviseCible: codeDeviseSource,
+    );
+    if (!retour.success || retour.data == null) return aller;
+
+    final reconverti = retour.data!.montantConverti;
+    if ((reconverti - montant).abs() > toleranceConversion) {
+      return ApiResponse.error(
+        'Paiement en $codeDeviseCible impossible pour ce montant : '
+        '${aller.data!.montantConvertiLabel} sont recomptés '
+        '${retour.data!.montantConvertiLabel} au lieu de '
+        '${aller.data!.montantSourceLabel} (taux de change incohérents ou '
+        'montant trop faible pour cette devise). Payez en '
+        '$codeDeviseSource ou faites vérifier les taux de change.',
+        statusCode: 400,
+      );
+    }
+    return aller;
+  }
 
   /// GET /api/Devise — Liste paginée des devises (retourne la liste `data`).
   static Future<ApiResponse<List<dynamic>>> getDevises({
@@ -3058,7 +3464,8 @@ class ApiService {
       'PageSize': pageSize.toString(),
       'pageSize': pageSize.toString(),
       if (sortBy != null && sortBy.isNotEmpty) 'SortBy': sortBy,
-      if (sortDirection != null && sortDirection.isNotEmpty) 'SortDirection': sortDirection,
+      if (sortDirection != null && sortDirection.isNotEmpty)
+        'SortDirection': sortDirection,
       if (search != null && search.isNotEmpty) 'Search': search,
     };
 
@@ -3098,7 +3505,8 @@ class ApiService {
   // ============================================
 
   /// GET /api/Caisse/session/courante — 404 si aucune session ouverte.
-  static Future<ApiResponse<SessionCaisseModel?>> getSessionCaisseCourante() async {
+  static Future<ApiResponse<SessionCaisseModel?>>
+  getSessionCaisseCourante() async {
     const context = 'Caisse/session/courante';
     try {
       final response = await _withAuthRetry(
@@ -3120,9 +3528,7 @@ class ApiService {
         if (decoded is Map) {
           final raw = Map<String, dynamic>.from(decoded);
           final nested = raw['data'] ?? raw['Data'];
-          map = nested is Map
-              ? Map<String, dynamic>.from(nested)
-              : raw;
+          map = nested is Map ? Map<String, dynamic>.from(nested) : raw;
         }
         if (map == null) {
           return ApiResponse.error(
@@ -3136,10 +3542,7 @@ class ApiService {
         );
       }
 
-      return _errorResponse<SessionCaisseModel?>(
-        response,
-        context: context,
-      );
+      return _errorResponse<SessionCaisseModel?>(response, context: context);
     } catch (e, stackTrace) {
       return _errorFromException(e, stackTrace, context);
     }
@@ -3176,9 +3579,7 @@ class ApiService {
         if (decoded is Map) {
           final raw = Map<String, dynamic>.from(decoded);
           final nested = raw['data'] ?? raw['Data'];
-          map = nested is Map
-              ? Map<String, dynamic>.from(nested)
-              : raw;
+          map = nested is Map ? Map<String, dynamic>.from(nested) : raw;
         }
         if (map == null) {
           return ApiResponse.error(
@@ -3481,7 +3882,8 @@ class ApiService {
         if (kDebugMode && !ApiErrorHelper.isRetryableNetworkError(e)) {
           ApiErrorHelper.logException(context, e, stackTrace);
         }
-        if (ApiErrorHelper.isRetryableNetworkError(e) && attempt < maxAttempts) {
+        if (ApiErrorHelper.isRetryableNetworkError(e) &&
+            attempt < maxAttempts) {
           await Future<void>.delayed(Duration(milliseconds: 600 * attempt));
           continue;
         }
@@ -3492,15 +3894,20 @@ class ApiService {
     throw lastError ?? Exception('Requête GET échouée');
   }
 
-  static Future<ApiResponse<T>> _get<T>(String endpoint, {Map<String, String>? queryParams}) async {
+  static Future<ApiResponse<T>> _get<T>(
+    String endpoint, {
+    Map<String, String>? queryParams,
+  }) async {
     try {
       Uri uri;
       if (queryParams != null && queryParams.isNotEmpty) {
-        uri = Uri.parse('${ApiConfig.baseUrl}$endpoint').replace(queryParameters: queryParams);
+        uri = Uri.parse(
+          '${ApiConfig.baseUrl}$endpoint',
+        ).replace(queryParameters: queryParams);
       } else {
         uri = Uri.parse('${ApiConfig.baseUrl}$endpoint');
       }
-      
+
       if (kDebugMode) {
         debugPrint('[API] GET $endpoint');
       }
@@ -3552,11 +3959,7 @@ class ApiService {
       if (response.statusCode == 200 || response.statusCode == 201) {
         return _handleResponse<T>(response);
       }
-      return _errorResponse<T>(
-        response,
-        context: context,
-        requestBody: body,
-      );
+      return _errorResponse<T>(response, context: context, requestBody: body);
     } catch (e, stackTrace) {
       return _errorFromException(e, stackTrace, context);
     }
@@ -3700,10 +4103,7 @@ class ApiService {
       statusCode: response.statusCode,
       serverDetail: detail,
     );
-    return ApiResponse.error(
-      message,
-      statusCode: response.statusCode,
-    );
+    return ApiResponse.error(message, statusCode: response.statusCode);
   }
 
   static ApiResponse<T> _errorFromException<T>(
@@ -3771,8 +4171,7 @@ class ApiService {
         if (title is String && title.isNotEmpty) {
           return title;
         }
-        final nestedValidation =
-            ApiErrorHelper.validationMessageFromBody(body);
+        final nestedValidation = ApiErrorHelper.validationMessageFromBody(body);
         if (nestedValidation != null && nestedValidation.isNotEmpty) {
           return nestedValidation;
         }
@@ -3782,10 +4181,497 @@ class ApiService {
         final errorField = data['error'] ?? data['Error'];
         if (errorField is String && errorField.isNotEmpty) return errorField;
       }
-      return body.length > 300 ? '${body.substring(0, 300)}...' : body;
     } catch (_) {
-      return body.length > 300 ? '${body.substring(0, 300)}...' : body;
+      // Corps non JSON (page HTML de proxy / maintenance) : jamais affiché,
+      // il reste disponible dans les logs via logHttpFailure.
     }
+    return 'Erreur serveur (${response.statusCode})';
+  }
+
+  // ============================================
+  // MODULE MÉDICAL — Prestations médicales (lots 1 à 4)
+  // ============================================
+  //
+  // Circuit distinct des `Prestation` : ne jamais envoyer ces identifiants aux
+  // endpoints Collecte / SouscriptionPrestation / DemandeBonEnvoi / BonEnvoi.
+  // Réponses JSON directes (pas d'enveloppe `data`), erreurs ProblemDetails.
+
+  static const int _medicalPageSize = 20;
+
+  /// Délai au-delà duquel l'issue d'une mutation est considérée inconnue
+  /// (statusCode `null`) : relire la ressource avant toute répétition.
+  static const Duration _medicalTimeout = Duration(seconds: 45);
+
+  /// Requête du module médical. Succès pour tout 2xx (204 sans corps → `null`).
+  /// Les corps (téléphones, QR, motifs) ne sont jamais journalisés.
+  static Future<ApiResponse<dynamic>> _medical(
+    String method,
+    String endpoint, {
+    Map<String, dynamic>? body,
+    Map<String, String>? query,
+  }) async {
+    final context = '$method $endpoint';
+    try {
+      var uri = Uri.parse('${ApiConfig.baseUrl}$endpoint');
+      if (query != null && query.isNotEmpty) {
+        uri = uri.replace(queryParameters: query);
+      }
+      final encoded = body == null ? null : jsonEncode(body);
+      final response = await _withAuthRetry(() {
+        final headers = isAuthenticated
+            ? ApiConfig.authHeaders(_token!)
+            : ApiConfig.headers;
+        return switch (method) {
+          'POST' => http.post(uri, headers: headers, body: encoded),
+          'PUT' => http.put(uri, headers: headers, body: encoded),
+          _ => http.get(uri, headers: headers),
+        };
+      }).timeout(_medicalTimeout);
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final raw = response.body.trim();
+        return ApiResponse.success(
+          raw.isEmpty ? null : jsonDecode(raw),
+          statusCode: response.statusCode,
+        );
+      }
+      return _errorResponse<dynamic>(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException<dynamic>(e, stackTrace, context);
+    }
+  }
+
+  static ApiResponse<R> _medicalMap<R>(
+    ApiResponse<dynamic> response,
+    R Function(dynamic data) parse,
+  ) {
+    if (!response.success) {
+      return ApiResponse.error(
+        response.message ?? ApiErrorHelper.userFacingMessage(),
+        statusCode: response.statusCode,
+      );
+    }
+    try {
+      return ApiResponse.success(
+        parse(response.data),
+        statusCode: response.statusCode,
+      );
+    } catch (e, stackTrace) {
+      ApiErrorHelper.logException('Medical/parse', e, stackTrace);
+      return ApiResponse.error(
+        'Réponse inattendue du serveur.',
+        statusCode: response.statusCode,
+      );
+    }
+  }
+
+  static List<T> _medicalList<T>(
+    dynamic data,
+    T Function(Map<String, dynamic> json) fromJson,
+  ) {
+    return MedicalJson.asMapList(data).map(fromJson).toList();
+  }
+
+  /// Parcourt une liste paginée sans total : s'arrête à la première page plus
+  /// courte que la taille demandée.
+  static Future<ApiResponse<List<T>>> _medicalAllPages<T>(
+    String endpoint,
+    T Function(Map<String, dynamic> json) fromJson, {
+    Map<String, String>? query,
+  }) async {
+    final all = <T>[];
+    for (var page = 1; page <= 100; page++) {
+      final response = await _medical(
+        'GET',
+        endpoint,
+        query: {
+          ...?query,
+          'page': '$page',
+          'pageSize': '$_medicalPageSize',
+        },
+      );
+      if (!response.success) {
+        return ApiResponse.error(
+          response.message ?? ApiErrorHelper.userFacingMessage(),
+          statusCode: response.statusCode,
+        );
+      }
+      final rows = _medicalList(response.data, fromJson);
+      all.addAll(rows);
+      if (rows.length < _medicalPageSize) break;
+    }
+    return ApiResponse.success(all);
+  }
+
+  // --- Catalogue --------------------------------------------------------
+
+  static Future<ApiResponse<List<ReferentielMedical>>> getReferentielsMedicaux(
+    ReferentielMedicalType type,
+  ) async {
+    final response = await _medical(
+      'GET',
+      '/api/CatalogueMedical/referentiels/${type.path}',
+    );
+    return _medicalMap(
+      response,
+      (data) => _medicalList(data, ReferentielMedical.fromJson),
+    );
+  }
+
+  /// Création (`id == null`, 201) ou modification (200) d'un référentiel.
+  static Future<ApiResponse<ReferentielMedical>> saveReferentielMedical(
+    ReferentielMedicalType type, {
+    int? id,
+    required String nom,
+    String? description,
+    required bool statut,
+  }) async {
+    final response = await _medical(
+      id == null ? 'POST' : 'PUT',
+      '/api/CatalogueMedical/referentiels/${type.path}${id == null ? '' : '/$id'}',
+      body: {'nom': nom, 'description': description, 'statut': statut},
+    );
+    return _medicalMap(
+      response,
+      (data) => ReferentielMedical.fromJson(MedicalJson.asMap(data)),
+    );
+  }
+
+  /// Offres (actives et retirées : filtrer sur `statut` côté écran).
+  static Future<ApiResponse<List<OffreMedicale>>> getOffresMedicales({
+    int? hopitalId,
+  }) {
+    return _medicalAllPages(
+      '/api/CatalogueMedical/offres',
+      OffreMedicale.fromJson,
+      query: {if (hopitalId != null) 'hopitalId': '$hopitalId'},
+    );
+  }
+
+  static Future<ApiResponse<OffreMedicale>> getOffreMedicale(int id) async {
+    final response = await _medical('GET', '/api/CatalogueMedical/offres/$id');
+    return _medicalMap(
+      response,
+      (data) => OffreMedicale.fromJson(MedicalJson.asMap(data)),
+    );
+  }
+
+  static Future<ApiResponse<List<VersionOffreMedicale>>>
+  getVersionsOffreMedicale(int offreId) async {
+    final response = await _medical(
+      'GET',
+      '/api/CatalogueMedical/offres/$offreId/versions',
+    );
+    return _medicalMap(
+      response,
+      (data) => _medicalList(data, VersionOffreMedicale.fromJson),
+    );
+  }
+
+  static Future<ApiResponse<OffreMedicale>> createOffreMedicale({
+    required int hopitalPartenaireId,
+    required int categorieSoinId,
+    required String nom,
+    required VersionOffreMedicaleRequest version,
+  }) async {
+    final response = await _medical(
+      'POST',
+      '/api/CatalogueMedical/offres',
+      body: {
+        'hopitalPartenaireId': hopitalPartenaireId,
+        'categorieSoinId': categorieSoinId,
+        'nom': nom,
+        'version': version.toJson(),
+      },
+    );
+    return _medicalMap(
+      response,
+      (data) => OffreMedicale.fromJson(MedicalJson.asMap(data)),
+    );
+  }
+
+  /// Publie une nouvelle version (immuable) : nouveau tarif ou liste de soins.
+  static Future<ApiResponse<VersionOffreMedicale>> publierVersionOffreMedicale(
+    int offreId,
+    VersionOffreMedicaleRequest version,
+  ) async {
+    final response = await _medical(
+      'POST',
+      '/api/CatalogueMedical/offres/$offreId/versions',
+      body: version.toJson(),
+    );
+    return _medicalMap(
+      response,
+      (data) => VersionOffreMedicale.fromJson(MedicalJson.asMap(data)),
+    );
+  }
+
+  /// Retrait (`false`) ou remise au catalogue (`true`) — 204.
+  static Future<ApiResponse<void>> setStatutOffreMedicale(
+    int offreId,
+    bool statut,
+  ) async {
+    final response = await _medical(
+      'PUT',
+      '/api/CatalogueMedical/offres/$offreId/statut',
+      body: {'statut': statut},
+    );
+    return _medicalMap(response, (_) {});
+  }
+
+  /// Classification descriptive d'un hôpital — 204.
+  static Future<ApiResponse<void>> setCategorieHopital(
+    int hopitalId,
+    int categorieHopitalId,
+  ) async {
+    final response = await _medical(
+      'PUT',
+      '/api/CatalogueMedical/hopitaux/$hopitalId/categorie',
+      body: {'categorieHopitalId': categorieHopitalId},
+    );
+    return _medicalMap(response, (_) {});
+  }
+
+  // --- Souscriptions et périodes ------------------------------------------
+
+  static Future<ApiResponse<SouscriptionMedicale>> createSouscriptionMedicale({
+    required int affilieId,
+    required int offreMedicaleHopitalId,
+  }) async {
+    final response = await _medical(
+      'POST',
+      '/api/SouscriptionMedicale',
+      body: {
+        'affilieId': affilieId,
+        'offreMedicaleHopitalId': offreMedicaleHopitalId,
+      },
+    );
+    return _medicalMap(
+      response,
+      (data) => SouscriptionMedicale.fromJson(MedicalJson.asMap(data)),
+    );
+  }
+
+  static Future<ApiResponse<SouscriptionMedicale>> getSouscriptionMedicale(
+    int id,
+  ) async {
+    final response = await _medical('GET', '/api/SouscriptionMedicale/$id');
+    return _medicalMap(
+      response,
+      (data) => SouscriptionMedicale.fromJson(MedicalJson.asMap(data)),
+    );
+  }
+
+  static Future<ApiResponse<List<SouscriptionMedicale>>>
+  getSouscriptionsMedicalesByAffilie(int affilieId) async {
+    final response = await _medical(
+      'GET',
+      '/api/SouscriptionMedicale/by-affilie/$affilieId',
+    );
+    return _medicalMap(
+      response,
+      (data) => _medicalList(data, SouscriptionMedicale.fromJson),
+    );
+  }
+
+  /// Prépare un mois (courant ou futur) avec la version **acceptée**.
+  /// Idempotent pour une période déjà préparée (elle garde sa version).
+  static Future<ApiResponse<PeriodeCouvertureMedicale>> preparerPeriodeMedicale(
+    int souscriptionId, {
+    required int annee,
+    required int mois,
+    required int versionOffreMedicaleId,
+  }) async {
+    final response = await _medical(
+      'POST',
+      '/api/SouscriptionMedicale/$souscriptionId/periodes',
+      body: {
+        'annee': annee,
+        'mois': mois,
+        'versionOffreMedicaleId': versionOffreMedicaleId,
+      },
+    );
+    return _medicalMap(
+      response,
+      (data) => PeriodeCouvertureMedicale.fromJson(MedicalJson.asMap(data)),
+    );
+  }
+
+  static Future<ApiResponse<List<PeriodeCouvertureMedicale>>>
+  getPeriodesMedicales(int souscriptionId) {
+    return _medicalAllPages(
+      '/api/SouscriptionMedicale/$souscriptionId/periodes',
+      PeriodeCouvertureMedicale.fromJson,
+    );
+  }
+
+  static Future<ApiResponse<PeriodeCouvertureMedicale>> getPeriodeMedicale(
+    int periodeId,
+  ) async {
+    final response = await _medical(
+      'GET',
+      '/api/SouscriptionMedicale/periodes/$periodeId',
+    );
+    return _medicalMap(
+      response,
+      (data) => PeriodeCouvertureMedicale.fromJson(MedicalJson.asMap(data)),
+    );
+  }
+
+  // --- Paiements ----------------------------------------------------------
+
+  /// Encaissement au guichet (201). Après timeout (statusCode `null`) ou 5xx,
+  /// consulter [getPaiementMedical] puis reprendre avec **le même corps**.
+  static Future<ApiResponse<PaiementMedicalRead>> encaisserPaiementMedical(
+    PaiementMedicalGuichetRequest request,
+  ) async {
+    final response = await _medical(
+      'POST',
+      '/api/PaiementMedical',
+      body: request.toJson(),
+    );
+    return _medicalMap(
+      response,
+      (data) => PaiementMedicalRead.fromJson(MedicalJson.asMap(data)),
+    );
+  }
+
+  /// Initiation électronique (200) : une attente, pas un encaissement.
+  /// Ne jamais relancer automatiquement après une réponse perdue.
+  static Future<ApiResponse<AdhesionElectronicPaymentResponse>>
+  initierPaiementMedicalElectronique({
+    required int periodeCouvertureMedicaleId,
+    required double montant,
+    required int deviseId,
+    required String modePaiement,
+    String? telephonePaiement,
+  }) async {
+    final response = await _medical(
+      'POST',
+      '/api/PaiementMedical',
+      body: {
+        'periodeCouvertureMedicaleId': periodeCouvertureMedicaleId,
+        'montant': montant,
+        'deviseId': deviseId,
+        'modePaiement': modePaiement,
+        'telephonePaiement': telephonePaiement,
+      },
+    );
+    return _medicalMap(
+      response,
+      (data) =>
+          AdhesionElectronicPaymentResponse.fromJson(MedicalJson.asMap(data)),
+    );
+  }
+
+  /// Encaissement finalisé. Un 404 signifie « pas encore finalisé », pas un
+  /// refus (cas électronique avant confirmation).
+  static Future<ApiResponse<PaiementMedicalRead>> getPaiementMedical(
+    String idPaiement,
+  ) async {
+    final response = await _medical(
+      'GET',
+      '/api/PaiementMedical/${Uri.encodeComponent(idPaiement)}',
+    );
+    return _medicalMap(
+      response,
+      (data) => PaiementMedicalRead.fromJson(MedicalJson.asMap(data)),
+    );
+  }
+
+  // --- Prises en charge ---------------------------------------------------
+
+  static Future<ApiResponse<PriseEnChargeMedicale>> createPriseEnChargeMedicale({
+    required int periodeCouvertureMedicaleId,
+    required int soinId,
+    String? motif,
+  }) async {
+    final response = await _medical(
+      'POST',
+      '/api/PriseEnChargeMedicale',
+      body: {
+        'periodeCouvertureMedicaleId': periodeCouvertureMedicaleId,
+        'soinId': soinId,
+        'motif': motif,
+      },
+    );
+    return _medicalMap(
+      response,
+      (data) => PriseEnChargeMedicale.fromJson(MedicalJson.asMap(data)),
+    );
+  }
+
+  static Future<ApiResponse<PriseEnChargeMedicale>> getPriseEnChargeMedicale(
+    int id,
+  ) async {
+    final response = await _medical('GET', '/api/PriseEnChargeMedicale/$id');
+    return _medicalMap(
+      response,
+      (data) => PriseEnChargeMedicale.fromJson(MedicalJson.asMap(data)),
+    );
+  }
+
+  static Future<ApiResponse<List<PriseEnChargeMedicale>>>
+  getPrisesEnChargeByPeriode(int periodeId) {
+    return _medicalAllPages(
+      '/api/PriseEnChargeMedicale/by-periode/$periodeId',
+      PriseEnChargeMedicale.fromJson,
+    );
+  }
+
+  /// Confirmation (`accepter: true`) ou rejet. Une confirmation répétée ne
+  /// crée pas de second jeton.
+  static Future<ApiResponse<PriseEnChargeMedicale>>
+  confirmerPriseEnChargeMedicale(
+    int id, {
+    required int agentId,
+    required bool accepter,
+    String? observation,
+  }) async {
+    final response = await _medical(
+      'POST',
+      '/api/PriseEnChargeMedicale/$id/confirmer',
+      body: {
+        'agentId': agentId,
+        'accepter': accepter,
+        'observation': observation,
+      },
+    );
+    return _medicalMap(
+      response,
+      (data) => PriseEnChargeMedicale.fromJson(MedicalJson.asMap(data)),
+    );
+  }
+
+  /// Vérifie un QR : [qrCodePayload] est le contenu **exact** lu par la caméra.
+  static Future<ApiResponse<PriseEnChargeMedicale>> scannerPriseEnChargeMedicale(
+    String qrCodePayload, {
+    bool marquerUtilise = false,
+  }) async {
+    final response = await _medical(
+      'POST',
+      '/api/PriseEnChargeMedicale/scanner',
+      body: {'qrCodePayload': qrCodePayload, 'marquerUtilise': marquerUtilise},
+    );
+    return _medicalMap(
+      response,
+      (data) => PriseEnChargeMedicale.fromJson(MedicalJson.asMap(data)),
+    );
+  }
+
+  /// Consomme bon et jeton (POST sans corps). Non rejouable : après timeout,
+  /// relire la prise en charge avant toute nouvelle tentative.
+  static Future<ApiResponse<PriseEnChargeMedicale>> utiliserPriseEnChargeMedicale(
+    int id,
+  ) async {
+    final response = await _medical(
+      'POST',
+      '/api/PriseEnChargeMedicale/$id/utiliser',
+    );
+    return _medicalMap(
+      response,
+      (data) => PriseEnChargeMedicale.fromJson(MedicalJson.asMap(data)),
+    );
   }
 
   // ============================================
@@ -3819,7 +4705,7 @@ class ApiService {
   }
 
   static Future<ApiResponse<List<DemandeRetraitAgentModel>>>
-      _fetchRetraitAgentListe(String endpoint) async {
+  _fetchRetraitAgentListe(String endpoint) async {
     final context = 'GET $endpoint';
     try {
       final response = await _httpGet(
@@ -3839,22 +4725,22 @@ class ApiService {
 
   /// GET /api/RetraitAgent/en-attente
   static Future<ApiResponse<List<DemandeRetraitAgentModel>>>
-      getRetraitsEnAttente() =>
-          _fetchRetraitAgentListe('/api/RetraitAgent/en-attente');
+  getRetraitsEnAttente() =>
+      _fetchRetraitAgentListe('/api/RetraitAgent/en-attente');
 
   /// GET /api/RetraitAgent/validees
   static Future<ApiResponse<List<DemandeRetraitAgentModel>>>
-      getRetraitsValidees() =>
-          _fetchRetraitAgentListe('/api/RetraitAgent/validees');
+  getRetraitsValidees() =>
+      _fetchRetraitAgentListe('/api/RetraitAgent/validees');
 
   /// GET /api/RetraitAgent/traitees
   static Future<ApiResponse<List<DemandeRetraitAgentModel>>>
-      getRetraitsTraitees() =>
-          _fetchRetraitAgentListe('/api/RetraitAgent/traitees');
+  getRetraitsTraitees() =>
+      _fetchRetraitAgentListe('/api/RetraitAgent/traitees');
 
   /// POST /api/RetraitAgent/verifier-solde
   static Future<ApiResponse<RetraitAgentVerifierSolde>>
-      verifierSoldeRetraitAgent({
+  verifierSoldeRetraitAgent({
     required int agentId,
     required double montantDemande,
     int? deviseId,
@@ -3892,11 +4778,7 @@ class ApiService {
         }
         return ApiResponse.success(RetraitAgentVerifierSolde.fromJson(map));
       }
-      return _errorResponse(
-        response,
-        context: context,
-        requestBody: body,
-      );
+      return _errorResponse(response, context: context, requestBody: body);
     } catch (e, stackTrace) {
       return _errorFromException(e, stackTrace, context);
     }
@@ -4072,7 +4954,7 @@ class ApiService {
 
   /// GET /api/Affilie/souscriptions — souscriptions de l'affilié connecté (JWT).
   static Future<ApiResponse<List<SouscriptionPrestationModel>>>
-      getAffilieMesSouscriptions() async {
+  getAffilieMesSouscriptions() async {
     final response = await _get<dynamic>('/api/Affilie/souscriptions');
     if (!response.success) {
       final fallback = await _get<dynamic>('/api/affilie/souscriptions');
@@ -4197,12 +5079,17 @@ class ApiService {
   }
 
   /// GET /api/SouscriptionsArrierees/by-affilie/{affilieId} - Liste des arriérés de paiement d'un adhérent
-  static Future<ApiResponse<List<dynamic>>> getSouscriptionsArriereesByAffilie(int affilieId) async {
-    return _get<List<dynamic>>('/api/SouscriptionsArrierees/by-affilie/$affilieId');
+  static Future<ApiResponse<List<dynamic>>> getSouscriptionsArriereesByAffilie(
+    int affilieId,
+  ) async {
+    return _get<List<dynamic>>(
+      '/api/SouscriptionsArrierees/by-affilie/$affilieId',
+    );
   }
 
   /// GET /api/Collecte/by-affilie/{affilieId}/paginated - Liste des collectes paginées d'un adhérent
-  static Future<ApiResponse<Map<String, dynamic>>> getCollecteByAffiliePaginated({
+  static Future<ApiResponse<Map<String, dynamic>>>
+  getCollecteByAffiliePaginated({
     required int affilieId,
     int page = 1,
     int pageSize = 20,
@@ -4219,13 +5106,16 @@ class ApiService {
       if (search != null) 'search': search,
       if (filters != null) 'filters': filters,
     };
-    
-    return _get<Map<String, dynamic>>('/api/Collecte/by-affilie/$affilieId/paginated', queryParams: queryParams);
+
+    return _get<Map<String, dynamic>>(
+      '/api/Collecte/by-affilie/$affilieId/paginated',
+      queryParams: queryParams,
+    );
   }
 
   /// POST /api/SouscriptionPrestation?affilieId= — souscription + collecte associée.
   static Future<ApiResponse<SouscriptionPrestationCreateResult>>
-      createSouscriptionPrestation({
+  createSouscriptionPrestation({
     required int affilieId,
     required SouscriptionPrestationCreateRequest request,
   }) async {
@@ -4252,23 +5142,19 @@ class ApiService {
   /// POST /api/SouscriptionPrestation/paiement-electronique
   /// Nouvelle souscription payée en Mobile Money / Carte (FlexPay).
   static Future<ApiResponse<AdhesionElectronicPaymentResponse>>
-      createSouscriptionPrestationPaiementElectronique(
+  createSouscriptionPrestationPaiementElectronique(
     SouscriptionPrestationPaiementElectroniqueRequest request,
   ) async {
     const context = 'SouscriptionPrestation/paiement-electronique';
     try {
       final body = jsonEncode(request.toJson());
-      ApiErrorHelper.logRequest(
-        context,
-        {
-          'affilieId': request.affilieId,
-          'modePaiement': request.modePaiement,
-          'telephonePaiement': request.telephonePaiement,
-          'devisePaiementId': request.devisePaiementId,
-          'prestationId': request.achat.prestationId,
-        },
-        endpoint: '/api/SouscriptionPrestation/paiement-electronique',
-      );
+      ApiErrorHelper.logRequest(context, {
+        'affilieId': request.affilieId,
+        'modePaiement': request.modePaiement,
+        'telephonePaiement': request.telephonePaiement,
+        'devisePaiementId': request.devisePaiementId,
+        'prestationId': request.achat.prestationId,
+      }, endpoint: '/api/SouscriptionPrestation/paiement-electronique');
 
       final response = await http.post(
         Uri.parse(
@@ -4291,13 +5177,14 @@ class ApiService {
         );
         final data = jsonDecode(response.body);
         if (data is Map<String, dynamic>) {
-          final payload = data.containsKey('flexPayAccepted') ||
+          final payload =
+              data.containsKey('flexPayAccepted') ||
                   data.containsKey('paymentUrl') ||
                   data.containsKey('orderNumber')
               ? data
               : (data['data'] is Map<String, dynamic>
-                  ? data['data'] as Map<String, dynamic>
-                  : data);
+                    ? data['data'] as Map<String, dynamic>
+                    : data);
           return ApiResponse.success(
             AdhesionElectronicPaymentResponse.fromJson(payload),
             statusCode: response.statusCode,
@@ -4369,9 +5256,8 @@ class ApiService {
   }
 
   /// Vérifie l'éligibilité — GET puis POST si 405 (Method Not Allowed).
-  static Future<ApiResponse<DemandeBonEligibilite>> verifierEligibiliteDemandeBon(
-    int affilieId,
-  ) async {
+  static Future<ApiResponse<DemandeBonEligibilite>>
+  verifierEligibiliteDemandeBon(int affilieId) async {
     final path = '/api/DemandeBonEnvoi/verifier-eligibilite/$affilieId';
     var response = await _get<dynamic>(path);
     if (!response.success && response.statusCode == 405) {
@@ -4412,7 +5298,8 @@ class ApiService {
   }
 
   /// GET /api/BonEnvoi/by-affilie/{affilieId}/paginated
-  static Future<ApiResponse<Map<String, dynamic>>> getBonEnvoiByAffiliePaginated({
+  static Future<ApiResponse<Map<String, dynamic>>>
+  getBonEnvoiByAffiliePaginated({
     required int affilieId,
     int page = 1,
     int pageSize = 20,
@@ -4553,12 +5440,13 @@ class ApiService {
 
   /// GET /api/HopitalPartenaire/actifs — Hôpitaux partenaires actifs.
   static Future<ApiResponse<List<HopitalPartenaireModel>>>
-      getHopitauxPartenairesActifs() async {
+  getHopitauxPartenairesActifs() async {
     final response = await _get<dynamic>('/api/HopitalPartenaire/actifs');
     if (!response.success) {
       return ApiResponse(
         success: false,
-        message: response.message ??
+        message:
+            response.message ??
             'Impossible de charger les hôpitaux partenaires.',
         statusCode: response.statusCode,
       );
@@ -4600,7 +5488,7 @@ class ApiService {
   /// GET /api/DemandeBonEnvoi/by-statut/{statut}/simple
   /// Fallback plural (doc legacy) : /api/DemandeBonEnvois/by-statut/{statut}/simple
   static Future<ApiResponse<List<DemandeBonEnvoiModel>>>
-      getDemandesBonEnvoiByStatut(String statut) async {
+  getDemandesBonEnvoiByStatut(String statut) async {
     final encodedStatut = Uri.encodeComponent(statut);
     final paths = <String>[
       '/api/DemandeBonEnvoi/by-statut/$encodedStatut/simple',
@@ -4625,8 +5513,8 @@ class ApiService {
 
     return ApiResponse(
       success: false,
-      message: lastFailure?.message ??
-          'Impossible de charger les demandes de bon.',
+      message:
+          lastFailure?.message ?? 'Impossible de charger les demandes de bon.',
       statusCode: lastFailure?.statusCode,
     );
   }
@@ -4689,14 +5577,16 @@ class ApiService {
 
     return ApiResponse(
       success: false,
-      message: response.message ??
+      message:
+          response.message ??
           'Impossible de confirmer la demande (bon + jeton).',
       statusCode: response.statusCode,
     );
   }
 
   /// POST /api/DemandeBonEnvoi/valider-et-generer (legacy — même workflow transactionnel)
-  static Future<ApiResponse<DemandeBonEnvoiModel>> validerEtGenererDemandeBonEnvoi({
+  static Future<ApiResponse<DemandeBonEnvoiModel>>
+  validerEtGenererDemandeBonEnvoi({
     required int idDemande,
     int? agentId,
     String? observationAgent,
@@ -4729,7 +5619,8 @@ class ApiService {
       }
       return ApiResponse(
         success: false,
-        message: legacy.message ??
+        message:
+            legacy.message ??
             response.message ??
             'Impossible de valider et générer le bon + jeton.',
         statusCode: legacy.statusCode ?? response.statusCode,
@@ -4738,15 +5629,14 @@ class ApiService {
     if (!response.success || response.data == null) {
       return ApiResponse(
         success: false,
-        message: response.message ??
+        message:
+            response.message ??
             'Impossible de valider et générer le bon + jeton.',
         statusCode: response.statusCode,
       );
     }
     return ApiResponse.success(
-      DemandeBonEnvoiModel.fromJson(
-        _unwrapDemandeBonEnvoiMap(response.data!),
-      ),
+      DemandeBonEnvoiModel.fromJson(_unwrapDemandeBonEnvoiMap(response.data!)),
       statusCode: response.statusCode,
     );
   }
@@ -4757,17 +5647,13 @@ class ApiService {
     String? numeroBon,
     int? hopitalPartenaireId,
   }) async {
-    return _post<Map<String, dynamic>>(
-      '/api/BonEnvoi/scanner',
-      {
-        'qrCodePayload': qrCodePayload,
-        if (numeroBon != null && numeroBon.trim().isNotEmpty)
-          'numeroBon': numeroBon.trim(),
-        if (hopitalPartenaireId != null && hopitalPartenaireId > 0)
-          'hopitalPartenaireId': hopitalPartenaireId,
-      },
-      logContext: 'BonEnvoi/scanner',
-    );
+    return _post<Map<String, dynamic>>('/api/BonEnvoi/scanner', {
+      'qrCodePayload': qrCodePayload,
+      if (numeroBon != null && numeroBon.trim().isNotEmpty)
+        'numeroBon': numeroBon.trim(),
+      if (hopitalPartenaireId != null && hopitalPartenaireId > 0)
+        'hopitalPartenaireId': hopitalPartenaireId,
+    }, logContext: 'BonEnvoi/scanner');
   }
 
   /// POST /api/JetonMedical/utiliser — Utilisation jeton (bon actif lié requis)
@@ -4777,24 +5663,19 @@ class ApiService {
     String? observation,
     int? hopitalPartenaireId,
   }) async {
-    return _post<Map<String, dynamic>>(
-      '/api/JetonMedical/utiliser',
-      {
-        'idJetonMedical': idJetonMedical,
-        'codeJeton': codeJeton,
-        if (observation != null && observation.trim().isNotEmpty)
-          'observation': observation.trim(),
-        if (hopitalPartenaireId != null && hopitalPartenaireId > 0)
-          'hopitalPartenaireId': hopitalPartenaireId,
-      },
-      logContext: 'JetonMedical/utiliser',
-    );
+    return _post<Map<String, dynamic>>('/api/JetonMedical/utiliser', {
+      'idJetonMedical': idJetonMedical,
+      'codeJeton': codeJeton,
+      if (observation != null && observation.trim().isNotEmpty)
+        'observation': observation.trim(),
+      if (hopitalPartenaireId != null && hopitalPartenaireId > 0)
+        'hopitalPartenaireId': hopitalPartenaireId,
+    }, logContext: 'JetonMedical/utiliser');
   }
 
   /// GET /api/JetonMedical/by-affilie/{affilieId}
-  static Future<ApiResponse<List<JetonMedicalModel>>> getJetonsMedicauxByAffilie(
-    int affilieId,
-  ) async {
+  static Future<ApiResponse<List<JetonMedicalModel>>>
+  getJetonsMedicauxByAffilie(int affilieId) async {
     final response = await _get<dynamic>(
       '/api/JetonMedical/by-affilie/$affilieId',
     );
@@ -4843,7 +5724,8 @@ class ApiService {
   }
 
   /// GET /api/arrieres-affilie/mes-arrieres - Arriérés de l'affilié connecté
-  static Future<ApiResponse<List<ArriereAffilieModel>>> getMesArrieresAffilie() async {
+  static Future<ApiResponse<List<ArriereAffilieModel>>>
+  getMesArrieresAffilie() async {
     return _fetchArrieresAffilie(
       path: '/api/arrieres-affilie/mes-arrieres',
       context: 'arrieres-affilie/mes-arrieres',
@@ -4893,6 +5775,296 @@ class ApiService {
   }
 
   // ============================================
+  // MODE OFFLINE / SYNC (AT, Chef d'équipe)
+  // Voir Prosoc_FRONTEND_INTEGRATION_OFFLINE_SYNC.md
+  // ============================================
+
+  /// GET /api/sync/bootstrap — snapshot initial + watermark.
+  static Future<ApiResponse<SyncBootstrap>> syncBootstrap() async {
+    const context = 'sync/bootstrap';
+    try {
+      final response = await _withAuthRetry(
+        () => http.get(
+          Uri.parse('${ApiConfig.baseUrl}/api/sync/bootstrap'),
+          headers: isAuthenticated
+              ? ApiConfig.authHeaders(_token!)
+              : ApiConfig.headers,
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) {
+          final map = decoded is Map<String, dynamic>
+              ? decoded
+              : Map<String, dynamic>.from(decoded);
+          final payload = map['data'] is Map
+              ? Map<String, dynamic>.from(map['data'] as Map)
+              : map;
+          return ApiResponse.success(
+            SyncBootstrap.fromJson(payload),
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.error(
+          'Réponse bootstrap sync invalide',
+          statusCode: response.statusCode,
+        );
+      }
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  /// GET /api/sync/referentials?since&snapshot — catalogue métier.
+  static Future<ApiResponse<SyncReferentials>> syncReferentials({
+    String? since,
+    String? snapshot,
+  }) async {
+    const context = 'sync/referentials';
+    try {
+      final query = <String>[];
+      if (since != null && since.isNotEmpty) query.add('since=$since');
+      if (snapshot != null && snapshot.isNotEmpty) {
+        query.add('snapshot=$snapshot');
+      }
+      final suffix = query.isEmpty ? '' : '?${query.join('&')}';
+
+      final response = await _withAuthRetry(
+        () => http.get(
+          Uri.parse('${ApiConfig.baseUrl}/api/sync/referentials$suffix'),
+          headers: isAuthenticated
+              ? ApiConfig.authHeaders(_token!)
+              : ApiConfig.headers,
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) {
+          final map = decoded is Map<String, dynamic>
+              ? decoded
+              : Map<String, dynamic>.from(decoded);
+          final payload = map['data'] is Map
+              ? Map<String, dynamic>.from(map['data'] as Map)
+              : map;
+          return ApiResponse.success(
+            SyncReferentials.fromJson(payload),
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.error(
+          'Réponse référentiels sync invalide',
+          statusCode: response.statusCode,
+        );
+      }
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  /// GET /api/sync/affilies?since&cursor&pageSize&snapshot — delta affiliés.
+  static Future<ApiResponse<SyncPage<SyncAffilieRow>>> syncAffilies({
+    String? since,
+    String? cursor,
+    int pageSize = 1000,
+    String? snapshot,
+  }) async {
+    const context = 'sync/affilies';
+    try {
+      final query = <String>['pageSize=$pageSize'];
+      if (since != null && since.isNotEmpty) query.add('since=$since');
+      if (cursor != null && cursor.isNotEmpty) query.add('cursor=$cursor');
+      if (snapshot != null && snapshot.isNotEmpty) {
+        query.add('snapshot=$snapshot');
+      }
+      final suffix = '?${query.join('&')}';
+
+      final response = await _withAuthRetry(
+        () => http.get(
+          Uri.parse('${ApiConfig.baseUrl}/api/sync/affilies$suffix'),
+          headers: isAuthenticated
+              ? ApiConfig.authHeaders(_token!)
+              : ApiConfig.headers,
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) {
+          final map = decoded is Map<String, dynamic>
+              ? decoded
+              : Map<String, dynamic>.from(decoded);
+          final payload = map['data'] is Map
+              ? Map<String, dynamic>.from(map['data'] as Map)
+              : map;
+          return ApiResponse.success(
+            SyncPage.affilies(payload),
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.error(
+          'Réponse affiliés sync invalide',
+          statusCode: response.statusCode,
+        );
+      }
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  /// GET /api/sync/wallets?since&cursor&pageSize&snapshot — delta wallets.
+  static Future<ApiResponse<SyncPage<SyncWalletRow>>> syncWallets({
+    String? since,
+    String? cursor,
+    int pageSize = 1000,
+    String? snapshot,
+  }) async {
+    const context = 'sync/wallets';
+    try {
+      final query = <String>['pageSize=$pageSize'];
+      if (since != null && since.isNotEmpty) query.add('since=$since');
+      if (cursor != null && cursor.isNotEmpty) query.add('cursor=$cursor');
+      if (snapshot != null && snapshot.isNotEmpty) {
+        query.add('snapshot=$snapshot');
+      }
+      final suffix = '?${query.join('&')}';
+
+      final response = await _withAuthRetry(
+        () => http.get(
+          Uri.parse('${ApiConfig.baseUrl}/api/sync/wallets$suffix'),
+          headers: isAuthenticated
+              ? ApiConfig.authHeaders(_token!)
+              : ApiConfig.headers,
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) {
+          final map = decoded is Map<String, dynamic>
+              ? decoded
+              : Map<String, dynamic>.from(decoded);
+          final payload = map['data'] is Map
+              ? Map<String, dynamic>.from(map['data'] as Map)
+              : map;
+          return ApiResponse.success(
+            SyncPage.wallets(payload),
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.error(
+          'Réponse wallets sync invalide',
+          statusCode: response.statusCode,
+        );
+      }
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  /// GET /api/sync/deletions?since&snapshot — `since` est obligatoire.
+  static Future<ApiResponse<SyncDeletions>> syncDeletions({
+    required String since,
+    String? snapshot,
+  }) async {
+    const context = 'sync/deletions';
+    final trimmed = since.trim();
+    if (trimmed.isEmpty) {
+      return ApiResponse.error('since est obligatoire pour les suppressions');
+    }
+    try {
+      final query = <String>['since=$trimmed'];
+      if (snapshot != null && snapshot.isNotEmpty) {
+        query.add('snapshot=$snapshot');
+      }
+      final suffix = '?${query.join('&')}';
+
+      final response = await _withAuthRetry(
+        () => http.get(
+          Uri.parse('${ApiConfig.baseUrl}/api/sync/deletions$suffix'),
+          headers: isAuthenticated
+              ? ApiConfig.authHeaders(_token!)
+              : ApiConfig.headers,
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) {
+          final map = decoded is Map<String, dynamic>
+              ? decoded
+              : Map<String, dynamic>.from(decoded);
+          final payload = map['data'] is Map
+              ? Map<String, dynamic>.from(map['data'] as Map)
+              : map;
+          return ApiResponse.success(
+            SyncDeletions.fromJson(payload),
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.error(
+          'Réponse suppressions sync invalide',
+          statusCode: response.statusCode,
+        );
+      }
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  /// POST /api/sync/writes/batch — upload de la file d'écritures offline.
+  static Future<ApiResponse<SyncWriteBatchResult>> syncWritesBatch(
+    List<Map<String, dynamic>> items,
+  ) async {
+    const context = 'sync/writes/batch';
+    final body = <String, dynamic>{'items': items};
+    try {
+      final response = await _withAuthRetry(
+        () => http.post(
+          Uri.parse('${ApiConfig.baseUrl}/api/sync/writes/batch'),
+          headers: isAuthenticated
+              ? ApiConfig.authHeaders(_token!)
+              : ApiConfig.headers,
+          body: jsonEncode(body),
+        ),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) {
+          final map = decoded is Map<String, dynamic>
+              ? decoded
+              : Map<String, dynamic>.from(decoded);
+          final payload = map['data'] is Map
+              ? Map<String, dynamic>.from(map['data'] as Map)
+              : map;
+          return ApiResponse.success(
+            SyncWriteBatchResult.fromJson(payload),
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.error(
+          'Réponse batch sync invalide',
+          statusCode: response.statusCode,
+        );
+      }
+      return _errorResponse(
+        response,
+        context: context,
+        requestBody: body,
+      );
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
+  // ============================================
   // PÉNALITÉS AFFILIÉ
   // ============================================
 
@@ -4908,14 +6080,15 @@ class ApiService {
 
   /// GET /api/penalite-affilie/mes-penalites
   static Future<ApiResponse<List<PenaliteAffilieModel>>>
-      getMesPenalitesAffilie() async {
+  getMesPenalitesAffilie() async {
     return _fetchPenalitesAffilie(
       path: '/api/penalite-affilie/mes-penalites',
       context: 'penalite-affilie/mes-penalites',
     );
   }
 
-  static Future<ApiResponse<List<PenaliteAffilieModel>>> _fetchPenalitesAffilie({
+  static Future<ApiResponse<List<PenaliteAffilieModel>>>
+  _fetchPenalitesAffilie({
     required String path,
     required String context,
   }) async {
@@ -4970,7 +6143,7 @@ class ApiService {
 
   /// POST /api/RetraitAgent/valider-et-generer-jeton - Valider une demande et générer un jeton
   static Future<ApiResponse<RetraitWorkflowResultModel>>
-      validerEtGenererJetonRetrait({
+  validerEtGenererJetonRetrait({
     required int idDemande,
     required String statutDemande,
     String? motifValidation,
@@ -4998,7 +6171,8 @@ class ApiService {
   }
 
   /// PUT /api/RetraitAgent/{id} — Rejet superviseur
-  static Future<ApiResponse<Map<String, dynamic>>> putRejeterDemandeRetraitAgent({
+  static Future<ApiResponse<Map<String, dynamic>>>
+  putRejeterDemandeRetraitAgent({
     required int id,
     required int idDemande,
     required int agentValidationId,
@@ -5059,7 +6233,7 @@ class ApiService {
 
   /// GET /api/RetraitAgent/periode-courante - Période de retrait en cours
   static Future<ApiResponse<RetraitAgentPeriodeCourante>>
-      getRetraitAgentPeriodeCourante() async {
+  getRetraitAgentPeriodeCourante() async {
     const context = 'RetraitAgent/periode-courante';
     try {
       final response = await _httpGet(
@@ -5086,8 +6260,10 @@ class ApiService {
 
   /// GET /api/parametres-metier/retrait-agent
   static Future<ApiResponse<RetraitAgentParametresMetier>>
-      getRetraitAgentParametresMetier() async {
-    final response = await _get<dynamic>('/api/parametres-metier/retrait-agent');
+  getRetraitAgentParametresMetier() async {
+    final response = await _get<dynamic>(
+      '/api/parametres-metier/retrait-agent',
+    );
     if (!response.success || response.data == null) {
       return ApiResponse(
         success: false,
@@ -5115,7 +6291,9 @@ class ApiService {
   static Future<ApiResponse<AgentMaashCouverture>> getAgentMaashCouverture(
     int agentId,
   ) async {
-    final response = await _get<dynamic>('/api/agent-maash/$agentId/couverture');
+    final response = await _get<dynamic>(
+      '/api/agent-maash/$agentId/couverture',
+    );
     if (!response.success || response.data == null) {
       return ApiResponse(
         success: false,

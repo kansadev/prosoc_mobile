@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../../../config/api.dart';
-import '../../../config/app_features.dart';
 import '../../../config/colors.dart';
 import '../../../models/agent_maash_model.dart';
 import '../../../models/retrait_agent_periode_model.dart';
@@ -147,7 +146,6 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
   }
 
   Future<void> _loadMaashCouverture() async {
-    if (!AppFeatures.healthUiEnabled) return;
     final agentId = AuthService.currentUser?.utilisateur.agentId;
     if (agentId == null) return;
     try {
@@ -901,8 +899,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
         'Votre compte ne peut pas être vidé entièrement.',
       );
     }
-    if (AppFeatures.healthUiEnabled &&
-        maash != null &&
+    if (maash != null &&
         maash.hasRetenueMensuelle) {
       final montantLabel = CurrencyFormatter.format(
         amount: maash.montantRetenueMensuelle,

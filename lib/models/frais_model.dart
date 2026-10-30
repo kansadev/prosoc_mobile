@@ -34,16 +34,63 @@ class Frais {
   /// Frais proposés lors d'une nouvelle adhésion.
   static const codesAdhesion = {'FRAIS_ADHESION', 'CARTE_MEMBRE'};
 
-  bool get isPourAdhesion {
-    final normalized = code.trim().toUpperCase().replaceAll(' ', '_');
-    return codesAdhesion.contains(normalized) ||
-        normalized.contains('ADHESION') ||
-        normalized.contains('CARTE_MEMBRE');
+  /// Normalise un code pour comparaison : majuscules, accents retirés et
+  /// séparateurs (espace, tiret, underscore) supprimés.
+  /// « FRAIS ADHÉSION » et « FRAIS_ADHESION » deviennent identiques.
+  static String normalizeCode(String value) {
+    const accents = <String, String>{
+      'À': 'A',
+      'Á': 'A',
+      'Â': 'A',
+      'Ã': 'A',
+      'Ä': 'A',
+      'Å': 'A',
+      'È': 'E',
+      'É': 'E',
+      'Ê': 'E',
+      'Ë': 'E',
+      'Ì': 'I',
+      'Í': 'I',
+      'Î': 'I',
+      'Ï': 'I',
+      'Ò': 'O',
+      'Ó': 'O',
+      'Ô': 'O',
+      'Õ': 'O',
+      'Ö': 'O',
+      'Ù': 'U',
+      'Ú': 'U',
+      'Û': 'U',
+      'Ü': 'U',
+      'Ç': 'C',
+      'Ñ': 'N',
+      'Ý': 'Y',
+    };
+    final buffer = StringBuffer();
+    for (final rune in value.toUpperCase().runes) {
+      final char = String.fromCharCode(rune);
+      final letter = accents[char] ?? char;
+      if (RegExp('[A-Z0-9]').hasMatch(letter)) {
+        buffer.write(letter);
+      }
+    }
+    return buffer.toString();
   }
 
+  /// Code de ce frais normalisé (insensible casse / accents / séparateurs).
+  String get codeNormalise => normalizeCode(code);
+
+  bool get isPourAdhesion {
+    final normalized = codeNormalise;
+    return codesAdhesion.any((c) => normalizeCode(c) == normalized) ||
+        normalized.contains(normalizeCode('ADHESION')) ||
+        normalized.contains(normalizeCode('CARTE_MEMBRE'));
+  }
+
+  /// Uniquement le frais d'adhésion (exclut carte membre et autres frais).
   bool get isFraisAdhesion {
-    final normalized = code.trim().toUpperCase().replaceAll(' ', '_');
-    return normalized == 'FRAIS_ADHESION' ||
+    final normalized = codeNormalise;
+    return normalized == normalizeCode('FRAIS_ADHESION') ||
         (normalized.contains('FRAIS') && normalized.contains('ADHESION'));
   }
 

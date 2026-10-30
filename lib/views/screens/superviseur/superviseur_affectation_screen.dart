@@ -10,6 +10,7 @@ import '../../../utils/api_error_helper.dart';
 import '../../../utils/formatters.dart';
 import '../../widgets/empty_state_widget.dart';
 import '../../widgets/prosoc_resource_error_view.dart';
+import 'superviseur_reaffectation_screen.dart';
 
 /// File d'attente adhésions en ligne sans gestionnaire + affectation vers un AT.
 class SuperviseurAffectationScreen extends StatefulWidget {
@@ -77,6 +78,17 @@ class _SuperviseurAffectationScreenState
     }
   }
 
+  /// Ouvre la réaffectation d'un affilié déjà rattaché à un agent existant.
+  Future<void> _openReaffectation() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const SuperviseurReaffectationScreen(),
+      ),
+    );
+    if (mounted) await _loadPage(refresh: true);
+  }
+
   Future<void> _loadPage({bool refresh = false}) async {
     if (refresh) {
       setState(() {
@@ -99,7 +111,8 @@ class _SuperviseurAffectationScreenState
 
       if (!response.success || response.data == null) {
         setState(() {
-          _errorMessage = response.message ??
+          _errorMessage =
+              response.message ??
               ApiErrorHelper.userFacingMessage(statusCode: response.statusCode);
           _errorStatusCode = response.statusCode;
           _isLoading = false;
@@ -167,9 +180,9 @@ class _SuperviseurAffectationScreenState
               children: [
                 Text(
                   'Affecter à un agent',
-                  style: Theme.of(ctx).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w700,
-                      ),
+                  style: Theme.of(
+                    ctx,
+                  ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700),
                 ),
                 const SizedBox(height: 8),
                 Text(
@@ -189,8 +202,9 @@ class _SuperviseurAffectationScreenState
                           : 'Agent #${a.id}';
                       return ListTile(
                         leading: CircleAvatar(
-                          backgroundColor:
-                              AppColors.prosocGreen.withValues(alpha: 0.12),
+                          backgroundColor: AppColors.prosocGreen.withValues(
+                            alpha: 0.12,
+                          ),
                           child: const Icon(
                             Icons.person_outline,
                             color: AppColors.prosocGreen,
@@ -246,6 +260,15 @@ class _SuperviseurAffectationScreenState
     AdhesionEnLigneSansGestionnaireModel dossier,
     AgentModel agent,
   ) async {
+    if (dossier.idAffilie <= 0) {
+      _showSnack(
+        "Identifiant de l'affilié non communiqué par la plateforme. "
+        'Actualisez la liste puis réessayez.',
+        isError: true,
+      );
+      return;
+    }
+
     setState(() => _affectingAffilieId = dossier.idAffilie);
 
     try {
@@ -338,6 +361,13 @@ class _SuperviseurAffectationScreenState
         ),
         backgroundColor: AppColors.prosocGreen,
         foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            tooltip: 'Réaffecter un affilié',
+            onPressed: _openReaffectation,
+            icon: const Icon(Icons.swap_horiz_rounded),
+          ),
+        ],
       ),
       body: Column(
         children: [
@@ -366,57 +396,56 @@ class _SuperviseurAffectationScreenState
                     ),
                   )
                 : _errorMessage != null
-                    ? ProsocResourceErrorView(
-                        message: _errorMessage!,
-                        statusCode: _errorStatusCode,
-                        onRetry: () => _loadPage(refresh: true),
-                      )
-                    : RefreshIndicator(
-                        color: AppColors.prosocGreen,
-                        onRefresh: () => _loadPage(refresh: true),
-                        child: rows.isEmpty
-                            ? ListView(
-                                physics: const AlwaysScrollableScrollPhysics(),
-                                children: const [
-                                  SizedBox(height: 120),
-                                  EmptyStateWidget(
-                                    icon: Icons.inbox_outlined,
-                                    title: 'Aucun dossier en attente',
-                                    subtitle:
-                                        'Les nouvelles adhésions en ligne apparaîtront ici.',
-                                  ),
-                                ],
-                              )
-                            : ListView.separated(
-                                physics:
-                                    const AlwaysScrollableScrollPhysics(),
-                                padding: const EdgeInsets.all(16),
-                                itemCount: rows.length + (_hasNext ? 1 : 0),
-                                separatorBuilder: (_, __) =>
-                                    const SizedBox(height: 12),
-                                itemBuilder: (context, index) {
-                                  if (index >= rows.length) {
-                                    if (_isLoadingMore) {
-                                      return const Center(
-                                        child: Padding(
-                                          padding: EdgeInsets.all(16),
-                                          child: CircularProgressIndicator(
-                                            color: AppColors.prosocGreen,
-                                          ),
-                                        ),
-                                      );
-                                    }
-                                    return Center(
-                                      child: TextButton(
-                                        onPressed: _loadMore,
-                                        child: const Text('Charger plus'),
-                                      ),
-                                    );
-                                  }
-                                  return _buildCard(rows[index], isDark);
-                                },
+                ? ProsocResourceErrorView(
+                    message: _errorMessage!,
+                    statusCode: _errorStatusCode,
+                    onRetry: () => _loadPage(refresh: true),
+                  )
+                : RefreshIndicator(
+                    color: AppColors.prosocGreen,
+                    onRefresh: () => _loadPage(refresh: true),
+                    child: rows.isEmpty
+                        ? ListView(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            children: const [
+                              SizedBox(height: 120),
+                              EmptyStateWidget(
+                                icon: Icons.inbox_outlined,
+                                title: 'Aucun dossier en attente',
+                                subtitle:
+                                    'Les nouvelles adhésions en ligne apparaîtront ici.',
                               ),
-                      ),
+                            ],
+                          )
+                        : ListView.separated(
+                            physics: const AlwaysScrollableScrollPhysics(),
+                            padding: const EdgeInsets.all(16),
+                            itemCount: rows.length + (_hasNext ? 1 : 0),
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(height: 12),
+                            itemBuilder: (context, index) {
+                              if (index >= rows.length) {
+                                if (_isLoadingMore) {
+                                  return const Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(16),
+                                      child: CircularProgressIndicator(
+                                        color: AppColors.prosocGreen,
+                                      ),
+                                    ),
+                                  );
+                                }
+                                return Center(
+                                  child: TextButton(
+                                    onPressed: _loadMore,
+                                    child: const Text('Charger plus'),
+                                  ),
+                                );
+                              }
+                              return _buildCard(rows[index], isDark);
+                            },
+                          ),
+                  ),
           ),
         ],
       ),

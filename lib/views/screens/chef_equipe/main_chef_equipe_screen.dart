@@ -5,6 +5,7 @@ import '../../../controllers/main_controller.dart';
 import '../../../controllers/chef_equipe_controller.dart';
 import '../../../services/auth_service.dart';
 import '../../../widgets/tab_load_gate.dart';
+import '../../../widgets/offline_sync_banner.dart';
 import '../at/profile_screen.dart';
 import 'chef_equipe_kpis_screen.dart';
 import 'chef_equipe_team_screen.dart';
@@ -59,21 +60,28 @@ class _MainChefEquipeScreenState extends State<MainChefEquipeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
+      body: Column(
         children: [
-          ChefEquipeKpisScreen(controller: _chefController),
-          TabLoadGate(
-            tabIndex: 1,
-            currentIndex: _currentIndex,
-            child: ChefEquipeTeamScreen(
-              controller: _chefController,
-              onOpenDetails: _handleOpenAgentDetails,
+          const OfflineSyncBanner(dense: true),
+          Expanded(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: [
+                ChefEquipeKpisScreen(controller: _chefController),
+                TabLoadGate(
+                  tabIndex: 1,
+                  currentIndex: _currentIndex,
+                  child: ChefEquipeTeamScreen(
+                    controller: _chefController,
+                    onOpenDetails: _handleOpenAgentDetails,
+                  ),
+                ),
+                ProfileScreen(
+                  controller: _profileController,
+                  onLogout: _afterLogout,
+                ),
+              ],
             ),
-          ),
-          ProfileScreen(
-            controller: _profileController,
-            onLogout: _afterLogout,
           ),
         ],
       ),
@@ -120,4 +128,3 @@ class _MainChefEquipeScreenState extends State<MainChefEquipeScreen> {
     );
   }
 }
-

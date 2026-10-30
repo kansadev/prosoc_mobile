@@ -1,17 +1,23 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../../config/colors.dart';
 import '../../../controllers/chef_equipe_controller.dart';
 import '../../../models/chef_equipe_model.dart';
+import '../../../utils/currency_formatter.dart';
 import '../../widgets/prosoc_resource_error_view.dart';
 
 class ChefEquipeKpisScreen extends StatelessWidget {
   final ChefEquipeController controller;
 
-  const ChefEquipeKpisScreen({
-    super.key,
-    required this.controller,
-  });
+  const ChefEquipeKpisScreen({super.key, required this.controller});
+
+  /// Période des indicateurs : le DTO ne porte que des agrégats mensuels.
+  String get _moisEnCoursLabel {
+    final now = DateTime.now();
+    final mois = DateFormat.MMMM('fr_FR').format(now);
+    return '${mois.substring(0, 1).toUpperCase()}${mois.substring(1)} ${now.year}';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -34,9 +40,7 @@ class ChefEquipeKpisScreen extends StatelessWidget {
 
         final kpis = controller.kpis;
         if (kpis == null) {
-          return const Center(
-            child: Text('Aucune donnée KPI disponible.'),
-          );
+          return const Center(child: Text('Aucune donnée KPI disponible.'));
         }
 
         return RefreshIndicator(
@@ -51,25 +55,70 @@ class ChefEquipeKpisScreen extends StatelessWidget {
                   child: Text(
                     'Vue analytique de votre zone',
                     style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                          fontWeight: FontWeight.w800,
-                        ),
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
               ),
-              SliverToBoxAdapter(
-                child: _KpiSummaryCard(kpis: kpis),
-              ),
+              SliverToBoxAdapter(child: _KpiSummaryCard(kpis: kpis)),
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Indicateurs clés',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Indicateurs clés',
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(fontWeight: FontWeight.w600),
                             ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: AppColors.prosocGreen.withValues(
+                                alpha: 0.1,
+                              ),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.calendar_month_rounded,
+                                  size: 13,
+                                  color: AppColors.prosocGreen,
+                                ),
+                                const SizedBox(width: 5),
+                                Text(
+                                  _moisEnCoursLabel,
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.prosocGreen,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        'Les indicateurs de collecte sont calculés sur le '
+                        'mois civil en cours. La plateforme n\'expose pas de '
+                        'période personnalisée (jour, semaine ou autre mois).',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          height: 1.35,
+                          color: Colors.grey.shade600,
+                        ),
                       ),
                       const SizedBox(height: 10),
                       _AnalyticsTile(
@@ -80,15 +129,17 @@ class ChefEquipeKpisScreen extends StatelessWidget {
                       const SizedBox(height: 8),
                       _AnalyticsTile(
                         icon: Icons.payments_rounded,
-                        label: 'Nombre de collectes ce mois',
+                        label: 'Nombre de collectes du mois',
                         value: '${kpis.collectesMoisZone}',
                       ),
                       const SizedBox(height: 8),
                       _AnalyticsTile(
                         icon: Icons.stacked_bar_chart_rounded,
-                        label: 'Montant total des collectes (mois)',
-                        value:
-                            '${kpis.totalCollectesMoisZone.toStringAsFixed(2)}',
+                        label: 'Montant total des collectes du mois',
+                        value: CurrencyFormatter.format(
+                          amount: kpis.totalCollectesMoisZone,
+                          deviseCode: kpis.devisePrincipaleCode,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       _AnalyticsTile(
@@ -99,7 +150,7 @@ class ChefEquipeKpisScreen extends StatelessWidget {
                       const SizedBox(height: 8),
                       _AnalyticsTile(
                         icon: Icons.verified_rounded,
-                        label: 'Transactions validées (mois)',
+                        label: 'Transactions validées du mois',
                         value: '${kpis.transactionsValidesMoisZone}',
                       ),
                       const SizedBox(height: 8),
@@ -118,7 +169,6 @@ class ChefEquipeKpisScreen extends StatelessWidget {
       },
     );
   }
-
 }
 
 class _AnalyticsTile extends StatelessWidget {
@@ -167,10 +217,7 @@ class _AnalyticsTile extends StatelessWidget {
                   label,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey.shade600,
-                  ),
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -227,7 +274,7 @@ class _KpiSummaryCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              'Collectes en attente et transactions valides',
+              'Mois en cours · collectes en attente et transactions validées',
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.white.withValues(alpha: 0.85),
@@ -288,4 +335,3 @@ class _KpiSummaryCard extends StatelessWidget {
     );
   }
 }
-

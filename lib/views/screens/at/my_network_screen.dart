@@ -9,7 +9,6 @@ import 'package:prosoc/views/screens/adh%C3%A9rent/AffiliateDetailsScreen.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/arrieres_affilie_screen.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/adherent_demande_bon_screen.dart';
 import 'package:prosoc/widgets/popup_menu_widget.dart';
-import 'package:prosoc/widgets/antecedent_bottom_sheet.dart';
 import 'package:prosoc/widgets/dependant_bottom_sheet.dart';
 import 'package:prosoc/widgets/souscription_bottom_sheet.dart';
 import '../../../config/colors.dart';
@@ -145,9 +144,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
         setState(() {
           _errorMessage =
               response.message ??
-              ApiErrorHelper.userFacingMessage(
-                statusCode: response.statusCode,
-              );
+              ApiErrorHelper.userFacingMessage(statusCode: response.statusCode);
           _isLoading = false;
           _isLoadingMore = false;
         });
@@ -167,10 +164,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 400), () {
       final query = value.trim();
-      _loadAffilies(
-        reset: true,
-        search: query.isEmpty ? null : query,
-      );
+      _loadAffilies(reset: true, search: query.isEmpty ? null : query);
     });
   }
 
@@ -318,10 +312,8 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
               const SizedBox(height: 16),
               Center(
                 child: TextButton(
-                  onPressed: () => _loadAffilies(
-                    reset: true,
-                    search: _activeSearch,
-                  ),
+                  onPressed: () =>
+                      _loadAffilies(reset: true, search: _activeSearch),
                   child: const Text('Réessayer'),
                 ),
               ),
@@ -516,8 +508,9 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                         affilieId: affilieId,
                         affilieNom: nom,
                         affiliePrenom: prenom,
-                        affilieTelephone:
-                            telephone.isNotEmpty ? telephone : null,
+                        affilieTelephone: telephone.isNotEmpty
+                            ? telephone
+                            : null,
                         allowVirtualAccount: true,
                       ),
                     ),
@@ -531,8 +524,9 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                         affilieId: affilieId,
                         affilieNom: nom,
                         affiliePrenom: prenom,
-                        affilieTelephone:
-                            telephone.isNotEmpty ? telephone : null,
+                        affilieTelephone: telephone.isNotEmpty
+                            ? telephone
+                            : null,
                         allowVirtualAccount: true,
                       ),
                     ),
@@ -546,8 +540,9 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                         affilieId: affilieId,
                         affilieNom: nom,
                         affiliePrenom: prenom,
-                        affilieTelephone:
-                            telephone.isNotEmpty ? telephone : null,
+                        affilieTelephone: telephone.isNotEmpty
+                            ? telephone
+                            : null,
                         allowVirtualAccount: true,
                       ),
                     ),
@@ -569,8 +564,9 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                     affilieId: affilieId,
                     affilieNom: nom,
                     affiliePrenom: prenom,
-                    affilieTelephone:
-                        telephone.trim().isNotEmpty ? telephone : null,
+                    affilieTelephone: telephone.trim().isNotEmpty
+                        ? telephone
+                        : null,
                     allowVirtualAccount: true,
                   );
                 },
@@ -585,14 +581,6 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                         affilieNomComplet: name.isNotEmpty ? name : null,
                       ),
                     ),
-                  );
-                },
-                onAntecedents: () {
-                  AntecedentBottomSheet.show(
-                    context,
-                    affilieId: affilieId,
-                    affilieNom: nom,
-                    affiliePrenom: prenom,
                   );
                 },
                 onArrieres: () {

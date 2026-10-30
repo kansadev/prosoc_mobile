@@ -16,7 +16,10 @@ import 'package:prosoc/utils/phone_utils.dart';
 import 'package:prosoc/views/screens/at/flex_pay_payment_waiting_screen.dart';
 import 'package:prosoc/views/screens/at/payment_webview_screen.dart';
 import 'package:prosoc/views/widgets/flex_pay_card_payment_bottom_sheet.dart';
+import 'package:prosoc/views/widgets/devise_paiement_selector.dart';
 import 'package:prosoc/views/widgets/flex_pay_payment_error_dialog.dart';
+import 'package:prosoc/offline/offline_write_gateway.dart';
+import '../../../../services/auth_service.dart';
 
 /// Paiement d'une cotisation affilié (`typeCollecte = Cotisation`).
 class PayerContributionScreen extends StatefulWidget {
@@ -66,6 +69,8 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
   bool _isLoadingTarifs = false;
   String? _selectedDevise;
   int? _selectedDeviseId;
+  /// Devise de paiement Mobile Money et conversion depuis la devise du tarif.
+  late final DevisePaiementController _devisePaiement;
   List<dynamic> _devises = [];
   bool _isLoadingDevises = false;
   bool _isLoading = false;
@@ -114,10 +119,18 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
     _loadPenalites();
     _loadTarifs();
     _loadDevises();
+    _devisePaiement = DevisePaiementController(
+      operation: () => (
+        deviseId: _selectedDeviseId,
+        montant: double.tryParse(_montantController.text.trim()),
+      ),
+      triggers: _montantController,
+    )..loadDevises();
   }
 
   @override
   void dispose() {
+    _devisePaiement.dispose();
     _montantController.dispose();
     _observationController.dispose();
     _telephonePaiementController.dispose();
@@ -809,6 +822,16 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
               keyboardType: TextInputType.phone,
             ),
           ),
+          const SizedBox(height: 16),
+          _buildFormField(
+            label: 'Devise de paiement',
+            icon: Icons.currency_exchange,
+            required: true,
+            child: DevisePaiementSelector(
+              controller: _devisePaiement,
+              decoration: _inputDecoration('Devise de paiement'),
+            ),
+          ),
         ],
         const SizedBox(height: 16),
         _buildFormField(
@@ -973,6 +996,29 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
     };
   }
 
+  /// Identifiant du frais porté par le tarif de cotisation (si la plateforme
+  /// le fournit) — requis par le batch offline.
+  int? _fraisIdFromTarif(Map<String, dynamic>? tarif) {
+    if (tarif == null) return null;
+    for (final key in const [
+      'fraisId',
+      'idFrais',
+      'FraisId',
+      'IdFrais',
+    ]) {
+      final value = tarif[key];
+      if (value is num && value > 0) return value.toInt();
+      final parsed = int.tryParse(value?.toString() ?? '');
+      if (parsed != null && parsed > 0) return parsed;
+    }
+    final nested = tarif['frais'] ?? tarif['Frais'];
+    if (nested is Map) {
+      final nestedMap = Map<String, dynamic>.from(nested);
+      return _fraisIdFromTarif(nestedMap);
+    }
+    return null;
+  }
+
   Future<void> _submitContribution() async {
     if (_selectedTarifId == null) {
       _showErrorSnackBar('Veuillez sélectionner un tarif de cotisation');
@@ -1071,12 +1117,25 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
           return;
         }
 
+        // Paiement dans une autre devise : la collecte porte la devise et le
+        // montant converti ; le serveur vérifie l'égalité avec le tarif.
+        final paiement = await _devisePaiement.resolve(
+          enabled: _isMobileMoneyPayment,
+        );
+        if (!mounted) return;
+        if (!paiement.isReady) {
+          _showErrorSnackBar(paiement.blockingMessage!);
+          return;
+        }
+        final devisePaiementId = paiement.deviseId!;
+        final converti = devisePaiementId != deviseId;
+
         final collecte = _buildCollecteBody(
-          montantRecu: montantPaye,
-          montantAttendu: montantAttendu,
+          montantRecu: paiement.montant!,
+          montantAttendu: converti ? paiement.montant! : montantAttendu,
           tarifId: tarifId,
           referencePaiement: referencePaiement,
-          deviseId: deviseId,
+          deviseId: devisePaiementId,
           modePaiement: modePaiement,
           statutPaiement: statutPaiement,
           now: now,
@@ -1087,7 +1146,7 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
               collecte: collecte,
               modePaiement: modePaiement,
               telephonePaiement: telephonePaiement,
-              devisePaiementId: deviseId,
+              devisePaiementId: devisePaiementId,
             );
 
         if (!mounted) return;
@@ -1109,11 +1168,12 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
         return;
       }
 
-      final response = await ApiService.createCollecte(
-        typeCollecte: 'Cotisation',
+      final outcome = await OfflineWriteGateway.collecte(
+        typeCollecte: AdhesionApiValues.typeCollecteCotisation,
         affilieId: widget.affilieId,
         agentId: collecteAgentId,
         cotisationAffilieId: tarifId,
+        fraisId: _fraisIdFromTarif(_tarifById(tarifId)) ?? 0,
         montant: montantPaye,
         mois: now.month,
         annee: now.year,
@@ -1127,13 +1187,40 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
         phone: _telephonePaiementController.text.trim().isNotEmpty
             ? PhoneUtils.normalizeDrcPhone(_telephonePaiementController.text)
             : null,
+        label: 'Cotisation ${widget.affiliePrenom}',
       );
 
       if (!mounted) return;
 
-      if (response.success) {
+      if (outcome is OfflineQueued) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Cotisation enregistrée hors ligne. Elle sera synchronisée dès '
+              'le retour du réseau.',
+            ),
+            backgroundColor: const Color(0xFFF59E0B),
+          ),
+        );
+        if (mounted) Navigator.pop(context, true);
+        return;
+      }
+
+      if (outcome is OfflineFailed) {
+        setState(() => _isLoading = false);
+        await FlexPayPaymentErrorDialog.show(
+          context,
+          message: outcome.message,
+          statusCode: outcome.statusCode,
+        );
+        return;
+      }
+
+      final data = outcome is OfflineSynced ? outcome.data : null;
+      {
         final idCollecte = CollecteReceiptHelper.parseId(
-          response.data is Map ? (response.data as Map)['idCollecte'] : null,
+          data?['idCollecte'],
         );
         await CollecteReceiptHelper.open(
           context,
@@ -1141,23 +1228,16 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
             operation: CollecteReceiptOperation.cotisation,
             montant: montantPaye,
             deviseId: deviseId,
-            reference: response.data is Map
-                ? (response.data as Map)['referencePaiement']?.toString()
-                : null,
+            reference: data?['referencePaiement']?.toString(),
             modePaiement: modePaiement,
             affilieNom: '${widget.affiliePrenom} ${widget.affilieNom}'.trim(),
+            agentNom: AuthService.currentUser?.utilisateur.nomUtilisateur?.trim(),
             idCollecte: idCollecte,
             statutPaiement: statutPaiement,
           ),
           popResult: true,
         );
         if (mounted) Navigator.pop(context, true);
-      } else {
-        await FlexPayPaymentErrorDialog.show(
-          context,
-          message: response.message,
-          statusCode: response.statusCode,
-        );
       }
     } catch (e, stackTrace) {
       ApiErrorHelper.logException('ContributionScreen/submit', e, stackTrace);

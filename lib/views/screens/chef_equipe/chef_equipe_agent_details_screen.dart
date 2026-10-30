@@ -6,7 +6,6 @@ import '../../../models/chef_equipe_model.dart';
 import '../../../utils/api_error_helper.dart';
 import '../../../utils/formatters.dart';
 import '../../widgets/prosoc_resource_error_view.dart';
-import '../superviseur/widgets/superviseur_recharge_wallet_sheet.dart';
 
 class ChefEquipeAgentDetailsScreen extends StatefulWidget {
   final int agentId;
@@ -68,14 +67,16 @@ class _ChefEquipeAgentDetailsScreenState
     }
   }
 
-  Future<void> _loadMovementsIfNeeded({bool force = false, bool initial = false}) async {
+  Future<void> _loadMovementsIfNeeded({
+    bool force = false,
+    bool initial = false,
+  }) async {
     if (_movementsLoaded && !force && !initial) return;
     if (_isLoadingMovements) return;
     setState(() => _isLoadingMovements = true);
 
     try {
-      final response =
-          await ApiService.getChefEquipeMouvementsWallet(
+      final response = await ApiService.getChefEquipeMouvementsWallet(
         widget.agentId,
         limit: 20,
       );
@@ -108,7 +109,11 @@ class _ChefEquipeAgentDetailsScreenState
         _movementsErrorStatusCode = response.statusCode;
       });
     } catch (e, stackTrace) {
-      ApiErrorHelper.logException('ChefEquipeAgentDetails/mouvements', e, stackTrace);
+      ApiErrorHelper.logException(
+        'ChefEquipeAgentDetails/mouvements',
+        e,
+        stackTrace,
+      );
       setState(() {
         _movementsError = ApiErrorHelper.userFacingNetwork();
         _movementsErrorStatusCode = 0;
@@ -157,7 +162,11 @@ class _ChefEquipeAgentDetailsScreenState
         _collectesErrorStatusCode = response.statusCode;
       });
     } catch (e, stackTrace) {
-      ApiErrorHelper.logException('ChefEquipeAgentDetails/collectes', e, stackTrace);
+      ApiErrorHelper.logException(
+        'ChefEquipeAgentDetails/collectes',
+        e,
+        stackTrace,
+      );
       setState(() {
         _collectesError = ApiErrorHelper.userFacingNetwork();
         _collectesErrorStatusCode = 0;
@@ -167,23 +176,11 @@ class _ChefEquipeAgentDetailsScreenState
     }
   }
 
-  Future<void> _openRechargeWallet() async {
-    if (widget.agentId <= 0) return;
-    final recharged = await SuperviseurRechargeWalletSheet.show(
-      context,
-      agentId: widget.agentId,
-      agentNom: widget.agentNom.trim().isNotEmpty
-          ? widget.agentNom.trim()
-          : 'Agent',
-    );
-    if (!mounted || !recharged) return;
-    await _loadMovementsIfNeeded(force: true, initial: true);
-  }
-
   @override
   Widget build(BuildContext context) {
-    final safeNom =
-        widget.agentNom.trim().isNotEmpty ? widget.agentNom : 'Agent';
+    final safeNom = widget.agentNom.trim().isNotEmpty
+        ? widget.agentNom
+        : 'Agent';
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
@@ -193,13 +190,6 @@ class _ChefEquipeAgentDetailsScreenState
         surfaceTintColor: Colors.white,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
-        actions: [
-          IconButton(
-            tooltip: 'Recharger le compte virtuel',
-            onPressed: widget.agentId > 0 ? _openRechargeWallet : null,
-            icon: const Icon(Icons.account_balance_wallet_outlined),
-          ),
-        ],
         bottom: TabBar(
           controller: _tabController,
           tabs: const [
@@ -213,10 +203,7 @@ class _ChefEquipeAgentDetailsScreenState
       ),
       body: TabBarView(
         controller: _tabController,
-        children: [
-          _buildMovementsTab(),
-          _buildCollectesTab(),
-        ],
+        children: [_buildMovementsTab(), _buildCollectesTab()],
       ),
     );
   }
@@ -248,20 +235,6 @@ class _ChefEquipeAgentDetailsScreenState
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         children: [
           _MovementsSummaryCard(data: data),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: widget.agentId > 0 ? _openRechargeWallet : null,
-            icon: const Icon(Icons.account_balance_wallet_outlined),
-            label: const Text('Recharger le compte virtuel'),
-            style: FilledButton.styleFrom(
-              backgroundColor: AppColors.prosocGreen,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-            ),
-          ),
           const SizedBox(height: 16),
           if (data.mouvementsRecents.isEmpty)
             _emptyState('Aucun mouvement récent pour ce wallet.')
@@ -293,9 +266,7 @@ class _ChefEquipeAgentDetailsScreenState
         onRefresh: _loadCollectesIfNeeded,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 24, 16, 24),
-          children: [
-            _emptyState('Aucune collecte trouvée pour ce agent.'),
-          ],
+          children: [_emptyState('Aucune collecte trouvée pour ce agent.')],
         ),
       );
     }
@@ -353,7 +324,7 @@ class _MovementsSummaryCard extends StatelessWidget {
             color: AppColors.prosocGreen.withValues(alpha: 0.25),
             blurRadius: 12,
             offset: const Offset(0, 6),
-          )
+          ),
         ],
       ),
       child: Column(
@@ -469,8 +440,11 @@ class _MovementRow extends StatelessWidget {
               color: AppColors.prosocGreen.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(12),
             ),
-            child: const Icon(Icons.swap_horiz_rounded,
-                color: AppColors.prosocGreen, size: 20),
+            child: const Icon(
+              Icons.swap_horiz_rounded,
+              color: AppColors.prosocGreen,
+              size: 20,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -496,10 +470,7 @@ class _MovementRow extends StatelessWidget {
                       : 'Source : ${mouvement.source}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                 ),
                 const SizedBox(height: 6),
                 Text(
@@ -557,8 +528,11 @@ class _CollecteCard extends StatelessWidget {
                   color: AppColors.prosocGreen.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.receipt_long_rounded,
-                    color: AppColors.prosocGreen, size: 20),
+                child: const Icon(
+                  Icons.receipt_long_rounded,
+                  color: AppColors.prosocGreen,
+                  size: 20,
+                ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -621,7 +595,9 @@ class _CollecteCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.prosocGreen.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: AppColors.prosocGreen.withValues(alpha: 0.25)),
+        border: Border.all(
+          color: AppColors.prosocGreen.withValues(alpha: 0.25),
+        ),
       ),
       child: Text(
         trimmed.isEmpty ? '—' : trimmed,
@@ -634,4 +610,3 @@ class _CollecteCard extends StatelessWidget {
     );
   }
 }
-

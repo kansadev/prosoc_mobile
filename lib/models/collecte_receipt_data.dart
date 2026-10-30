@@ -5,6 +5,7 @@ enum CollecteReceiptOperation {
   souscription,
   cotisation,
   frais,
+  prestationMedicale,
 }
 
 extension CollecteReceiptOperationLabel on CollecteReceiptOperation {
@@ -14,6 +15,7 @@ extension CollecteReceiptOperationLabel on CollecteReceiptOperation {
         CollecteReceiptOperation.souscription => 'Souscription',
         CollecteReceiptOperation.cotisation => 'Cotisation',
         CollecteReceiptOperation.frais => 'Frais',
+        CollecteReceiptOperation.prestationMedicale => 'Prestation médicale',
       };
 }
 
@@ -26,6 +28,9 @@ class CollecteReceiptData {
   final String? modePaiement;
   final String? affilieNom;
   final String? codeAdhesion;
+  final String? agentNom;
+  final String? collecteurNom;
+  final int? agentId;
   final int? idCollecte;
   final int? idAdhesion;
   final String? statutPaiement;
@@ -42,6 +47,9 @@ class CollecteReceiptData {
     this.modePaiement,
     this.affilieNom,
     this.codeAdhesion,
+    this.agentNom,
+    this.collecteurNom,
+    this.agentId,
     this.idCollecte,
     this.idAdhesion,
     this.statutPaiement,
@@ -50,7 +58,14 @@ class CollecteReceiptData {
     this.extras = const {},
   }) : date = date ?? DateTime.now();
 
-  String get title => 'Reçu — ${operation.label}';
+  String get _collecteurDisplay =>
+      (collecteurNom?.trim().isNotEmpty == true
+          ? collecteurNom!.trim()
+          : (agentNom?.trim().isNotEmpty == true ? agentNom!.trim() : ''));
+
+  String get title => 'Reçu  ${operation.label}';
+
+  String get agentCollecteur => _collecteurDisplay;
 
   String get numeroRecu {
     final ts = date.millisecondsSinceEpoch.toString();

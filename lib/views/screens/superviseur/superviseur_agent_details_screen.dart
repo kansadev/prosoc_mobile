@@ -6,7 +6,6 @@ import '../../../models/agent_model.dart';
 import '../../../utils/api_error_helper.dart';
 import '../../../utils/formatters.dart';
 import '../../widgets/prosoc_resource_error_view.dart';
-import 'widgets/superviseur_recharge_wallet_sheet.dart';
 
 /// Détails d'un agent supervisé via GET /api/Agent/{id}.
 class SuperviseurAgentDetailsScreen extends StatefulWidget {
@@ -58,7 +57,8 @@ class _SuperviseurAgentDetailsScreenState
 
       setState(() {
         _isLoading = false;
-        _errorMessage = response.message ??
+        _errorMessage =
+            response.message ??
             'Impossible de charger les détails de l\'agent.';
         _errorStatusCode = response.statusCode;
       });
@@ -73,24 +73,14 @@ class _SuperviseurAgentDetailsScreenState
     }
   }
 
-  Future<void> _openRechargeWallet(AgentModel agent) async {
-    final recharged = await SuperviseurRechargeWalletSheet.show(
-      context,
-      agentId: agent.id,
-      agentNom: agent.nomComplet,
-    );
-    if (!mounted || !recharged) return;
-    await _loadAgent(force: true);
-  }
-
   @override
   Widget build(BuildContext context) {
     final agent = _agent;
     final title = agent?.nomComplet.isNotEmpty == true
         ? agent!.nomComplet
         : (widget.agentNom?.isNotEmpty == true
-            ? widget.agentNom!
-            : 'Détails agent');
+              ? widget.agentNom!
+              : 'Détails agent');
 
     return Scaffold(
       backgroundColor: const Color(0xFFF5F7FA),
@@ -106,42 +96,27 @@ class _SuperviseurAgentDetailsScreenState
               child: CircularProgressIndicator(color: AppColors.prosocGreen),
             )
           : _errorMessage != null
-              ? ProsocResourceErrorView(
-                  message: _errorMessage!,
-                  statusCode: _errorStatusCode,
-                  onRetry: () => _loadAgent(force: true),
-                )
-              : RefreshIndicator(
-                  color: AppColors.prosocGreen,
-                  onRefresh: () => _loadAgent(force: true),
-                  child: ListView(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-                    children: [
-                      _buildHeader(agent!),
-                      const SizedBox(height: 16),
-                      _buildInfoSection(agent),
-                      const SizedBox(height: 16),
-                      _buildWalletSection(agent),
-                      const SizedBox(height: 16),
-                      _buildAccountSection(agent),
-                      const SizedBox(height: 24),
-                      if (agent.walletVirtuelCree || agent.walletVirtuelId != null)
-                        FilledButton.icon(
-                          onPressed: () => _openRechargeWallet(agent),
-                          icon: const Icon(Icons.account_balance_wallet_outlined),
-                          label: const Text('Recharger le compte virtuel'),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: AppColors.prosocGreen,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+          ? ProsocResourceErrorView(
+              message: _errorMessage!,
+              statusCode: _errorStatusCode,
+              onRetry: () => _loadAgent(force: true),
+            )
+          : RefreshIndicator(
+              color: AppColors.prosocGreen,
+              onRefresh: () => _loadAgent(force: true),
+              child: ListView(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                children: [
+                  _buildHeader(agent!),
+                  const SizedBox(height: 16),
+                  _buildInfoSection(agent),
+                  const SizedBox(height: 16),
+                  _buildWalletSection(agent),
+                  const SizedBox(height: 16),
+                  _buildAccountSection(agent),
+                ],
+              ),
+            ),
     );
   }
 
@@ -170,8 +145,8 @@ class _SuperviseurAgentDetailsScreenState
             backgroundColor: AppColors.prosocGreen.withValues(alpha: 0.12),
             backgroundImage:
                 agent.photoUrl != null && agent.photoUrl!.isNotEmpty
-                    ? NetworkImage(agent.photoUrl!)
-                    : null,
+                ? NetworkImage(agent.photoUrl!)
+                : null,
             child: agent.photoUrl == null || agent.photoUrl!.isEmpty
                 ? Text(
                     initial,
@@ -216,8 +191,9 @@ class _SuperviseurAgentDetailsScreenState
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: (actif ? AppColors.prosocGreen : Colors.red)
-            .withValues(alpha: 0.12),
+        color: (actif ? AppColors.prosocGreen : Colors.red).withValues(
+          alpha: 0.12,
+        ),
         borderRadius: BorderRadius.circular(20),
       ),
       child: Text(
@@ -293,8 +269,8 @@ class _SuperviseurAgentDetailsScreenState
           'Utilisateur lié',
           agent.utilisateurCree
               ? (agent.nomUtilisateur?.isNotEmpty == true
-                  ? agent.nomUtilisateur!
-                  : 'Utilisateur #${agent.utilisateurId ?? '—'}')
+                    ? agent.nomUtilisateur!
+                    : 'Utilisateur #${agent.utilisateurId ?? '—'}')
               : 'Non créé',
           Icons.person_outline,
         ),
@@ -363,10 +339,7 @@ class _SuperviseurAgentDetailsScreenState
               children: [
                 Text(
                   label,
-                  style: TextStyle(
-                    color: Colors.grey.shade600,
-                    fontSize: 12,
-                  ),
+                  style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -424,8 +397,9 @@ class _SuperviseurAgentDetailsScreenState
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: (cree ? AppColors.prosocGreen : Colors.orange)
-                  .withValues(alpha: 0.12),
+              color: (cree ? AppColors.prosocGreen : Colors.orange).withValues(
+                alpha: 0.12,
+              ),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(

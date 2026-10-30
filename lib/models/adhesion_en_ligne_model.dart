@@ -30,18 +30,38 @@ class AdhesionEnLigneSansGestionnaireModel {
     Map<String, dynamic> json,
   ) {
     return AdhesionEnLigneSansGestionnaireModel(
-      idAdhesion: _int(json['idAdhesion'] ?? json['IdAdhesion']),
-      idAffilie: _int(json['idAffilie'] ?? json['IdAffilie']),
-      codeAdhesion: (json['codeAdhesion'] ?? json['CodeAdhesion'] ?? '')
-          .toString(),
+      idAdhesion: _int(
+        json['idAdhesion'] ?? json['IdAdhesion'] ?? json['id'] ?? json['Id'],
+      ),
+      idAffilie: _int(
+        json['idAffilie'] ??
+            json['IdAffilie'] ??
+            json['affilieId'] ??
+            json['AffilieId'] ??
+            json['id'] ??
+            json['Id'],
+      ),
+      codeAdhesion:
+          (json['codeAdhesion'] ??
+                  json['CodeAdhesion'] ??
+                  json['matricule'] ??
+                  json['Matricule'] ??
+                  '')
+              .toString(),
       nomComplet: (json['nomComplet'] ?? json['NomComplet'] ?? '').toString(),
       telephone: (json['telephone'] ?? json['Telephone'] ?? '').toString(),
       emailAffilie: json['emailAffilie']?.toString(),
       provinceResidence: json['provinceResidence']?.toString(),
       typeAdhesion: json['typeAdhesion']?.toString(),
       statutDossier:
-          (json['statutDossier'] ?? json['StatutDossier'] ?? '').toString(),
-      dateAdhesion: _date(json['dateAdhesion'] ?? json['DateAdhesion']),
+          (json['statutDossier'] ??
+                  json['StatutDossier'] ??
+                  json['statut'] ??
+                  '')
+              .toString(),
+      dateAdhesion: _date(
+        json['dateAdhesion'] ?? json['DateAdhesion'] ?? json['dateCreation'],
+      ),
       modePaiementAdhesion: json['modePaiementAdhesion']?.toString(),
     );
   }

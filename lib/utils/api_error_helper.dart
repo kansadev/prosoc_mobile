@@ -30,9 +30,38 @@ class ApiErrorHelper {
     return fallback ?? 'Une erreur est survenue. Veuillez réessayer.';
   }
 
+  static final RegExp _htmlTag = RegExp(r'<\s*[a-z!/][^>]*>', caseSensitive: false);
+  static final RegExp _exceptionType = RegExp(r'\b\w*(Exception|Error)\s*:');
+  static final RegExp _stackFrame = RegExp(r'^\s*at\s+[\w.<>`]+[(.]', multiLine: true);
+
+  /// Contenu technique brut (page HTML de proxy / IIS pendant un déploiement,
+  /// trace d'exception, corps JSON non interprété) à ne jamais afficher.
+  static bool isTechnicalContent(String? text) {
+    if (text == null) return false;
+    final t = text.trim();
+    if (t.isEmpty) return false;
+    return _htmlTag.hasMatch(t) ||
+        t.startsWith('{') ||
+        t.startsWith('[') ||
+        _exceptionType.hasMatch(t) ||
+        _stackFrame.hasMatch(t);
+  }
+
+  /// Remplace un message technique par un message utilisateur générique.
+  /// Les messages vides ou métier sont retournés tels quels.
+  static String? sanitizeForDisplay(
+    String? message, {
+    int? statusCode,
+    String? fallback,
+  }) {
+    if (!isTechnicalContent(message)) return message;
+    return userFacingMessage(statusCode: statusCode, fallback: fallback);
+  }
+
   /// Messages techniques serveur à ne jamais afficher tels quels à l'utilisateur.
   static bool isOpaqueServerDetail(String? detail) {
     if (detail == null || detail.trim().isEmpty) return true;
+    if (isTechnicalContent(detail)) return true;
     final d = detail.trim().toLowerCase();
     return d.contains('erreur interne') ||
         d.contains('internal server error') ||

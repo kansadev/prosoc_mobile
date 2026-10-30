@@ -1,1 +1,7 @@
-flutter run --dart-define=HEALTH_UI_ENABLED=true
+flutter run                                                   (dev par défaut)
+flutter run --dart-define=APP_ENV=uat                         (pointer l'UAT en local)
+
+Builds (APP_ENV = dev | uat | prod) :
+flutter build apk --dart-define=APP_ENV=uat
+flutter build appbundle --dart-define=APP_ENV=prod
+flutter build ipa --dart-define=APP_ENV=prod

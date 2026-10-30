@@ -10,6 +10,7 @@ import 'at/profile_screen.dart';
 import 'chef_equipe/chef_equipe_zone_screen.dart';
 import 'chef_equipe/chef_equipe_team_screen.dart';
 import '../../widgets/tab_load_gate.dart';
+import '../../widgets/offline_sync_banner.dart';
 
 // ============================================
 // ÉCRAN PRINCIPAL AVEC NAVIGATION (AGENT AT)
@@ -162,9 +163,13 @@ class _MainScreenState extends State<MainScreen> {
     final stackChildren = _buildStackChildren(stackIndex);
 
     return Scaffold(
-      body: IndexedStack(
-        index: stackIndex,
-        children: stackChildren,
+      body: Column(
+        children: [
+          const OfflineSyncBanner(dense: true),
+          Expanded(
+            child: IndexedStack(index: stackIndex, children: stackChildren),
+          ),
+        ],
       ),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: stackIndex,

@@ -17,7 +17,9 @@ import 'package:prosoc/utils/phone_utils.dart';
 import 'package:prosoc/views/screens/at/flex_pay_payment_waiting_screen.dart';
 import 'package:prosoc/views/screens/at/payment_webview_screen.dart';
 import 'package:prosoc/views/widgets/flex_pay_card_payment_bottom_sheet.dart';
+import 'package:prosoc/views/widgets/devise_paiement_selector.dart';
 import 'package:prosoc/views/widgets/flex_pay_payment_error_dialog.dart';
+import 'package:prosoc/offline/offline_write_gateway.dart';
 
 /// Paiement d'une souscription prestation (`typeCollecte = Souscription`).
 class PayerSouscriptionScreen extends StatefulWidget {
@@ -65,6 +67,8 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
   late String? _selectedModePaiement;
   String? _selectedDevise;
   int? _selectedDeviseId;
+  /// Devise de paiement Mobile Money et conversion depuis la devise du tarif.
+  late final DevisePaiementController _devisePaiement;
   int? _agentId;
   double? _montantAttendu;
   bool _isLoading = false;
@@ -90,12 +94,20 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
     if (tel != null && tel.isNotEmpty) {
       _telephonePaiementController.text = tel;
     }
+    _devisePaiement = DevisePaiementController(
+      operation: () => (
+        deviseId: _selectedDeviseId,
+        montant: double.tryParse(_montantController.text.trim()),
+      ),
+      triggers: _montantController,
+    )..loadDevises();
     _loadAgentId();
     _loadData();
   }
 
   @override
   void dispose() {
+    _devisePaiement.dispose();
     _montantController.dispose();
     _observationController.dispose();
     _telephonePaiementController.dispose();
@@ -551,6 +563,16 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
               keyboardType: TextInputType.phone,
             ),
           ),
+          const SizedBox(height: 16),
+          _buildFormField(
+            label: 'Devise de paiement',
+            icon: Icons.currency_exchange,
+            required: true,
+            child: DevisePaiementSelector(
+              controller: _devisePaiement,
+              decoration: _inputDecoration('Devise de paiement'),
+            ),
+          ),
         ],
         const SizedBox(height: 16),
         _buildFormField(
@@ -775,12 +797,25 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
           return;
         }
 
+        // Paiement dans une autre devise : la collecte porte la devise et le
+        // montant converti ; le serveur vérifie l'égalité avec le tarif.
+        final paiement = await _devisePaiement.resolve(
+          enabled: _isMobileMoneyPayment,
+        );
+        if (!mounted) return;
+        if (!paiement.isReady) {
+          _showErrorSnackBar(paiement.blockingMessage!);
+          return;
+        }
+        final devisePaiementId = paiement.deviseId!;
+        final converti = devisePaiementId != deviseId;
+
         final collecte = _buildCollecteBody(
-          montantRecu: montantPaye,
-          montantAttendu: montantAttendu,
+          montantRecu: paiement.montant!,
+          montantAttendu: converti ? paiement.montant! : montantAttendu,
           souscriptionPrestationId: souscriptionPrestationId,
           referencePaiement: referencePaiement,
-          deviseId: deviseId,
+          deviseId: devisePaiementId,
           modePaiement: modePaiement,
           statutPaiement: statutPaiement,
           now: now,
@@ -791,7 +826,7 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
               collecte: collecte,
               modePaiement: modePaiement,
               telephonePaiement: telephonePaiement,
-              devisePaiementId: deviseId,
+              devisePaiementId: devisePaiementId,
             );
 
         if (!mounted) return;
@@ -813,50 +848,104 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
         return;
       }
 
-      final response = await ApiService.createCollecte(
-        typeCollecte: 'Souscription',
-        affilieId: widget.affilieId,
-        agentId: collecteAgentId,
-        souscriptionPrestationId: souscriptionPrestationId,
-        montant: montantPaye,
-        mois: now.month,
-        annee: now.year,
-        referencePaiement: '',
-        modePaiement: modePaiement,
-        statutPaiement: statutPaiement,
-        montantRecu: montantPaye,
-        montantAttendu: montantAttendu,
-        deviseId: deviseId,
-        observation: _observationController.text.trim(),
-        phone: _telephonePaiementController.text.trim().isNotEmpty
-            ? PhoneUtils.normalizeDrcPhone(_telephonePaiementController.text)
-            : null,
-      );
-
       // Affilié connecté : tenter aussi le contrat POST /api/Affilie/paiement
       // si la collecte classique est refusée (permissions PAIEMENT_AFFILIE).
-      var effectiveResponse = response;
-      if (!response.success &&
-          AuthService.isAdherentOrAffilie &&
-          AuthService.affilieId == widget.affilieId) {
-        final affiliePay = await ApiService.createAffiliePaiement(
+      final isAffilieSelfService = AuthService.isAdherentOrAffilie &&
+          AuthService.affilieId == widget.affilieId;
+
+      ApiResponse<Map<String, dynamic>> response;
+      if (isAffilieSelfService) {
+        // Hors périmètre offline v1 (affilié en self-service) : appel direct.
+        response = await ApiService.createCollecte(
+          typeCollecte: AdhesionApiValues.typeCollecteSouscription,
+          affilieId: widget.affilieId,
+          agentId: collecteAgentId,
           souscriptionPrestationId: souscriptionPrestationId,
           montant: montantPaye,
+          mois: now.month,
+          annee: now.year,
+          referencePaiement: '',
           modePaiement: modePaiement,
+          statutPaiement: statutPaiement,
+          montantRecu: montantPaye,
+          montantAttendu: montantAttendu,
           deviseId: deviseId,
           observation: _observationController.text.trim(),
+          phone: _telephonePaiementController.text.trim().isNotEmpty
+              ? PhoneUtils.normalizeDrcPhone(_telephonePaiementController.text)
+              : null,
         );
-        if (affiliePay.success) {
-          effectiveResponse = affiliePay;
+        if (!response.success) {
+          final affiliePay = await ApiService.createAffiliePaiement(
+            souscriptionPrestationId: souscriptionPrestationId,
+            montant: montantPaye,
+            modePaiement: modePaiement,
+            deviseId: deviseId,
+            observation: _observationController.text.trim(),
+          );
+          if (affiliePay.success) response = affiliePay;
         }
+      } else {
+        final outcome = await OfflineWriteGateway.collecte(
+          typeCollecte: AdhesionApiValues.typeCollecteSouscription,
+          affilieId: widget.affilieId,
+          agentId: collecteAgentId,
+          souscriptionPrestationId: souscriptionPrestationId,
+          montant: montantPaye,
+          mois: now.month,
+          annee: now.year,
+          referencePaiement: '',
+          modePaiement: modePaiement,
+          statutPaiement: statutPaiement,
+          montantRecu: montantPaye,
+          montantAttendu: montantAttendu,
+          deviseId: deviseId,
+          observation: _observationController.text.trim(),
+          phone: _telephonePaiementController.text.trim().isNotEmpty
+              ? PhoneUtils.normalizeDrcPhone(_telephonePaiementController.text)
+              : null,
+          label: 'Souscription ${widget.affiliePrenom}',
+        );
+
+        if (outcome is OfflineQueued) {
+          if (!mounted) return;
+          setState(() => _isLoading = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Souscription enregistrée hors ligne. Elle sera synchronisée '
+                'dès le retour du réseau.',
+              ),
+              backgroundColor: const Color(0xFFF59E0B),
+            ),
+          );
+          if (mounted) Navigator.pop(context, true);
+          return;
+        }
+
+        if (outcome is OfflineFailed) {
+          if (!mounted) return;
+          setState(() => _isLoading = false);
+          await FlexPayPaymentErrorDialog.show(
+            context,
+            message: outcome.message,
+            statusCode: outcome.statusCode,
+          );
+          return;
+        }
+
+        response = ApiResponse<Map<String, dynamic>>(
+          success: true,
+          data: outcome is OfflineSynced ? outcome.data : null,
+        );
       }
 
       if (!mounted) return;
 
-      if (effectiveResponse.success) {
+      if (response.success) {
         final idCollecte = CollecteReceiptHelper.parseId(
-          effectiveResponse.data is Map
-              ? (effectiveResponse.data as Map)['idCollecte']
+          response.data is Map
+              ? (response.data as Map)['idCollecte']
               : null,
         );
         await CollecteReceiptHelper.open(
@@ -865,12 +954,13 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
             operation: CollecteReceiptOperation.souscription,
             montant: montantPaye,
             deviseId: deviseId,
-            reference: effectiveResponse.data is Map
-                ? (effectiveResponse.data as Map)['referencePaiement']
+            reference: response.data is Map
+                ? (response.data as Map)['referencePaiement']
                     ?.toString()
                 : null,
             modePaiement: modePaiement,
             affilieNom: '${widget.affiliePrenom} ${widget.affilieNom}'.trim(),
+            agentNom: AuthService.currentUser?.utilisateur.nomComplet ?? 'Inconnu',
             idCollecte: idCollecte,
             statutPaiement: statutPaiement,
           ),
@@ -880,8 +970,8 @@ class _PayerSouscriptionScreenState extends State<PayerSouscriptionScreen> {
       } else {
         await FlexPayPaymentErrorDialog.show(
           context,
-          message: effectiveResponse.message,
-          statusCode: effectiveResponse.statusCode,
+          message: response.message,
+          statusCode: response.statusCode,
         );
       }
     } catch (e, stackTrace) {

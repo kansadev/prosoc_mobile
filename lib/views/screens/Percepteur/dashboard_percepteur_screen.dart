@@ -5,6 +5,23 @@ import '../../../config/api.dart';
 import '../../../config/colors.dart';
 import '../../../models/dashboard_percepteur_model.dart';
 import '../../../utils/api_error_helper.dart';
+import 'widgets/perception_periode_detail_sheet.dart';
+
+/// Périodes de consultation de la collecte.
+///
+/// Le contrat API n'expose aucun paramètre « semaine » : les agrégats
+/// jour / semaine / mois sont fournis tels quels par
+/// `GET /api/DashboardPercepteur/summary` (`PercepteurKpis`). Le détail des
+/// opérations, lui, se filtre par fenêtre de dates.
+enum _PerceptionPeriode {
+  jour('Aujourd\'hui'),
+  semaine('7 derniers jours'),
+  mois('Ce mois');
+
+  const _PerceptionPeriode(this.label);
+
+  final String label;
+}
 
 class DashboardPercepteurScreen extends StatefulWidget {
   const DashboardPercepteurScreen({super.key});
@@ -18,6 +35,7 @@ class _DashboardPercepteurScreenState extends State<DashboardPercepteurScreen> {
   DashboardPercepteurModel? _dashboard;
   bool _isLoading = true;
   String? _errorMessage;
+  _PerceptionPeriode _periode = _PerceptionPeriode.semaine;
 
   @override
   void initState() {
@@ -178,6 +196,8 @@ class _DashboardPercepteurScreenState extends State<DashboardPercepteurScreen> {
   }
 
   Widget _heroCard(DashboardPercepteurModel dashboard, PercepteurKpis? kpis) {
+    final operations = _operationsPeriode(kpis);
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -193,13 +213,15 @@ class _DashboardPercepteurScreenState extends State<DashboardPercepteurScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Montant total perçu',
-            style: TextStyle(color: Colors.white70, fontSize: 14),
+          _periodeSelector(),
+          const SizedBox(height: 14),
+          Text(
+            'Montant perçu — ${_periode.label}',
+            style: const TextStyle(color: Colors.white70, fontSize: 14),
           ),
           const SizedBox(height: 8),
           Text(
-            kpis?.formattedMontantTotal ?? dashboard.formatMontant(0),
+            _montantPeriode(kpis),
             style: const TextStyle(
               color: Colors.white,
               fontSize: 28,
@@ -208,9 +230,13 @@ class _DashboardPercepteurScreenState extends State<DashboardPercepteurScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Ce mois : ${kpis?.formattedMontantMois ?? '—'} • '
-            'Aujourd\'hui : ${kpis?.formattedMontantJour ?? '—'}',
+            '$operations opération${operations > 1 ? 's' : ''} sur la période',
             style: const TextStyle(color: Colors.white70, fontSize: 13),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Total général : ${kpis?.formattedMontantTotal ?? dashboard.formatMontant(0)}',
+            style: const TextStyle(color: Colors.white70, fontSize: 12),
           ),
           if (dashboard.soldeAPercevoir > 0) ...[
             const SizedBox(height: 12),
@@ -222,7 +248,126 @@ class _DashboardPercepteurScreenState extends State<DashboardPercepteurScreen> {
               ),
             ),
           ],
+          const SizedBox(height: 14),
+          _buildDetailButton(),
         ],
+      ),
+    );
+  }
+
+  /// Montant de la période sélectionnée, à partir des agrégats déjà chargés
+  /// par `GET /api/DashboardPercepteur/summary`.
+  String _montantPeriode(PercepteurKpis? kpis) {
+    if (kpis == null) return '—';
+    switch (_periode) {
+      case _PerceptionPeriode.jour:
+        return kpis.formattedMontantJour;
+      case _PerceptionPeriode.semaine:
+        return kpis.formattedMontantSemaine;
+      case _PerceptionPeriode.mois:
+        return kpis.formattedMontantMois;
+    }
+  }
+
+  int _operationsPeriode(PercepteurKpis? kpis) {
+    if (kpis == null) return 0;
+    switch (_periode) {
+      case _PerceptionPeriode.jour:
+        return kpis.transactionsDuJour;
+      case _PerceptionPeriode.semaine:
+        return kpis.transactionsSemaine;
+      case _PerceptionPeriode.mois:
+        return kpis.transactionsMois;
+    }
+  }
+
+  /// Fenêtre de dates correspondant à la période sélectionnée.
+  ///
+  /// Aucune notion de « semaine » n'existe côté API : la semaine est traduite
+  /// en fenêtre glissante de 7 jours.
+  ({DateTime debut, DateTime fin}) _fenetrePeriode() {
+    final now = DateTime.now();
+    final debutDuJour = DateTime(now.year, now.month, now.day);
+    switch (_periode) {
+      case _PerceptionPeriode.jour:
+        return (
+          debut: debutDuJour,
+          fin: debutDuJour.add(const Duration(days: 1)),
+        );
+      case _PerceptionPeriode.semaine:
+        return (
+          debut: debutDuJour.subtract(const Duration(days: 6)),
+          fin: debutDuJour.add(const Duration(days: 1)),
+        );
+      case _PerceptionPeriode.mois:
+        return (
+          debut: DateTime(now.year, now.month, 1),
+          fin: debutDuJour.add(const Duration(days: 1)),
+        );
+    }
+  }
+
+  Widget _buildDetailButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton.icon(
+        onPressed: () {
+          final fenetre = _fenetrePeriode();
+          PerceptionPeriodeDetailSheet.show(
+            context,
+            dateDebut: fenetre.debut,
+            dateFin: fenetre.fin,
+            periodeLabel: _periode.label,
+          );
+        },
+        icon: const Icon(Icons.receipt_long_outlined, size: 18),
+        label: const Text('Voir les opérations de la période'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Colors.white,
+          side: BorderSide(color: Colors.white.withValues(alpha: 0.6)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _periodeSelector() {
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.2),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        children: _PerceptionPeriode.values.map((periode) {
+          final selected = periode == _periode;
+          return Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _periode = periode),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  color: selected ? Colors.white : Colors.transparent,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  periode.label,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: selected
+                        ? AppColors.prosocGreen
+                        : Colors.white.withValues(alpha: 0.9),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -245,6 +390,11 @@ class _DashboardPercepteurScreenState extends State<DashboardPercepteurScreen> {
           'Agents actifs',
           '${kpis?.nombreAgentsActifs ?? dashboard.agentsStats.length}',
           Icons.groups_outlined,
+        ),
+        _metricTile(
+          'Opérations période',
+          '${_operationsPeriode(kpis)}',
+          Icons.date_range_outlined,
         ),
         _metricTile(
           'Taux de succès',

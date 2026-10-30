@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:prosoc/utils/medical_permissions.dart';
+import 'package:prosoc/views/screens/medical/admin/medical_admin_home_screen.dart';
 import '../../../config/api.dart';
 import '../../../config/colors.dart';
 import '../../../controllers/main_controller.dart';
@@ -558,6 +560,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   _sectionCard(
                     title: 'Compte',
                     children: [
+                      if (MedicalPermissions.peutAdministrerCatalogue)
+                        _actionTile(
+                          icon: Icons.local_hospital_outlined,
+                          title: 'Catalogue médical',
+                          iconColor: Colors.teal,
+                          iconBgColor: Colors.teal.withValues(alpha: 0.1),
+                          onTap: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    const MedicalAdminHomeScreen(),
+                              ),
+                            );
+                          },
+                        ),
                       _actionTile(
                         icon: Icons.lock_outline,
                         title: 'Changer le mot de passe',

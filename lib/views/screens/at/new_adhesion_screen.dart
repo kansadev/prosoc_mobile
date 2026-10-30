@@ -18,12 +18,14 @@ import '../../../utils/electronic_payment_error_handler.dart';
 import '../../../utils/email_utils.dart';
 import '../../../utils/phone_utils.dart';
 import '../../../utils/picked_image_data.dart';
+import '../../../offline/offline_write_gateway.dart';
 import 'flex_pay_payment_waiting_screen.dart';
 import 'payment_webview_screen.dart';
 import '../../widgets/flex_pay_card_payment_bottom_sheet.dart';
 import '../../widgets/flex_pay_payment_error_dialog.dart';
 import '../../widgets/prosoc_date_picker.dart';
 import '../../widgets/prosoc_message_dialog.dart';
+import '../../widgets/devise_paiement_selector.dart';
 
 class NewAdhesionScreen extends StatefulWidget {
   const NewAdhesionScreen({super.key});
@@ -56,6 +58,7 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
   Prestation? _selectedPrestation;
   Frais? _selectedFraisAdhesion;
   String? _selectedModePaiement;
+  String? _selectedSexe;
 
   // Liste des modes de paiement (API value -> Display value)
   static const Map<String, String> _modesPaiement = {
@@ -79,6 +82,10 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
 
   PickedImageData? _photoAffilie;
   PickedImageData? _carteIdentite;
+
+  /// Vrai dès que l'utilisateur choisit explicitement la devise de paiement :
+  /// la synchronisation automatique (frais / prestation) ne l'écrase plus.
+  bool _deviseManuallySelected = false;
 
   // Loading states
   bool _isLoadingTypeAdhesions = true;
@@ -310,9 +317,8 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
               .toList();
           if (_selectedPrestation != null) {
             _applyPrestationSelection(_selectedPrestation);
-          } else if (_devises.isNotEmpty) {
-            _selectedDevise = _devises.first;
-            _deviseIdController.text = _selectedDevise!.idDevise.toString();
+          } else {
+            _applyDefaultDevise();
           }
           if (_selectedDevise != null) {
             debugPrint(
@@ -405,6 +411,22 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
     _deviseIdController.text = devise.idDevise.toString();
   }
 
+  /// Devise par défaut quand aucune prestation n'est sélectionnée :
+  /// celle du frais d'adhésion (toujours collecté), sinon la première devise.
+  void _applyDefaultDevise() {
+    if (_selectedPrestation != null ||
+        _deviseManuallySelected ||
+        _devises.isEmpty) {
+      return;
+    }
+    final fraisDeviseId = _selectedFraisAdhesion?.deviseId ?? 0;
+    if (fraisDeviseId > 0) {
+      _syncDeviseFromId(fraisDeviseId);
+    }
+    _selectedDevise ??= _devises.first;
+    _deviseIdController.text = _selectedDevise?.idDevise.toString() ?? '';
+  }
+
   void _applyPrestationSelection(Prestation? prestation) {
     if (prestation == null) return;
     final montant = prestation.resolveMontant();
@@ -415,6 +437,8 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
           ? montant.toInt().toString()
           : montant.toString();
     }
+    // Un choix explicite de devise de paiement n'est jamais écrasé.
+    if (_deviseManuallySelected) return;
     if (prestation.deviseId > 0) {
       _syncDeviseFromId(prestation.deviseId);
     } else if (prestation.resolveDeviseCode().isNotEmpty &&
@@ -466,8 +490,10 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         setState(() {
           _frais = response.data!;
           final options = _fraisAdhesionOptions;
-          _selectedFraisAdhesion =
-              options.isNotEmpty ? options.first : null;
+          _selectedFraisAdhesion = options.isNotEmpty ? options.first : null;
+          // La devise du frais devient la devise par défaut quand aucune
+          // prestation n'est sélectionnée (les devises peuvent arriver après).
+          _applyDefaultDevise();
           _isLoadingFrais = false;
           debugPrint(
             '[DEBUG] Frais chargés: ${_frais.length}, '
@@ -584,14 +610,14 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
   Widget _buildModernStepIndicator(int index) {
     final isDependantsStepSkipped =
         index == _stepDependants && _skipDependantsStep;
-    final isActive = _currentStep == index && !isDependantsStepSkipped;
+    final isActive = _currentStep == index;
     final isCompleted =
-        _currentStep > index ||
-        (isDependantsStepSkipped && _currentStep >= _stepConfirmation);
+        (_currentStep > index ||
+            (isDependantsStepSkipped && _currentStep >= _stepConfirmation)) &&
+        !isActive;
 
     return GestureDetector(
       onTap: () {
-        if (isDependantsStepSkipped) return;
         if (index <= _currentStep + 1) {
           _animateToPage(index);
         }
@@ -666,14 +692,14 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
 
             // Label
             Text(
-              isDependantsStepSkipped ? '—' : _steps[index].label,
+              _steps[index].label,
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                color: isDependantsStepSkipped
-                    ? Colors.grey.shade400
-                    : isActive
+                color: isActive
                     ? AppColors.textPrimary
+                    : isDependantsStepSkipped
+                    ? Colors.grey.shade400
                     : isCompleted
                     ? AppColors.textSecondary
                     : Colors.grey.shade400,
@@ -940,6 +966,25 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
     );
   }
 
+  /// Devises acceptées par FlexPay pour le paiement électronique.
+  List<Devise> get _devisesPaiementElectronique => _devises
+      .where(
+        (d) => DevisePaiementController.codesFlexPay.contains(
+          d.code.toUpperCase(),
+        ),
+      )
+      .toList();
+
+  /// Vrai quand la devise de paiement diffère de celle du frais d'adhésion
+  /// (conversion appliquée par le serveur).
+  bool get _paiementConvertiDepuisFrais {
+    final fraisDeviseId = _selectedFraisAdhesion?.deviseId ?? 0;
+    final paiementDeviseId = _selectedDevise?.idDevise ?? 0;
+    return fraisDeviseId > 0 &&
+        paiementDeviseId > 0 &&
+        fraisDeviseId != paiementDeviseId;
+  }
+
   String _fraisAdhesionLabel(Frais frais) {
     final code = _deviseCodeFor(frais.deviseId);
     final montant = frais.montant.toStringAsFixed(
@@ -947,6 +992,68 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
     );
     if (code.isEmpty) return '${frais.libelle} ($montant)';
     return '${frais.libelle} ($code $montant)';
+  }
+
+  /// Affiche explicitement l'impossibilité de continuer quand le frais
+  /// d'adhésion n'est pas disponible (catalogue vide ou chargement en échec),
+  /// au lieu de masquer silencieusement le champ requis par la validation.
+  Widget _buildFraisUnavailableNotice() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.orange.shade700,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  "Frais d'adhésion indisponibles",
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.orange.shade900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'Le frais d\'adhésion est obligatoire pour continuer et n\'a pas '
+            'pu être chargé. Vérifiez votre connexion puis réessayez.',
+            style: TextStyle(
+              fontSize: 12,
+              height: 1.4,
+              color: Colors.orange.shade900,
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () {
+                setState(() => _isLoadingFrais = true);
+                _loadFrais();
+              },
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.orange.shade900,
+              ),
+              child: const Text('Réessayer'),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildReadOnlyInfoField({
@@ -1146,11 +1253,18 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
     return current + 1;
   }
 
+  /// Page immédiatement précédente, y compris une étape sautée vers l'avant.
+  /// Retourne `current` si aucune étape antérieure n'est
+  /// atteignable, afin que l'appelant puisse ignorer l'animation.
+  ///
+  /// Ne modifie aucune donnée du formulaire.
   int _previousPageIndex(int current) {
-    if (current == _stepConfirmation && _skipDependantsStep) {
-      return 2;
-    }
-    return current - 1;
+    if (current <= 0) return current;
+
+    final target = current - 1;
+    if (target < 0) return 0;
+    if (target > _stepConfirmation) return _stepConfirmation;
+    return target;
   }
 
   void _animateToPage(int pageIndex) {
@@ -1171,8 +1285,11 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
     _animateToPage(_nextPageIndex(_currentStep));
   }
 
+  /// Retour à l'étape précédente, sans toucher aux données saisies.
   void _goToPreviousStep() {
-    _animateToPage(_previousPageIndex(_currentStep));
+    final target = _previousPageIndex(_currentStep);
+    if (target == _currentStep) return;
+    _animateToPage(target);
   }
 
   Future<void> _showSnack(String message, {bool isError = true}) async {
@@ -1248,13 +1365,24 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
     );
   }
 
+  /// Passe l'étape Dépendants sans aucune personne à charge.
+  ///
+  /// [requireConfirmation] n'est utilisé que lorsque le formulaire contient
+  /// déjà un dépendant dont le certificat de scolarité manque : l'encodeur
+  /// doit alors confirmer le report. Sans dépendant saisi, l'étape est
+  /// facultative et se termine directement, sans question.
   Future<void> _skipDependantsStepForAdminFinalization({
     String? contextMessage,
+    bool requireConfirmation = false,
   }) async {
-    final skip = await _confirmSkipDependantsForAdmin(
-      contextMessage: contextMessage,
-    );
-    if (!skip || !mounted) return;
+    if (requireConfirmation) {
+      final skip = await _confirmSkipDependantsForAdmin(
+        contextMessage: contextMessage,
+      );
+      if (!skip || !mounted) return;
+    } else if (!mounted) {
+      return;
+    }
 
     setState(() {
       _dependants.clear();
@@ -1314,6 +1442,10 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
           _showSnack('Remplissez les champs obligatoires de l\'étape Infos.');
           return false;
         }
+        if (_selectedSexe == null) {
+          _showSnack('Sélectionnez le sexe de l\'affilié.');
+          return false;
+        }
         if (_photoAffilie == null) {
           _showSnack('La photo de l\'affilié est obligatoire.');
           return false;
@@ -1330,10 +1462,31 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         }
         return true;
       case 2:
-        if (_selectedTypeAdhesion == null ||
-            _selectedFraisAdhesion == null ||
-            _selectedModePaiement == null) {
-          _showSnack('Complétez le type d\'adhésion et le paiement.');
+        if (_selectedTypeAdhesion == null) {
+          _showSnack("Sélectionnez le type d'adhésion.");
+          return false;
+        }
+        if (_selectedFraisAdhesion == null) {
+          _showSnack(
+            _isLoadingFrais
+                ? 'Chargement des frais d\'adhésion en cours. Patientez un '
+                      'instant.'
+                : 'Les frais d\'adhésion n\'ont pas pu être chargés. '
+                      'Réessayez depuis la section Frais d\'adhésion.',
+          );
+          return false;
+        }
+        if (_selectedModePaiement == null) {
+          _showSnack('Sélectionnez le mode de paiement.');
+          return false;
+        }
+        if (_selectedDevise == null) {
+          _showSnack(
+            _isLoadingDevises
+                ? 'Chargement des devises en cours. Patientez un instant.'
+                : 'Les devises n\'ont pas pu être chargées. Réessayez depuis '
+                      'la section Devise de paiement.',
+          );
           return false;
         }
         if (_selectedPrestation != null &&
@@ -1364,8 +1517,9 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
           _photoAffilie = picked;
         }
       });
-    } catch (e) {
-      _showSnack('Impossible de charger l\'image: $e');
+    } catch (e, stackTrace) {
+      ApiErrorHelper.logException('Adhesion/pickDocument', e, stackTrace);
+      _showSnack('Impossible de charger l\'image. Réessayez.');
     }
   }
 
@@ -1678,6 +1832,19 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                   isRequired: true,
                   initialDateFallback: DateTime(1990),
                 ),
+                const SizedBox(height: 20),
+                _buildDropdownField<String>(
+                  label: 'Sexe',
+                  value: _selectedSexe,
+                  items: AdhesionApiValues.sexeOptions.keys.toList(),
+                  isRequired: true,
+                  icon: Icons.wc_outlined,
+                  itemLabel: (sexe) =>
+                      AdhesionApiValues.sexeOptions[sexe] ?? sexe,
+                  onChanged: (newValue) async {
+                    setState(() => _selectedSexe = newValue);
+                  },
+                ),
                 const SizedBox(height: 24),
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1804,6 +1971,41 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
             title: 'Souscription et paiement',
             subtitle: 'Choisissez les options et les montants',
           ),
+          if (!_skipDependantsStep) ...[
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 20),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: Colors.blue.shade100),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.people_outline,
+                    color: Colors.blue.shade700,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Les personnes à charge sont facultatives : renseignez-les '
+                      'à l\'étape suivante ou laissez un agent les compléter '
+                      'ultérieurement.',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        height: 1.4,
+                        color: Colors.blue.shade900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
 
           Container(
             padding: const EdgeInsets.all(20),
@@ -1894,45 +2096,47 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                     ),
                   ),
                 if (_selectedPrestation != null) ...[
-                const SizedBox(height: 20),
-                // Montant de la Prestation (Souscription)
-                TextFormField(
-                  controller: _montantController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: 'Montant de la prestation',
-                    hintText: _selectedPrestation?.isGratuit == true
-                        ? 'Prestation gratuite'
-                        : _selectedPrestation?.resolveMontant() != null
-                            ? 'Tarif API: ${_selectedPrestation!.resolveMontant()} '
-                                  '${_prestationDeviseCode(_selectedPrestation)}'
-                            : null,
-                    prefixIcon: const Icon(Icons.money),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
+                  const SizedBox(height: 20),
+                  // Montant de la Prestation (Souscription)
+                  TextFormField(
+                    controller: _montantController,
+                    keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true,
                     ),
-                  ),
-                  validator: (value) {
-                    if (_selectedPrestation == null) return null;
-                    if (value == null || value.isEmpty) {
-                      return 'Veuillez entrer le montant de la prestation';
-                    }
-                    final montant = double.tryParse(value);
-                    if (_selectedPrestation?.isGratuit == true) {
-                      if (montant == null || montant < 0) {
-                        return 'Montant invalide';
+                    decoration: InputDecoration(
+                      labelText: 'Montant de la prestation',
+                      hintText: _selectedPrestation?.isGratuit == true
+                          ? 'Prestation gratuite'
+                          : _selectedPrestation?.resolveMontant() != null
+                          ? 'Tarif API: ${_selectedPrestation!.resolveMontant()} '
+                                '${_prestationDeviseCode(_selectedPrestation)}'
+                          : null,
+                      prefixIcon: const Icon(Icons.money),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    validator: (value) {
+                      if (_selectedPrestation == null) return null;
+                      if (value == null || value.isEmpty) {
+                        return 'Veuillez entrer le montant de la prestation';
+                      }
+                      final montant = double.tryParse(value);
+                      if (_selectedPrestation?.isGratuit == true) {
+                        if (montant == null || montant < 0) {
+                          return 'Montant invalide';
+                        }
+                        return null;
+                      }
+                      if (montant == null || montant <= 0) {
+                        return 'Le montant doit être supérieur à 0';
                       }
                       return null;
-                    }
-                    if (montant == null || montant <= 0) {
-                      return 'Le montant doit être supérieur à 0';
-                    }
-                    return null;
-                  },
-                ),
-                  if (_prestationDeviseCode(_selectedPrestation).isNotEmpty) ...[
+                    },
+                  ),
+                  if (_prestationDeviseCode(
+                    _selectedPrestation,
+                  ).isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Row(
                       children: [
@@ -1964,8 +2168,8 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                       isRequired: true,
                       isLoading: _isLoadingFrais,
                       helperText:
-                          'Devise du frais déterminée par le paramétrage '
-                          'métier (non modifiable ici).',
+                          'Montant fixé par le paramétrage métier. La '
+                          'devise de paiement se choisit ci-dessous.',
                     )
                   else
                     _buildDropdownField<Frais>(
@@ -1984,8 +2188,8 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                     Padding(
                       padding: const EdgeInsets.only(top: 8),
                       child: Text(
-                        'Devise du frais déterminée par le paramétrage '
-                        'métier (non modifiable ici).',
+                        'Montant fixé par le paramétrage métier. La '
+                        'devise de paiement se choisit ci-dessous.',
                         style: TextStyle(
                           fontSize: 12,
                           color: Colors.grey.shade600,
@@ -1993,19 +2197,8 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                         ),
                       ),
                     ),
-                ],
-                const SizedBox(height: 20),
-                _buildReadOnlyInfoField(
-                  label: 'Devise',
-                  value: _selectedDevise?.code ??
-                      _prestationDeviseCode(_selectedPrestation),
-                  icon: Icons.currency_exchange,
-                  isRequired: true,
-                  isLoading: _isLoadingDevises,
-                  helperText:
-                      'Devise déterminée par la prestation sélectionnée '
-                      '(non modifiable).',
-                ),
+                ] else if (!_isLoadingFrais)
+                  _buildFraisUnavailableNotice(),
                 const SizedBox(height: 20),
                 _buildDropdownField<String>(
                   label: 'Mode de paiement',
@@ -2053,6 +2246,47 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                     ),
                   ),
                 ],
+                // Paiement électronique : la devise de paiement peut différer
+                // de celle du tarif (conversion serveur). Compte virtuel :
+                // collecte dans la devise du tarif.
+                if (_isElectronicPayment) ...[
+                  const SizedBox(height: 20),
+                  _buildDropdownField<Devise>(
+                    label: 'Devise de paiement',
+                    value: _devisesPaiementElectronique.contains(_selectedDevise)
+                        ? _selectedDevise
+                        : null,
+                    items: _devisesPaiementElectronique,
+                    isLoading: _isLoadingDevises,
+                    isRequired: true,
+                    icon: Icons.currency_exchange,
+                    itemLabel: (devise) => '${devise.code} — ${devise.nom}',
+                    onChanged: (newValue) async {
+                      setState(() {
+                        _selectedDevise = newValue;
+                        _deviseManuallySelected = true;
+                        _deviseIdController.text =
+                            newValue?.idDevise.toString() ?? '';
+                      });
+                    },
+                  ),
+                  if (_paiementConvertiDepuisFrais)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        'Frais exprimés en '
+                        '${_deviseCodeFor(_selectedFraisAdhesion!.deviseId)}, '
+                        'payés en ${_selectedDevise!.code} au taux de change '
+                        'en vigueur. Le montant exact vous sera présenté avant '
+                        'validation.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.35,
+                          color: Colors.orange.shade800,
+                        ),
+                      ),
+                    ),
+                ],
               ],
             ),
           ),
@@ -2063,12 +2297,44 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
 
   Widget _buildDependantsStep() {
     if (_skipDependantsStep) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _currentStep == _stepDependants) {
-          _pageController.jumpToPage(_stepConfirmation);
-        }
-      });
-      return const SizedBox.shrink();
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            _buildSectionHeader(
+              icon: Icons.people_outline,
+              title: 'Personnes à charge',
+              subtitle: 'Cette étape ne s’applique pas à une adhésion Solo',
+            ),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.02),
+                    blurRadius: 20,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: const Text(
+                'Aucune personne à charge ne peut être ajoutée pour une '
+                'adhésion Solo. Vous pouvez revenir à la confirmation avec '
+                'le bouton Continuer.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 14,
+                  height: 1.5,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
     }
 
     // Validation pour F3 et F6
@@ -2157,10 +2423,12 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         children: [
           _buildSectionHeader(
             icon: Icons.people_outline,
-            title: 'Personnes à charge',
+            title: 'Personnes à charge (facultatif)',
             subtitle: _selectedTypeAdhesion != null
-                ? 'Ajoutez les personnes à charge (${_dependants.length}/${_getMaxDependants()} maximum). '
-                      'Enfant 18–25 ans : certificat de scolarité obligatoire.'
+                ? 'Les personnes à charge sont facultatives : complétez-les '
+                      'maintenant ou plus tard (${_dependants.length}/${_getMaxDependants()} '
+                      'maximum). Enfant 18–25 ans : certificat de scolarité '
+                      'obligatoire.'
                 : 'Ajoutez les personnes à charge de l\'affilié',
           ),
           if (_dependantsDeferredToAdmin) ...[
@@ -2254,7 +2522,9 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                             Container(
                               padding: const EdgeInsets.all(10),
                               decoration: BoxDecoration(
-                                color: AppColors.prosocGreen.withValues(alpha: 0.1),
+                                color: AppColors.prosocGreen.withValues(
+                                  alpha: 0.1,
+                                ),
                                 borderRadius: BorderRadius.circular(12),
                               ),
                               child: Icon(
@@ -2356,7 +2626,7 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                     padding: const EdgeInsets.symmetric(vertical: 12),
                   ),
                   child: const Text(
-                    'Continuer sans personne à charge',
+                    'Ignorer les personnes à charge (facultatif)',
                     textAlign: TextAlign.center,
                   ),
                 ),
@@ -2473,6 +2743,11 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                       _buildSummaryRow(
                         'Montant',
                         '${_montantController.text} ${_selectedDevise?.code ?? ''}',
+                      ),
+                    if (_selectedDevise != null)
+                      _buildSummaryRow(
+                        'Devise de paiement',
+                        _selectedDevise!.code,
                       ),
                     if (_modePaiementLibelle != null)
                       _buildSummaryRow(
@@ -2761,6 +3036,7 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                               contextMessage:
                                   'Sans certificat de scolarité, cette personne '
                                   'ne peut pas être enregistrée pour le moment.',
+                              requireConfirmation: true,
                             );
                           },
                           child: const Text(
@@ -3026,8 +3302,7 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
       return;
     }
 
-    if (_selectedPrestation != null &&
-        _montantController.text.trim().isEmpty) {
+    if (_selectedPrestation != null && _montantController.text.trim().isEmpty) {
       _showSnack('Indiquez le montant de la prestation sélectionnée');
       return;
     }
@@ -3131,7 +3406,7 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
       final prestationDeviseId = _selectedPrestation?.deviseId ?? 0;
       final souscriptionMontant = hasSouscription
           ? (_selectedPrestation!.resolveMontant() ??
-              double.tryParse(_montantController.text.trim()))
+                double.tryParse(_montantController.text.trim()))
           : null;
       if (hasSouscription) {
         final isGratuit = _selectedPrestation!.isGratuit;
@@ -3156,11 +3431,52 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         int.parse(dateParts[0]),
       );
 
+      final souscriptionDeviseId = prestationDeviseId > 0
+          ? prestationDeviseId
+          : fraisDeviseId;
+      var fraisCollecteMontant = _selectedFraisAdhesion!.montant;
+      var fraisCollecteDeviseId = fraisDeviseId;
+      var souscriptionCollecteMontant = souscriptionMontant;
+      var souscriptionCollecteDeviseId = souscriptionDeviseId;
+
+      // Paiement électronique dans une autre devise : chaque collecte porte
+      // la devise de paiement et le montant converti (le serveur reconvertit
+      // et vérifie l'égalité avec le tarif).
+      if (_isElectronicPayment) {
+        final devisePaiement = _selectedDevise!;
+        final montants = await AdhesionConversion.convertirEtConfirmer(
+          context,
+          devisePaiement: devisePaiement,
+          codeFor: _deviseCodeFor,
+          lignes: [
+            (
+              libelle: _selectedFraisAdhesion!.libelle,
+              montant: fraisCollecteMontant,
+              deviseId: fraisDeviseId,
+            ),
+            if (hasSouscription)
+              (
+                libelle: _selectedPrestation!.nomPrestation,
+                montant: souscriptionMontant!,
+                deviseId: souscriptionDeviseId,
+              ),
+          ],
+        );
+        if (!mounted || montants == null) return;
+        fraisCollecteMontant = montants[0];
+        fraisCollecteDeviseId = devisePaiement.idDevise;
+        if (hasSouscription) {
+          souscriptionCollecteMontant = montants[1];
+          souscriptionCollecteDeviseId = devisePaiement.idDevise;
+        }
+      }
+
       final request = AdhesionWithAffilieRequest(
         nom: _nomController.text.trim(),
         prenom: _prenomController.text.trim(),
         postnom: _postnomController.text.trim(),
         dateNaissance: dateNaissance,
+        sexe: _selectedSexe,
         telephone:
             PhoneUtils.toInternationalFormat(telAffilieNormalise) ??
             telAffilieNormalise,
@@ -3207,14 +3523,14 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
           CollecteRequest(
             typeCollecte: AdhesionApiValues.typeCollecteFrais,
             fraisId: _selectedFraisAdhesion!.idFrais,
-            montant: _selectedFraisAdhesion!.montant,
+            montant: fraisCollecteMontant,
             mois: DateTime.now().month,
             annee: DateTime.now().year,
             modePaiement: _selectedModePaiement,
             statutPaiement: _statutPaiementCollecte,
-            montantRecu: _selectedFraisAdhesion!.montant,
-            montantAttendu: _selectedFraisAdhesion!.montant,
-            deviseId: fraisDeviseId,
+            montantRecu: fraisCollecteMontant,
+            montantAttendu: fraisCollecteMontant,
+            deviseId: fraisCollecteDeviseId,
             referencePaiement: referencePaiement,
             statut: true,
           ),
@@ -3226,16 +3542,14 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                 dateSouscription: DateTime.now().toUtc(),
                 statut: true,
               ),
-              montant: souscriptionMontant!,
+              montant: souscriptionCollecteMontant!,
               mois: DateTime.now().month,
               annee: DateTime.now().year,
               modePaiement: _selectedModePaiement,
               statutPaiement: _statutPaiementCollecte,
-              montantRecu: souscriptionMontant,
-              montantAttendu: souscriptionMontant,
-              deviseId: prestationDeviseId > 0
-                  ? prestationDeviseId
-                  : fraisDeviseId,
+              montantRecu: souscriptionCollecteMontant,
+              montantAttendu: souscriptionCollecteMontant,
+              deviseId: souscriptionCollecteDeviseId,
               referencePaiement: referencePaiement,
               statut: true,
             ),
@@ -3290,23 +3604,48 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
           );
         }
       } else {
-        final response = await ApiService.createAdhesionWithAffilieV2(request);
+        // Mode VIRTUAL_ACCOUNT : passerelle offline (file locale si hors ligne).
+        final outcome = await OfflineWriteGateway.adhesion(
+          adhesion: request.toJson(),
+          request: request,
+          label: 'Adhésion ${_nomController.text.trim()}',
+        );
+
+        if (!mounted) return;
+
+        if (outcome is OfflineQueued) {
+          setState(() => _isLoading = false);
+          await ProsocMessageDialog.show(
+            context,
+            variant: ProsocMessageVariant.success,
+            title: 'Adhésion enregistrée hors ligne',
+            message:
+                'Le dossier a été enregistré localement et sera transmis à la '
+                'plateforme dès le retour du réseau. Conservez ce numéro de '
+                'suivi pour l\'affilié.',
+          );
+          await _showAdhesionSuccessReceipt(offline: true);
+          return;
+        }
+
+        if (outcome is OfflineFailed) {
+          setState(() => _isLoading = false);
+          await _showApiError(outcome.message, statusCode: outcome.statusCode);
+          return;
+        }
+
+        final onlineData = outcome is OfflineSynced ? outcome.data : null;
         if (kDebugMode) {
-          debugPrint(
-            '[Adhesion] success=${response.success} code=${response.statusCode}',
-          );
+          debugPrint('[Adhesion] success=true $onlineData');
         }
-        if (response.success) {
-          await _showAdhesionSuccessReceipt(
-            codeAdhesion: response.data?.codeAdhesion,
-            idAdhesion: response.data?.id,
-          );
-        } else if (mounted) {
-          await _showApiError(
-            response.message,
-            statusCode: response.statusCode,
-          );
-        }
+        await _showAdhesionSuccessReceipt(
+          codeAdhesion:
+              (onlineData?['codeAdhesion'] ??
+                      onlineData?['reference'] ??
+                      onlineData?['referenceAdhesion'])
+                  ?.toString(),
+          idAdhesion: _intFrom(onlineData?['idAdhesion']),
+        );
       }
     } catch (e, stackTrace) {
       ApiErrorHelper.logException('Adhesion/create', e, stackTrace);
@@ -3323,41 +3662,59 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
   Future<void> _showAdhesionSuccessReceipt({
     String? codeAdhesion,
     int? idAdhesion,
+    bool offline = false,
   }) async {
     if (!mounted) return;
     final fraisMontant = _selectedFraisAdhesion?.montant ?? 0;
     final souscriptionMontant = _selectedPrestation == null
         ? 0.0
         : (double.tryParse(_montantController.text.trim()) ??
-            _selectedPrestation!.resolveMontant() ??
-            0);
+              _selectedPrestation!.resolveMontant() ??
+              0);
     final total = fraisMontant + souscriptionMontant;
     await CollecteReceiptHelper.open(
       context,
       receipt: CollecteReceiptData(
         operation: CollecteReceiptOperation.adhesion,
         montant: total,
-        deviseCode: _selectedDevise?.code ?? 'USD',
-        deviseId: _selectedDevise?.idDevise,
+        // Compte virtuel : collecte dans la devise du frais (pas de conversion).
+        deviseCode: (_selectedFraisAdhesion?.deviseId ?? 0) > 0
+            ? _deviseCodeFor(_selectedFraisAdhesion!.deviseId)
+            : (_selectedDevise?.code ?? 'USD'),
+        deviseId: (_selectedFraisAdhesion?.deviseId ?? 0) > 0
+            ? _selectedFraisAdhesion!.deviseId
+            : _selectedDevise?.idDevise,
         reference: _referencePaiementElectronique(),
-        modePaiement: _selectedModePaiement,
+        modePaiement: offline
+            ? 'VIRTUAL_ACCOUNT (hors ligne)'
+            : _selectedModePaiement,
         affilieNom:
             '${_prenomController.text.trim()} ${_nomController.text.trim()}'
                 .trim(),
         codeAdhesion: codeAdhesion,
+        agentNom: AuthService.currentUser?.utilisateur.nomComplet ?? 'Inconnu',
         idAdhesion: idAdhesion,
-        statutPaiement: _statutPaiementCollecte,
+        statutPaiement: offline ? 'EN ATTENTE SYNC' : _statutPaiementCollecte,
         extras: {
           'Frais adhésion': fraisMontant.toString(),
           if (_selectedPrestation != null)
             'Prestation': _selectedPrestation!.nomPrestation,
           if (_selectedPrestation != null)
             'Montant prestation': souscriptionMontant.toString(),
+          if (offline)
+            'Synchronisation': 'À transmettre dès le retour du réseau',
         },
       ),
       popResult: true,
     );
     if (mounted) Navigator.of(context).pop(true);
+  }
+
+  /// Conversion défensive d'une valeur JSON en entier.
+  int? _intFrom(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '');
   }
 
   bool _hasFlexPayPaymentUrl(AdhesionElectronicPaymentResponse payment) {

@@ -1,3 +1,5 @@
+import 'api_error_helper.dart';
+
 /// Classification des erreurs API paiement électronique (FlexPay).
 enum PaymentErrorKind {
   /// 409 / message serveur : un paiement est déjà en attente.
@@ -41,7 +43,10 @@ class PaymentErrorHelper {
     int? statusCode,
     String? errorCode,
   }) {
-    final raw = message?.trim() ?? '';
+    // Contenu technique (HTML, exception) : on retombe sur les messages par défaut.
+    final raw = ApiErrorHelper.isTechnicalContent(message)
+        ? ''
+        : message?.trim() ?? '';
     final lower = raw.toLowerCase();
     final code = errorCode?.trim().toUpperCase();
 

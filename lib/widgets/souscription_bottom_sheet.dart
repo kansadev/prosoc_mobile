@@ -17,6 +17,7 @@ import 'package:prosoc/utils/phone_utils.dart';
 import 'package:prosoc/views/screens/at/flex_pay_payment_waiting_screen.dart';
 import 'package:prosoc/views/screens/at/payment_webview_screen.dart';
 import 'package:prosoc/views/widgets/flex_pay_card_payment_bottom_sheet.dart';
+import 'package:prosoc/views/widgets/devise_paiement_selector.dart';
 import 'package:prosoc/views/widgets/flex_pay_payment_error_dialog.dart';
 import 'package:prosoc/views/widgets/prosoc_message_dialog.dart';
 
@@ -88,6 +89,8 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
   int? _agentId;
   String? _selectedModePaiement;
   double? _montantAttendu;
+  /// Devise de paiement Mobile Money et conversion depuis la devise du tarif.
+  late final DevisePaiementController _devisePaiement;
 
   bool get _isMobileMoneyPayment =>
       AffiliePaymentModes.isMobileMoney(_selectedModePaiement);
@@ -105,12 +108,22 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
     if (tel != null && tel.isNotEmpty) {
       _telephonePaiementController.text = tel;
     }
+    _devisePaiement = DevisePaiementController(
+      operation: () => (
+        deviseId: _selectedPrestation?.deviseId,
+        montant: double.tryParse(
+          _montantController.text.trim().replaceAll(',', '.'),
+        ),
+      ),
+      triggers: _montantController,
+    )..loadDevises();
     _loadAgentId();
     _loadPrestations();
   }
 
   @override
   void dispose() {
+    _devisePaiement.dispose();
     _montantController.dispose();
     _observationController.dispose();
     _telephonePaiementController.dispose();
@@ -274,8 +287,20 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
       final now = DateTime.now();
       final modePaiement = _selectedModePaiement!;
       final statutPaiement = _isElectronicPayment ? 'EN_ATTENTE' : 'OK';
-      final montantPaye = montantRecu!;
-      final attendu = montantAttendu ?? montantPaye;
+      // Paiement dans une autre devise : la collecte porte la devise et le
+      // montant converti ; le serveur vérifie l'égalité avec le tarif.
+      final paiement = await _devisePaiement.resolve(
+        enabled: _isMobileMoneyPayment,
+      );
+      if (!mounted) return;
+      if (!paiement.isReady) {
+        await _showError(paiement.blockingMessage!);
+        return;
+      }
+      final collecteDeviseId = paiement.deviseId!;
+      final converti = collecteDeviseId != deviseId;
+      final montantPaye = converti ? paiement.montant! : montantRecu!;
+      final attendu = converti ? montantPaye : (montantAttendu ?? montantPaye);
 
       final observation = _observationController.text.trim().isNotEmpty
           ? _observationController.text.trim()
@@ -291,7 +316,7 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
           montant: montantPaye,
           mois: now.month,
           annee: now.year,
-          deviseId: deviseId,
+          deviseId: collecteDeviseId,
           modePaiement: modePaiement,
           montantRecu: montantPaye,
           montantAttendu: attendu,
@@ -323,7 +348,7 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
             affilieId: widget.affilieId,
             modePaiement: modePaiement,
             telephonePaiement: telephonePaiement,
-            devisePaiementId: deviseId,
+            devisePaiementId: collecteDeviseId,
             achat: request,
           ),
         );
@@ -698,6 +723,11 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
                           }
                           return null;
                         },
+                      ),
+                      const SizedBox(height: 16),
+                      DevisePaiementSelector(
+                        controller: _devisePaiement,
+                        decoration: _inputDecoration('Devise de paiement'),
                       ),
                     ],
                     const SizedBox(height: 16),

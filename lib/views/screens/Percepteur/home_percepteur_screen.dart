@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import 'package:prosoc/config/api.dart';
-import 'package:prosoc/config/app_features.dart';
 import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/dashboard_percepteur_model.dart';
 import 'package:prosoc/models/wallet_agent_model.dart';
@@ -13,6 +12,8 @@ import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/wallet_agent_loader.dart';
 import 'package:prosoc/views/screens/at/new_adhesion_screen.dart';
 import 'package:prosoc/views/screens/at/bon_envoi_medical_screen.dart';
+import 'package:prosoc/utils/medical_permissions.dart';
+import 'package:prosoc/views/screens/medical/prise_en_charge_screen.dart';
 import 'dashboard_percepteur_screen.dart';
 import 'percepteur_encaissement_choice_sheet.dart';
 import 'percepteur_encaissement_screen.dart';
@@ -234,9 +235,7 @@ class _HomePercepteurScreenState extends State<HomePercepteurScreen> {
   Future<void> _openNouvelleAdhesion() async {
     final created = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(
-        builder: (context) => const NewAdhesionScreen(),
-      ),
+      MaterialPageRoute(builder: (context) => const NewAdhesionScreen()),
     );
     if (created == true && mounted) {
       await _loadHomeData();
@@ -623,7 +622,6 @@ class _HomePercepteurScreenState extends State<HomePercepteurScreen> {
   }
 
   Widget _buildQuickServices(BuildContext context) {
-    final health = AppFeatures.healthUiEnabled;
     final services = <_QuickService>[
       _QuickService(
         title: 'Encaisser',
@@ -631,32 +629,44 @@ class _HomePercepteurScreenState extends State<HomePercepteurScreen> {
         color: AppColors.prosocGreen,
         onTap: () => PercepteurEncaissementChoiceSheet.show(context),
       ),
-      if (health)
+      _QuickService(
+        title: 'Souscription',
+        icon: Icons.medical_services_outlined,
+        color: Colors.purple,
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) =>
+                  const PercepteurEncaissementScreen(souscriptionOnly: true),
+            ),
+          );
+        },
+      ),
+      _QuickService(
+        title: 'Valider bons',
+        icon: Icons.verified_outlined,
+        color: const Color(0xFFE65100),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => const BonEnvoiMedicalScreen(),
+            ),
+          );
+        },
+      ),
+      // Nouveau circuit médical : vérification puis consommation du bon.
+      if (MedicalPermissions.peutScanner)
         _QuickService(
-          title: 'Souscription',
-          icon: Icons.medical_services_outlined,
-          color: Colors.purple,
+          title: 'Bon médical',
+          icon: Icons.qr_code_scanner,
+          color: Colors.teal,
           onTap: () {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => const PercepteurEncaissementScreen(
-                  souscriptionOnly: true,
-                ),
-              ),
-            );
-          },
-        ),
-      if (health)
-        _QuickService(
-          title: 'Valider bons',
-          icon: Icons.verified_outlined,
-          color: const Color(0xFFE65100),
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => const BonEnvoiMedicalScreen(),
+                builder: (context) => const MedicalScanScreen(),
               ),
             );
           },
@@ -735,10 +745,7 @@ class _HomePercepteurScreenState extends State<HomePercepteurScreen> {
 
   Widget _buildRecentActivity(BuildContext context) {
     if (_isLoadingTransactions && _transactions.isEmpty) {
-      return ProsocHomeShimmer.activityList(
-        context,
-        itemCount: 3,
-      );
+      return ProsocHomeShimmer.activityList(context, itemCount: 3);
     }
 
     final dashboard = _dashboard;

@@ -6,6 +6,7 @@ import 'config/theme.dart';
 import 'views/widgets/prosoc_date_picker.dart';
 import 'controllers/main_controller.dart';
 import 'services/auth_service.dart';
+import 'services/sync_service.dart';
 import 'views/screens/onboarding_screen.dart';
 import 'views/screens/login_screen.dart';
 import 'views/screens/main_screen.dart';
@@ -43,10 +44,10 @@ class _ProsocAppState extends State<ProsocApp> {
     final isLoggedIn = await AuthService.isLoggedIn();
     // Vérifier si l'onboarding a déjà été vu
     final hasSeenOnboarding = await AuthService.hasSeenOnboarding();
-    
+
     // Récupérer le rôle de l'utilisateur
     final role = await AuthService.getNomRole();
-    
+
     setState(() {
       _isLoading = false;
       _userRole = role ?? '';
@@ -85,16 +86,18 @@ class _ProsocAppState extends State<ProsocApp> {
   Widget _buildMainScreen() {
     // Déterminer le rôle
     final lowerRole = _userRole.toLowerCase();
-    final isChefEquipe = lowerRole.contains('chef') &&
+    final isChefEquipe =
+        lowerRole.contains('chef') &&
         (lowerRole.contains('equipe') || lowerRole.contains('équipe'));
 
     final isSuperviseur = lowerRole.contains('superviseur');
     final isPercepteur = lowerRole.contains('percepteur');
-    final isAdherent = lowerRole.contains('adhérent') ||
+    final isAdherent =
+        lowerRole.contains('adhérent') ||
         lowerRole.contains('affilié') ||
         lowerRole.contains('affilie') ||
         lowerRole.contains('adherent');
-    
+
     if (isChefEquipe) {
       return MainScreen(
         controller: _controller,
@@ -132,16 +135,12 @@ class _ProsocAppState extends State<ProsocApp> {
       localizationsDelegates: ProsocDatePicker.localizationDelegates,
       navigatorObservers: [appRouteObserver],
       home: _isLoading
-          ? const Scaffold(
-              body: Center(
-                child: CircularProgressIndicator(),
-              ),
-            )
+          ? const Scaffold(body: Center(child: CircularProgressIndicator()))
           : _showOnboarding
-              ? OnboardingScreen(onComplete: _completeOnboarding)
-              : _showLogin
-                  ? LoginScreen(onLoginSuccess: _completeLogin)
-                  : _buildMainScreen(),
+          ? OnboardingScreen(onComplete: _completeOnboarding)
+          : _showLogin
+          ? LoginScreen(onLoginSuccess: _completeLogin)
+          : _buildMainScreen(),
     );
   }
 }
@@ -149,6 +148,9 @@ class _ProsocAppState extends State<ProsocApp> {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   AuthService.configureApiSessionRefresh();
+
+  // Base locale Hive (mode hors ligne terrain) avant le premier rendu.
+  await SyncService.instance.start();
 
   // Initialiser les données de locale pour intl
   await initializeDateFormatting('fr_FR', null);

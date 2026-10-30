@@ -10,6 +10,8 @@ import '../at/new_adhesion_screen.dart';
 import 'superviseur_controller.dart';
 import 'superviseur_affectation_screen.dart';
 import 'superviseur_top_agents_screen.dart';
+import 'superviseur_zones_screen.dart';
+import 'superviseur_rechargement_screen.dart';
 import 'widgets/superviseur_wallet_overview_flip_card.dart';
 import '../../widgets/prosoc_shimmer_loading.dart';
 
@@ -220,20 +222,21 @@ class _SuperviseurHomeScreenState extends State<SuperviseurHomeScreen> {
                   padding: const EdgeInsets.symmetric(horizontal: 20),
                   child: AuthService.isAgentTerrain
                       ? SuperviseurWalletOverviewFlipCard(
-                          wallet: _walletsByDevise[_selectedDeviseId] ??
+                          wallet:
+                              _walletsByDevise[_selectedDeviseId] ??
                               _walletAgent,
                           isLoadingWallet: _isLoadingWallet,
                           isUsdSelected: _isUsdSelected,
                           enableAllDevises: true,
                           walletUnavailableMessage:
                               !_isLoadingWallet &&
-                                      (_walletsByDevise[_selectedDeviseId] ??
-                                              _walletAgent) ==
-                                          null
-                                  ? ApiErrorHelper.walletAgentUnavailableMessage(
-                                      deviseId: _selectedDeviseId,
-                                    )
-                                  : null,
+                                  (_walletsByDevise[_selectedDeviseId] ??
+                                          _walletAgent) ==
+                                      null
+                              ? ApiErrorHelper.walletAgentUnavailableMessage(
+                                  deviseId: _selectedDeviseId,
+                                )
+                              : null,
                           onDeviseChanged: _onDeviseChanged,
                           onOpenWallet: widget.onOpenWallet,
                           kpis: kpis,
@@ -453,40 +456,80 @@ class _SuperviseurHomeScreenState extends State<SuperviseurHomeScreen> {
   }
 
   Widget _buildSupervisionActions(BuildContext context) {
-    return Row(
+    return Column(
       children: [
-        Expanded(
-          child: _actionTile(
-            icon: Icons.groups,
-            label: 'Mon équipe',
-            color: const Color(0xFF2196F3),
-            onTap: widget.onOpenTeam,
-          ),
+        Row(
+          children: [
+            Expanded(
+              child: _actionTile(
+                icon: Icons.groups,
+                label: 'Mon équipe',
+                color: const Color(0xFF2196F3),
+                onTap: widget.onOpenTeam,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _actionTile(
+                icon: Icons.account_balance_wallet_outlined,
+                label: 'Rechargement',
+                color: const Color(0xFFFF9800),
+                onTap: () {
+                  Navigator.push<void>(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SuperviseurRechargementScreen(),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _actionTile(
+                icon: Icons.insights_outlined,
+                label: 'Performance',
+                color: const Color(0xFF9C27B0),
+                onTap: widget.onOpenPerformance,
+              ),
+            ),
+          ],
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _actionTile(
-            icon: Icons.insights_outlined,
-            label: 'Performance',
-            color: const Color(0xFF9C27B0),
-            onTap: widget.onOpenPerformance,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _actionTile(
-            icon: Icons.emoji_events_outlined,
-            label: 'Top agents',
-            color: const Color(0xFF607D8B),
-            onTap: () {
-              Navigator.push<void>(
-                context,
-                MaterialPageRoute<void>(
-                  builder: (_) => const SuperviseurTopAgentsScreen(),
-                ),
-              );
-            },
-          ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: _actionTile(
+                icon: Icons.emoji_events_outlined,
+                label: 'Top agents',
+                color: const Color(0xFF607D8B),
+                onTap: () {
+                  Navigator.push<void>(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SuperviseurTopAgentsScreen(),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _actionTile(
+                icon: Icons.map_outlined,
+                label: 'Zones & chefs d\'équipe',
+                color: const Color(0xFF00897B),
+                onTap: () {
+                  Navigator.push<void>(
+                    context,
+                    MaterialPageRoute<void>(
+                      builder: (_) => const SuperviseurZonesScreen(),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ],
     );

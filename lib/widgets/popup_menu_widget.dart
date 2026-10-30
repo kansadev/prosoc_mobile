@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:prosoc/config/app_features.dart';
 import 'package:prosoc/config/colors.dart';
 
 /// Widget réutilisable pour les items de menu popup
@@ -13,19 +12,19 @@ class PopupMenuItemWidget extends PopupMenuItem<String> {
     double? iconSize,
     double? spacing,
   }) : super(
-          value: value,
-          child: Row(
-            children: [
-              Icon(
-                icon,
-                color: iconColor ?? AppColors.prosocGreen,
-                size: iconSize ?? 20,
-              ),
-              SizedBox(width: spacing ?? 12),
-              Text(label),
-            ],
-          ),
-        );
+         value: value,
+         child: Row(
+           children: [
+             Icon(
+               icon,
+               color: iconColor ?? AppColors.prosocGreen,
+               size: iconSize ?? 20,
+             ),
+             SizedBox(width: spacing ?? 12),
+             Text(label),
+           ],
+         ),
+       );
 }
 
 /// Widget réutilisable pour le menu popup complet avec actions
@@ -36,7 +35,6 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
   final VoidCallback? onDependants;
   final VoidCallback? onSouscription;
   final VoidCallback? onDemandeBon;
-  final VoidCallback? onAntecedents;
   final VoidCallback? onArrieres;
   final Color? iconColor;
 
@@ -48,18 +46,15 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
     this.onDependants,
     this.onSouscription,
     this.onDemandeBon,
-    this.onAntecedents,
     this.onArrieres,
     this.iconColor,
   });
 
   @override
   Widget build(BuildContext context) {
-    final health = AppFeatures.healthUiEnabled;
-    final payerSouscription = health ? onPayerSouscription : null;
-    final souscription = health ? onSouscription : null;
-    final demandeBon = health ? onDemandeBon : null;
-    final antecedents = health ? onAntecedents : null;
+    final payerSouscription = onPayerSouscription;
+    final souscription = onSouscription;
+    final demandeBon = onDemandeBon;
 
     return PopupMenuButton<String>(
       icon: Icon(Icons.more_vert, color: iconColor ?? AppColors.textPrimary),
@@ -82,9 +77,6 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
             break;
           case 'demande_bon':
             demandeBon?.call();
-            break;
-          case 'antecedents':
-            antecedents?.call();
             break;
           case 'arrieres':
             onArrieres?.call();
@@ -128,12 +120,6 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
             icon: Icons.confirmation_number_outlined,
             label: 'Demander un bon',
           ),
-        if (antecedents != null)
-          PopupMenuItemWidget(
-            value: 'antecedents',
-            icon: Icons.health_and_safety_rounded,
-            label: 'Ajouter un antécédent',
-          ),
         if (onArrieres != null)
           PopupMenuItemWidget(
             value: 'arrieres',
@@ -155,7 +141,6 @@ AppBar createAppBarWithPopupMenu({
   VoidCallback? onDependants,
   VoidCallback? onSouscription,
   VoidCallback? onDemandeBon,
-  VoidCallback? onAntecedents,
   VoidCallback? onArrieres,
   bool automaticallyImplyLeading = true,
   Widget? leading,
@@ -172,7 +157,6 @@ AppBar createAppBarWithPopupMenu({
         onDependants: onDependants,
         onSouscription: onSouscription,
         onDemandeBon: onDemandeBon,
-        onAntecedents: onAntecedents,
         onArrieres: onArrieres,
       ),
       const SizedBox(width: 8),

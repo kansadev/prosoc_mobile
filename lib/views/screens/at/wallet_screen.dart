@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../../config/api.dart';
-import '../../../config/app_features.dart';
 import '../../../config/colors.dart';
 import '../../../services/auth_service.dart';
 import '../../../models/agent_maash_model.dart';
@@ -11,6 +10,7 @@ import '../../../utils/wallet_agent_loader.dart';
 import 'withdrawal_screen.dart';
 import '../Percepteur/percepteur_retraits_screen.dart';
 import 'wallet_mouvements_screen.dart';
+import 'wallet_recharge_request_screen.dart';
 import 'collecte_historique_screen.dart';
 import 'my_network_screen.dart';
 import '../Percepteur/percepteur_transactions_screen.dart';
@@ -103,7 +103,7 @@ class _WalletScreenState extends State<WalletScreen> {
               cachedWallets: singleDeviseOnly ? _walletsByDevise : null,
             );
 
-      if (!singleDeviseOnly && AppFeatures.healthUiEnabled) {
+      if (!singleDeviseOnly) {
         try {
           final maash = await ApiService.getAgentMaashCouverture(agentId);
           if (maash.success) {
@@ -336,8 +336,7 @@ class _WalletScreenState extends State<WalletScreen> {
                   ),
                 ),
               ],
-              if (AppFeatures.healthUiEnabled &&
-                  _maashCouverture != null &&
+              if (_maashCouverture != null &&
                   _maashCouverture!.hasRetenueMensuelle) ...[
                 const SizedBox(height: 4),
                 Text(
@@ -480,6 +479,12 @@ class _WalletScreenState extends State<WalletScreen> {
                   },
                 ),
                 _buildActionButton(
+                  icon: Icons.request_quote_outlined,
+                  label: 'Rechargement',
+                  color: AppColors.prosocGreen,
+                  onTap: _openRechargeRequest,
+                ),
+                _buildActionButton(
                   icon: Icons.history_rounded,
                   label: 'Historique',
                   color: AppColors.prosocGreen,
@@ -540,6 +545,18 @@ class _WalletScreenState extends State<WalletScreen> {
       ),
     );
     if (refreshed == true && mounted) {
+      await _loadWalletData(silent: true);
+    }
+  }
+
+  Future<void> _openRechargeRequest() async {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const WalletRechargeRequestScreen(),
+      ),
+    );
+    if (mounted) {
       await _loadWalletData(silent: true);
     }
   }

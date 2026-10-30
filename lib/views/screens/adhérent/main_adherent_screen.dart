@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../config/app_features.dart';
 import '../../../config/colors.dart';
 import 'adherent_contributions_tab_screen.dart';
 import 'adherent_demande_bon_screen.dart';
@@ -33,38 +32,32 @@ class _MainAdherentScreenState extends State<MainAdherentScreen> {
 
   int get _cotisationsIndex => 1;
 
-  int? get _souscriptionsIndex =>
-      AppFeatures.healthUiEnabled ? 2 : null;
+  int get _souscriptionsIndex => 2;
 
-  int get _dependantsIndex => AppFeatures.healthUiEnabled ? 3 : 2;
+  int get _dependantsIndex => 3;
 
   List<Widget> get _pages {
     return [
       AdherentHomeScreen(
         onPayCotisation: () => _goToTab(_cotisationsIndex),
-        onOpenSouscriptions: AppFeatures.healthUiEnabled
-            ? () => _goToTab(_souscriptionsIndex!)
-            : null,
+        onOpenSouscriptions: () => _goToTab(_souscriptionsIndex),
         onOpenDependants: () => _goToTab(_dependantsIndex),
-        onOpenDemandeBon: AppFeatures.healthUiEnabled
-            ? () {
-                Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => const AdherentDemandeBonScreen(),
-                  ),
-                );
-              }
-            : null,
+        onOpenDemandeBon: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const AdherentDemandeBonScreen(),
+            ),
+          );
+        },
       ),
       const KeyedSubtree(
         key: ValueKey('tab_cotisations'),
         child: AdherentContributionsTabScreen(),
       ),
-      if (AppFeatures.healthUiEnabled)
-        const KeyedSubtree(
-          key: ValueKey('tab_souscriptions'),
-          child: AdherentPrestationScreen(),
-        ),
+      const KeyedSubtree(
+        key: ValueKey('tab_souscriptions'),
+        child: AdherentPrestationScreen(),
+      ),
       const KeyedSubtree(
         key: ValueKey('tab_dependants'),
         child: AdherentDependantsScreen(),
@@ -88,12 +81,11 @@ class _MainAdherentScreenState extends State<MainAdherentScreen> {
         activeIcon: Icon(Icons.payments),
         label: 'Cotisations',
       ),
-      if (AppFeatures.healthUiEnabled)
-        const BottomNavigationBarItem(
-          icon: Icon(Icons.medical_services_outlined),
-          activeIcon: Icon(Icons.medical_services),
-          label: 'Souscriptions',
-        ),
+      const BottomNavigationBarItem(
+        icon: Icon(Icons.medical_services_outlined),
+        activeIcon: Icon(Icons.medical_services),
+        label: 'Souscriptions',
+      ),
       const BottomNavigationBarItem(
         icon: Icon(Icons.people_outline),
         activeIcon: Icon(Icons.people),
@@ -113,10 +105,7 @@ class _MainAdherentScreenState extends State<MainAdherentScreen> {
     final safeIndex = _currentIndex.clamp(0, pages.length - 1);
 
     return Scaffold(
-      body: IndexedStack(
-        index: safeIndex,
-        children: pages,
-      ),
+      body: IndexedStack(index: safeIndex, children: pages),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: safeIndex,
         onTap: _goToTab,

@@ -8,6 +8,8 @@ import '../../../services/auth_service.dart';
 import '../../../utils/api_error_helper.dart';
 import '../../../utils/currency_formatter.dart';
 import '../../../utils/formatters.dart';
+import '../../../utils/medical_permissions.dart';
+import '../medical/medical_home_screen.dart';
 import '../../widgets/dashboard_segment_tab_bar.dart';
 import '../../widgets/year_picker_sheet.dart';
 import '../../../widgets/souscription_bottom_sheet.dart';
@@ -181,6 +183,45 @@ class _AdherentPrestationScreenState extends State<AdherentPrestationScreen>
     });
   }
 
+  /// Accès au nouveau circuit médical, distinct des prestations historiques.
+  Widget _buildPrestationsMedicalesBanner() {
+    return Material(
+      color: Colors.teal.shade50,
+      child: InkWell(
+        onTap: () {
+          final affilieId = AuthService.affilieId;
+          if (affilieId == null || affilieId <= 0) return;
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => MedicalHomeScreen(affilieId: affilieId),
+            ),
+          );
+        },
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              Icon(Icons.local_hospital_outlined, color: Colors.teal.shade700),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Nouveau : Prestations médicales — offres de votre hôpital '
+                  'et couverture mensuelle.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.teal.shade900,
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right, color: Colors.teal.shade700),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -207,20 +248,28 @@ class _AdherentPrestationScreenState extends State<AdherentPrestationScreen>
           ),
         ],
       ),
-      body: DashboardSegmentTabScaffold(
-        controller: _tabController,
-        indicatorColor: AppColors.prosocGreen,
-        tabs: [
-          DashboardSegmentTabItem(
-            label: 'Récentes',
-            badgeCount: _recentes.length,
-          ),
-          DashboardSegmentTabItem(
-            label: 'Période',
-            badgeCount: _periode.length,
+      body: Column(
+        children: [
+          if (MedicalPermissions.peutConsulterSouscriptions)
+            _buildPrestationsMedicalesBanner(),
+          Expanded(
+            child: DashboardSegmentTabScaffold(
+              controller: _tabController,
+              indicatorColor: AppColors.prosocGreen,
+              tabs: [
+                DashboardSegmentTabItem(
+                  label: 'Récentes',
+                  badgeCount: _recentes.length,
+                ),
+                DashboardSegmentTabItem(
+                  label: 'Période',
+                  badgeCount: _periode.length,
+                ),
+              ],
+              children: [_buildRecentesTab(), _buildPeriodeTab()],
+            ),
           ),
         ],
-        children: [_buildRecentesTab(), _buildPeriodeTab()],
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: _openNouvelleSouscription,

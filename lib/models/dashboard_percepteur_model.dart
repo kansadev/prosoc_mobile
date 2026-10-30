@@ -109,6 +109,7 @@ class PercepteurKpis {
 
   String get formattedMontantTotal => formatMontant(montantTotalPercu);
   String get formattedMontantMois => formatMontant(montantMois);
+  String get formattedMontantSemaine => formatMontant(montantSemaine);
   String get formattedMontantJour => formatMontant(montantDuJour);
   String get formattedTauxSucces => '${tauxSucces.toStringAsFixed(1)} %';
 }
