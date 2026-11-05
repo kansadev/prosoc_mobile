@@ -4,6 +4,7 @@ import '../../config/colors.dart';
 import '../../services/auth_service.dart';
 import 'auth/adherent_register_screen.dart';
 import '../../utils/api_error_helper.dart';
+import '../widgets/prosoc_message_dialog.dart';
 
 class LoginScreen extends StatefulWidget {
   final VoidCallback onLoginSuccess;
@@ -27,6 +28,26 @@ class _LoginScreenState extends State<LoginScreen> {
     _emailController.dispose();
     _passwordController.dispose();
     super.dispose();
+  }
+
+  /// Aucun endpoint de réinitialisation libre-service n'est exposé par l'API :
+  /// le mot de passe temporaire est attribué par l'administration, puis changé
+  /// à la connexion (`doitChangerMotDePasse`).
+  Future<void> _showMotDePasseOublie() {
+    return ProsocMessageDialog.show(
+      context,
+      variant: ProsocMessageVariant.info,
+      icon: Icons.lock_reset_rounded,
+      title: 'Mot de passe oublié',
+      message:
+          'Contactez votre superviseur ou l\'administrateur Prosoc en '
+          'indiquant votre identifiant (e-mail ou téléphone). Un mot de passe '
+          'temporaire vous sera attribué.',
+      hint:
+          'À la connexion avec ce mot de passe temporaire, l\'application vous '
+          'demandera d\'en choisir un nouveau.',
+      confirmLabel: 'Compris',
+    );
   }
 
   Future<void> _handleLogin() async {
@@ -217,7 +238,7 @@ class _LoginScreenState extends State<LoginScreen> {
             Align(
               alignment: Alignment.centerRight,
               child: TextButton(
-                onPressed: () {},
+                onPressed: _showMotDePasseOublie,
                 style: TextButton.styleFrom(
                   foregroundColor: AppColors.prosocGreen,
                   padding: const EdgeInsets.symmetric(horizontal: 4),

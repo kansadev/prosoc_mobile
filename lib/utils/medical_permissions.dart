@@ -35,6 +35,15 @@ abstract final class MedicalPermissions {
   static bool get peutEncaisserGuichet =>
       !estMembre && _has(createCollecte);
 
+  /// Espèces : réservé aux profils de caisse (percepteur / caissier).
+  static bool get peutEncaisserEspeces =>
+      peutEncaisserGuichet &&
+      (_has('OPEN_CAISSIER_SESSION') || _has('READ_CAISSIER_SESSION'));
+
+  /// Compte virtuel : profils disposant d'un wallet virtuel (agent AT).
+  static bool get peutEncaisserCompteVirtuel =>
+      peutEncaisserGuichet && _has('READ_WALLET_VIRTUEL');
+
   static bool get peutPayerElectronique =>
       (_has(createCollecte) || (estMembre && _has(readSouscription)));
 

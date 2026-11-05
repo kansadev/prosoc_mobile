@@ -41,6 +41,7 @@ import '../models/retrait_agent_model.dart';
 import '../models/retrait_agent_periode_model.dart';
 import '../models/retrait_agent_verifier_solde_model.dart';
 import '../models/arriere_affilie_model.dart';
+import '../models/cotisation_periode_model.dart';
 import '../models/penalite_affilie_model.dart';
 import '../models/adhesion_en_ligne_model.dart';
 import '../models/agent_affecter_affilies_model.dart';
@@ -2689,11 +2690,17 @@ class ApiService {
   /// GET /api/Frais - Liste de tous les frais
   static Future<ApiResponse<List<Frais>>> getFrais() async {
     try {
-      final response = await http.get(
-        Uri.parse('${ApiConfig.baseUrl}/api/Frais'),
-        headers: isAuthenticated
-            ? ApiConfig.authHeaders(_token!)
-            : ApiConfig.headers,
+      // Renouvellement de session sur 401 (comme les autres lectures) et page
+      // large : le frais d'adhésion ne doit pas manquer faute de pagination.
+      final response = await _withAuthRetry(
+        () => http.get(
+          Uri.parse(
+            '${ApiConfig.baseUrl}/api/Frais',
+          ).replace(queryParameters: {'Page': '1', 'PageSize': '100'}),
+          headers: isAuthenticated
+              ? ApiConfig.authHeaders(_token!)
+              : ApiConfig.headers,
+        ),
       );
 
       if (response.statusCode == 200) {
@@ -4619,6 +4626,17 @@ class ApiService {
     );
   }
 
+  /// File des prises en charge `EN_ATTENTE`, tous affiliés confondus
+  /// (`READ_DEMANDE_BON_ENVOI` ; comptes affiliés et hôpital refusés).
+  /// Distincte de la file historique `DemandeBonEnvoi/en-attente`.
+  static Future<ApiResponse<List<PriseEnChargeMedicale>>>
+  getPrisesEnChargeEnAttente() {
+    return _medicalAllPages(
+      '/api/PriseEnChargeMedicale/en-attente',
+      PriseEnChargeMedicale.fromJson,
+    );
+  }
+
   /// Confirmation (`accepter: true`) ou rejet. Une confirmation répétée ne
   /// crée pas de second jeton.
   static Future<ApiResponse<PriseEnChargeMedicale>>
@@ -5732,6 +5750,39 @@ class ApiService {
     );
   }
 
+  /// GET /api/arrieres-affilie/mes-cotisations/{id}/periode/{mois}/{annee}
+  /// Résumé d'une période pour **l'affilié connecté**. Ne pas l'appeler depuis
+  /// un écran agent : la route ne prend pas d'identifiant d'affilié.
+  static Future<ApiResponse<ResumePeriodeCotisation>> getCotisationPeriode({
+    required int cotisationAffilieId,
+    required int mois,
+    required int annee,
+  }) async {
+    final path =
+        '/api/arrieres-affilie/mes-cotisations/$cotisationAffilieId'
+        '/periode/$mois/$annee';
+    try {
+      final response = await http.get(
+        Uri.parse('${ApiConfig.baseUrl}$path'),
+        headers: isAuthenticated
+            ? ApiConfig.authHeaders(_token!)
+            : ApiConfig.headers,
+      );
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) {
+          return ApiResponse.success(
+            ResumePeriodeCotisation.fromJson(Map<String, dynamic>.from(decoded)),
+            statusCode: response.statusCode,
+          );
+        }
+      }
+      return _errorResponse(response, context: path);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, path);
+    }
+  }
+
   static Future<ApiResponse<List<ArriereAffilieModel>>> _fetchArrieresAffilie({
     required String path,
     required String context,
@@ -5916,6 +5967,58 @@ class ApiService {
     }
   }
 
+  /// GET /api/sync/souscriptions-prestations — lignes inactives comprises.
+  static Future<ApiResponse<SyncPage<SyncSouscriptionRow>>>
+  syncSouscriptionsPrestations({
+    String? since,
+    String? cursor,
+    int pageSize = 1000,
+    String? snapshot,
+  }) async {
+    const context = 'sync/souscriptions-prestations';
+    try {
+      final query = <String>['pageSize=$pageSize'];
+      if (since != null && since.isNotEmpty) query.add('since=$since');
+      if (cursor != null && cursor.isNotEmpty) query.add('cursor=$cursor');
+      if (snapshot != null && snapshot.isNotEmpty) {
+        query.add('snapshot=$snapshot');
+      }
+      final suffix = '?${query.join('&')}';
+
+      final response = await _withAuthRetry(
+        () => http.get(
+          Uri.parse(
+            '${ApiConfig.baseUrl}/api/sync/souscriptions-prestations$suffix',
+          ),
+          headers: isAuthenticated
+              ? ApiConfig.authHeaders(_token!)
+              : ApiConfig.headers,
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        final decoded = jsonDecode(response.body);
+        if (decoded is Map) {
+          final map = Map<String, dynamic>.from(decoded);
+          final payload = map['data'] is Map
+              ? Map<String, dynamic>.from(map['data'] as Map)
+              : map;
+          return ApiResponse.success(
+            SyncPage.souscriptions(payload),
+            statusCode: response.statusCode,
+          );
+        }
+        return ApiResponse.error(
+          'Réponse souscriptions sync invalide',
+          statusCode: response.statusCode,
+        );
+      }
+      return _errorResponse(response, context: context);
+    } catch (e, stackTrace) {
+      return _errorFromException(e, stackTrace, context);
+    }
+  }
+
   /// GET /api/sync/wallets?since&cursor&pageSize&snapshot — delta wallets.
   static Future<ApiResponse<SyncPage<SyncWalletRow>>> syncWallets({
     String? since,
@@ -6054,11 +6157,8 @@ class ApiService {
           statusCode: response.statusCode,
         );
       }
-      return _errorResponse(
-        response,
-        context: context,
-        requestBody: body,
-      );
+      // Corps non journalisé : données personnelles et photos en base64.
+      return _errorResponse(response, context: context);
     } catch (e, stackTrace) {
       return _errorFromException(e, stackTrace, context);
     }

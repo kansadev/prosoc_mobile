@@ -14,6 +14,8 @@ import 'superviseur_zones_screen.dart';
 import 'superviseur_rechargement_screen.dart';
 import 'widgets/superviseur_wallet_overview_flip_card.dart';
 import '../../widgets/prosoc_shimmer_loading.dart';
+import '../../../utils/medical_permissions.dart';
+import '../medical/medical_agent_tab_screen.dart';
 
 class SuperviseurHomeScreen extends StatefulWidget {
   final SuperviseurController controller;
@@ -531,6 +533,28 @@ class _SuperviseurHomeScreenState extends State<SuperviseurHomeScreen> {
             ),
           ],
         ),
+        // Nouveau circuit médical, selon les permissions du compte.
+        if (MedicalPermissions.peutConsulterSouscriptions ||
+            MedicalPermissions.peutConfirmerPriseEnCharge ||
+            MedicalPermissions.peutScanner) ...[
+          const SizedBox(height: 12),
+          _actionTile(
+            icon: Icons.local_hospital_outlined,
+            label: 'Prestations médicales',
+            color: Colors.teal,
+            onTap: () {
+              Navigator.push<void>(
+                context,
+                MaterialPageRoute<void>(
+                  builder: (_) => const MedicalAgentTabScreen(
+                    reseauSeulement: false,
+                    estOnglet: false,
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
       ],
     );
   }

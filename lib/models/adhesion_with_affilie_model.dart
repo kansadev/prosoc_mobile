@@ -20,8 +20,8 @@ class AdhesionApiValues {
   static const statutDossierEnLigne = 'EN ATTENTE';
 
   /// Sexe de l'affilié (champ `sexe` des endpoints d'adhésion).
-  static const sexeMasculin = 'M';
-  static const sexeFeminin = 'F';
+  static const sexeMasculin = 'Masculin';
+  static const sexeFeminin = 'Féminin';
   static const Map<String, String> sexeOptions = {
     sexeMasculin: 'Masculin',
     sexeFeminin: 'Féminin',

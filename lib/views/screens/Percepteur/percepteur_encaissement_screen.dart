@@ -13,6 +13,8 @@ import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_frais_screen.da
 import 'package:prosoc/views/screens/adh%C3%A9rent/widgets/payer_souscription_screen.dart';
 import 'package:prosoc/services/auth_service.dart';
 import 'package:prosoc/widgets/popup_menu_widget.dart';
+import 'package:prosoc/utils/medical_permissions.dart';
+import 'package:prosoc/views/screens/medical/medical_home_screen.dart';
 import 'package:prosoc/widgets/souscription_bottom_sheet.dart';
 
 /// Sélection d'un affilié (GET /api/Affilie) puis encaissement ou souscription.
@@ -246,6 +248,21 @@ class _PercepteurEncaissementScreenState
     );
   }
 
+  void _openCouvertureMedicale(Map<String, dynamic> membre) {
+    final ctx = _affilieContext(membre);
+    if (ctx == null) return;
+    final name = '${ctx.prenom} ${ctx.nom}'.trim();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => MedicalHomeScreen(
+          affilieId: ctx.affilieId,
+          affilieNom: name.isNotEmpty ? name : null,
+        ),
+      ),
+    );
+  }
+
   _AffilieEncaissementContext? _affilieContext(Map<String, dynamic> membre) {
     final affilieId = resolveAffilieId(membre);
     if (affilieId <= 0) return null;
@@ -473,6 +490,10 @@ class _PercepteurEncaissementScreenState
                         onPayerSouscription: () => _openPayerSouscription(membre),
                         onSouscription: () => _openSouscriptionBottomSheet(membre),
                         onDemandeBon: () => _openDemandeBon(membre),
+                        onCouvertureMedicale:
+                            MedicalPermissions.peutConsulterSouscriptions
+                            ? () => _openCouvertureMedicale(membre)
+                            : null,
                       ),
                   ],
                 ),

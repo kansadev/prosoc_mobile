@@ -70,12 +70,7 @@ class Prestation {
       id: _prestationInt(
         json['id'] ?? json['idPrestation'] ?? json['IdPrestation'],
       ),
-      nomPrestation: (json['nomPrestation'] ??
-              json['nom'] ??
-              json['NomPrestation'] ??
-              json['Nom'] ??
-              '')
-          .toString(),
+      nomPrestation: _nomDepuis(json),
       description: (json['description'] ?? json['Description'] ?? '').toString(),
       montant: montant,
       deviseId: _prestationInt(json['deviseId'] ?? json['DeviseId']),
@@ -97,6 +92,33 @@ class Prestation {
           json['ProduitAssureurNom']?.toString(),
       estGratuit: estGratuitFlag || (montant != null && montant == 0),
     );
+  }
+
+  /// Le nom diffère selon la source : API classique ou référentiels de sync.
+  /// Une ligne sans nom reste identifiable : la liste n'affiche jamais un
+  /// montant seul.
+  static String _nomDepuis(Map<String, dynamic> json) {
+    for (final cle in const [
+      'nomPrestation',
+      'NomPrestation',
+      'nom',
+      'Nom',
+      'libellePrestation',
+      'LibellePrestation',
+      'libelle',
+      'Libelle',
+      'designation',
+      'Designation',
+      'intitule',
+      'Intitule',
+    ]) {
+      final texte = json[cle]?.toString().trim() ?? '';
+      if (texte.isNotEmpty) return texte;
+    }
+    final id = _prestationInt(
+      json['id'] ?? json['idPrestation'] ?? json['IdPrestation'],
+    );
+    return id > 0 ? 'Prestation n°$id' : 'Prestation';
   }
 
   static double? _parseMontant(dynamic value) {

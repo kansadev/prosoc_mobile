@@ -13,7 +13,7 @@ import 'package:prosoc/utils/wallet_agent_loader.dart';
 import 'package:prosoc/views/screens/at/new_adhesion_screen.dart';
 import 'package:prosoc/views/screens/at/bon_envoi_medical_screen.dart';
 import 'package:prosoc/utils/medical_permissions.dart';
-import 'package:prosoc/views/screens/medical/prise_en_charge_screen.dart';
+import 'package:prosoc/views/screens/medical/medical_agent_tab_screen.dart';
 import 'dashboard_percepteur_screen.dart';
 import 'percepteur_encaissement_choice_sheet.dart';
 import 'percepteur_encaissement_screen.dart';
@@ -643,6 +643,8 @@ class _HomePercepteurScreenState extends State<HomePercepteurScreen> {
           );
         },
       ),
+      if (MedicalPermissions.peutConsulterPrisesEnCharge ||
+          MedicalPermissions.peutConfirmerPriseEnCharge)
       _QuickService(
         title: 'Valider bons',
         icon: Icons.verified_outlined,
@@ -656,17 +658,23 @@ class _HomePercepteurScreenState extends State<HomePercepteurScreen> {
           );
         },
       ),
-      // Nouveau circuit médical : vérification puis consommation du bon.
-      if (MedicalPermissions.peutScanner)
+      // Nouveau circuit médical : demandes à confirmer, couverture des
+      // affiliés et scan des bons, selon les permissions.
+      if (MedicalPermissions.peutConsulterSouscriptions ||
+          MedicalPermissions.peutConfirmerPriseEnCharge ||
+          MedicalPermissions.peutScanner)
         _QuickService(
-          title: 'Bon médical',
-          icon: Icons.qr_code_scanner,
+          title: 'Médical',
+          icon: Icons.local_hospital_outlined,
           color: Colors.teal,
           onTap: () {
             Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (context) => const MedicalScanScreen(),
+                builder: (context) => const MedicalAgentTabScreen(
+                  reseauSeulement: false,
+                  estOnglet: false,
+                ),
               ),
             );
           },

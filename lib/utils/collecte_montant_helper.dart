@@ -26,9 +26,16 @@ class CollecteMontantHelper {
     return 'Montant (max. ${montantAttendu.toStringAsFixed(2)})';
   }
 
-  static String? montantAttenduLibelle({double? montantAttendu}) {
+  /// [partielAutorise] : cotisation uniquement. Frais et souscriptions restent
+  /// soumis au montant exact du tarif.
+  static String? montantAttenduLibelle({
+    double? montantAttendu,
+    bool partielAutorise = false,
+  }) {
     if (montantAttendu == null || montantAttendu <= 0) return null;
-    return 'Montant attendu : ${montantAttendu.toStringAsFixed(2)} — '
-        'paiement partiel autorisé';
+    final montant = montantAttendu.toStringAsFixed(2);
+    return partielAutorise
+        ? 'Maximum payable : $montant. Un versement partiel est possible.'
+        : 'Montant attendu : $montant';
   }
 }

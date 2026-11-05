@@ -55,6 +55,9 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
     'Mobile Money',
   ];
 
+  /// L'agent a saisi un montant : plus aucun préremplissage ne l'écrase.
+  bool _montantSaisi = false;
+
   bool get _windowOpen => _periodeCourante?.estPeriodeAutorisee == true;
 
   bool get _isRetraitTotal => _periodeCourante?.isRetraitTotal ?? false;
@@ -229,8 +232,11 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
     }
   }
 
+  /// Période TOTAL : propose le solde, sans jamais écraser une saisie. Le serveur
+  /// retient le montant envoyé et ignore `typeRetrait`.
   void _syncMontantForRetraitType() {
-    if (!_isRetraitTotal) return;
+    if (!_isRetraitTotal || _montantSaisi) return;
+    if (_montantController.text.trim().isNotEmpty) return;
     final wallet = _selectedWallet;
     if (wallet == null || wallet.soldeDisponible <= 0) return;
     _montantController.text = _formatAmountInput(wallet.soldeDisponible);
@@ -298,6 +304,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
       _isUsdSelected = isUsd;
       _selectedDeviseId = targetId;
       _montantController.clear();
+      _montantSaisi = false;
     });
     _jumpToSelectedDevisePage();
     _syncMontantForRetraitType();
@@ -311,6 +318,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
       _selectedDeviseId = deviseId;
       _isUsdSelected = WalletAgentLoader.isUsdDeviseId(deviseId);
       _montantController.clear();
+      _montantSaisi = false;
     });
     _syncMontantForRetraitType();
   }
@@ -323,6 +331,7 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
     return InputDecoration(
       labelText: label,
       helperText: helperText,
+      helperMaxLines: 3,
       prefixIcon: Icon(icon, color: AppColors.prosocGreen),
       filled: true,
       fillColor: AppColors.cardColor,
@@ -613,11 +622,13 @@ class _WithdrawalScreenState extends State<WithdrawalScreen> {
                 decimal: true,
               ),
               enabled: canWithdraw,
+              onChanged: (_) => _montantSaisi = true,
               decoration: _fieldDecoration(
                 label: 'Montant demandé ($currencyLabel)',
                 icon: Icons.payments_outlined,
                 helperText: _isRetraitTotal
-                    ? 'Prérempli avec le solde disponible — modifiable'
+                    ? 'Le solde disponible est proposé. Vous pouvez saisir un '
+                        'montant inférieur.'
                     : (_montantMaxPartiel != null &&
                             (_periodeCourante?.pourcentageMaxPartiel ?? 0) > 0)
                         ? 'Max ${_periodeCourante!.pourcentageMaxPartiel.toStringAsFixed(0)} % '

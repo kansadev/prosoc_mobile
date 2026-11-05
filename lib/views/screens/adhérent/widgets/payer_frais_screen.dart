@@ -11,6 +11,7 @@ import 'package:prosoc/utils/collecte_agent_resolver.dart';
 import 'package:prosoc/utils/collecte_montant_helper.dart';
 import 'package:prosoc/utils/collecte_receipt_helper.dart';
 import 'package:prosoc/utils/currency_formatter.dart';
+import 'package:prosoc/offline/offline_mode.dart';
 import 'package:prosoc/offline/offline_write_gateway.dart';
 import 'package:prosoc/utils/electronic_payment_error_handler.dart';
 import 'package:prosoc/utils/phone_utils.dart';
@@ -51,11 +52,12 @@ class PayerFraisScreen extends StatefulWidget {
   State<PayerFraisScreen> createState() => _PayerFraisScreenState();
 }
 
-class _PayerFraisScreenState extends State<PayerFraisScreen> {
-  Map<String, String> get _modesPaiement =>
-      AffiliePaymentModes.modesFor(
-        allowVirtualAccount: widget.allowVirtualAccount,
-      );
+class _PayerFraisScreenState extends State<PayerFraisScreen>
+    with OfflineAwareState<PayerFraisScreen> {
+  Map<String, String> get _modesPaiement => OfflineMode.modesDisponibles(
+    allowVirtualAccount: widget.allowVirtualAccount,
+    offline: isOffline,
+  );
 
   List<Frais> _frais = [];
   bool _isLoadingFrais = false;
@@ -85,8 +87,9 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedModePaiement = AffiliePaymentModes.defaultModeFor(
+    _selectedModePaiement = OfflineMode.modeParDefaut(
       allowVirtualAccount: widget.allowVirtualAccount,
+      offline: isOffline,
     );
     final tel = widget.affilieTelephone?.trim();
     if (tel != null && tel.isNotEmpty) {
@@ -110,6 +113,22 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
     _observationController.dispose();
     _telephonePaiementController.dispose();
     super.dispose();
+  }
+
+  @override
+  void onOfflineChanged(bool offline) {
+    setState(() {
+      _selectedModePaiement = offline || _selectedModePaiement == null
+          ? OfflineMode.modeParDefaut(
+              allowVirtualAccount: widget.allowVirtualAccount,
+              offline: offline,
+            )
+          : _selectedModePaiement;
+    });
+    if (!offline) {
+      _devisePaiement.loadDevises();
+      if (_frais.isEmpty) _loadFrais();
+    }
   }
 
   Frais? get _selectedFrais {
@@ -136,40 +155,22 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
       _fraisError = null;
     });
 
+    if (isOffline) {
+      _appliquerFrais(OfflineMode.fraisLocaux());
+      return;
+    }
+
     try {
       final response = await ApiService.getFrais();
       if (!mounted) return;
 
       if (response.success && response.data != null) {
-        final actifs =
-            response.data!
-                .where(
-                  (f) =>
-                      f.statut &&
-                      !f.estSupprime &&
-                      f.idFrais > 0 &&
-                      !f.isFraisAdhesion,
-                )
-                .toList()
-              ..sort((a, b) => a.libelle.compareTo(b.libelle));
-
-        setState(() {
-          _frais = actifs;
-          _isLoadingFrais = false;
-        });
-
-        final initialId = widget.initialFraisId;
-        if (initialId != null && actifs.any((f) => f.idFrais == initialId)) {
-          _applyFraisSelection(
-            initialId,
-            montantOverride: widget.initialMontant,
-          );
-        } else if (actifs.length == 1) {
-          _applyFraisSelection(
-            actifs.first.idFrais,
-            montantOverride: widget.initialMontant,
-          );
-        }
+        _appliquerFrais(response.data!);
+      } else if (OfflineMode.sansReseau(
+        success: response.success,
+        statusCode: response.statusCode,
+      )) {
+        _appliquerFrais(OfflineMode.fraisLocaux());
       } else {
         setState(() {
           _fraisError =
@@ -181,10 +182,44 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
     } catch (e, stackTrace) {
       ApiErrorHelper.logException('PayerFrais/load', e, stackTrace, false);
       if (!mounted) return;
+      final locaux = OfflineMode.fraisLocaux();
+      if (locaux.isNotEmpty) {
+        _appliquerFrais(locaux);
+        return;
+      }
       setState(() {
         _fraisError = ApiErrorHelper.userFacingNetwork();
         _isLoadingFrais = false;
       });
+    }
+  }
+
+  void _appliquerFrais(List<Frais> frais) {
+    final actifs =
+        frais
+            .where(
+              (f) =>
+                  f.statut &&
+                  !f.estSupprime &&
+                  f.idFrais > 0 &&
+                  !f.isFraisAdhesion,
+            )
+            .toList()
+          ..sort((a, b) => a.libelle.compareTo(b.libelle));
+
+    setState(() {
+      _frais = actifs;
+      _isLoadingFrais = false;
+    });
+
+    final initialId = widget.initialFraisId;
+    if (initialId != null && actifs.any((f) => f.idFrais == initialId)) {
+      _applyFraisSelection(initialId, montantOverride: widget.initialMontant);
+    } else if (actifs.length == 1) {
+      _applyFraisSelection(
+        actifs.first.idFrais,
+        montantOverride: widget.initialMontant,
+      );
     }
   }
 
@@ -418,27 +453,33 @@ class _PayerFraisScreenState extends State<PayerFraisScreen> {
           label: 'Mode de paiement',
           icon: Icons.payment_outlined,
           required: true,
-          child: DropdownButtonFormField<String>(
-            initialValue: _selectedModePaiement,
-            decoration: _inputDecoration('Mode de paiement'),
-            items: _modesPaiement.entries
-                .map(
-                  (e) => DropdownMenuItem(value: e.key, child: Text(e.value)),
-                )
-                .toList(),
-            onChanged: (value) {
-              setState(() {
-                _selectedModePaiement = value;
-                if (value == 'MOBILE_MONEY' &&
-                    _telephonePaiementController.text.trim().isEmpty) {
-                  final tel = widget.affilieTelephone?.trim() ?? '';
-                  if (tel.isNotEmpty) {
-                    _telephonePaiementController.text = tel;
-                  }
-                }
-              });
-            },
-          ),
+          child: _modesPaiement.isEmpty
+              ? const Text('Le paiement nécessite une connexion internet.')
+              : DropdownButtonFormField<String>(
+                  key: ValueKey('mode-$isOffline-$_selectedModePaiement'),
+                  initialValue: _selectedModePaiement,
+                  decoration: _inputDecoration('Mode de paiement'),
+                  items: _modesPaiement.entries
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e.key,
+                          child: Text(e.value),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedModePaiement = value;
+                      if (value == 'MOBILE_MONEY' &&
+                          _telephonePaiementController.text.trim().isEmpty) {
+                        final tel = widget.affilieTelephone?.trim() ?? '';
+                        if (tel.isNotEmpty) {
+                          _telephonePaiementController.text = tel;
+                        }
+                      }
+                    });
+                  },
+                ),
         ),
         if (_isMobileMoneyPayment) ...[
           const SizedBox(height: 16),

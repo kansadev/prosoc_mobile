@@ -3,6 +3,8 @@
 // ============================================
 
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import '../utils/jwt_claims.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api.dart';
 import '../models/auth_user_model.dart';
@@ -264,7 +266,12 @@ class AuthService {
           doitChangerMotDePasse: false,
         ),
         nomRole: nomRole ?? '',
-        permissions: permissions,
+        // Sessions enregistrées avant la lecture des claims JWT : on complète
+        // avec les claims `permission` du jeton stocké.
+        permissions: {
+          ...permissions,
+          ...JwtClaims.values(accessToken, 'permission'),
+        }.toList(),
         primaryRole: RoleModel(idRole: 0, nom: nomRole ?? '', description: '', niveau: 0, statut: true),
         roles: [],
         paymentGateway: paymentGateway,
@@ -380,6 +387,13 @@ class AuthService {
     if (response.success && response.data != null) {
       // Sauvegarder les données d'authentification
       await saveAuthData(response.data!);
+      if (kDebugMode) {
+        final user = response.data!;
+        debugPrint(
+          '[Auth] rôle « ${user.nomRole} » — ${user.permissions.length} '
+          'permission(s) : ${user.permissions.join(', ')}',
+        );
+      }
     }
 
     return response;

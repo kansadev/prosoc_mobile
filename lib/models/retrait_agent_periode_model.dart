@@ -144,7 +144,7 @@ class RetraitAgentPeriodeCourante {
 
   String get typeRetraitLabel {
     if (isRetraitTotal) {
-      return 'Retrait total du solde disponible requis';
+      return 'Période de retrait total : le solde disponible est proposé';
     }
     if (isRetraitPartiel) {
       final parts = <String>['Retrait partiel autorisé'];

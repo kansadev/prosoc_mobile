@@ -8,6 +8,7 @@ import '../../../models/medical/souscription_medicale_model.dart';
 import '../../../services/auth_service.dart';
 import '../../../utils/collecte_receipt_helper.dart';
 import '../../../utils/guid.dart';
+import '../../../utils/medical_permissions.dart';
 import '../../widgets/devise_paiement_selector.dart';
 import '../../widgets/prosoc_message_dialog.dart';
 import 'widgets/medical_ui.dart';
@@ -53,7 +54,16 @@ class MedicalGuichetSheet extends StatefulWidget {
 class _MedicalGuichetSheetState extends State<MedicalGuichetSheet> {
   final _montantController = TextEditingController();
   late final DevisePaiementController _devisePaiement;
-  String _mode = PaiementMedicalModes.virtualAccount;
+  /// Modes autorisés pour le profil connecté (caisse, wallet virtuel).
+  late final Map<String, String> _modes = {
+    for (final e in PaiementMedicalModes.guichet.entries)
+      if ((e.key != PaiementMedicalModes.espece ||
+              MedicalPermissions.peutEncaisserEspeces) &&
+          (e.key != PaiementMedicalModes.virtualAccount ||
+              MedicalPermissions.peutEncaisserCompteVirtuel))
+        e.key: e.value,
+  };
+  late String _mode = _modes.keys.first;
   bool _fondsRecus = false;
   bool _isSubmitting = false;
 
@@ -307,7 +317,7 @@ class _MedicalGuichetSheetState extends State<MedicalGuichetSheet> {
                     labelText: 'Mode d\'encaissement',
                     border: OutlineInputBorder(),
                   ),
-                  items: PaiementMedicalModes.guichet.entries
+                  items: _modes.entries
                       .map(
                         (e) =>
                             DropdownMenuItem(value: e.key, child: Text(e.value)),

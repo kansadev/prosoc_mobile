@@ -41,14 +41,21 @@ class PaiementDeviseResult {
 ///   (`GET /api/Devise/preview-conversion`) ;
 /// - le serveur reconvertit et vérifie l'égalité avec le tarif.
 class DevisePaiementController extends ChangeNotifier {
-  DevisePaiementController({required this.operation, Listenable? triggers})
-    : _triggers = triggers {
+  DevisePaiementController({
+    required this.operation,
+    Listenable? triggers,
+    this.verifierAllerRetour = true,
+  }) : _triggers = triggers {
     _triggers?.addListener(_onOperationChanged);
   }
 
   /// Devise et montant de l'opération (tarif), lus à chaque utilisation.
   final ({int? deviseId, double? montant}) Function() operation;
   final Listenable? _triggers;
+
+  /// Contrôle que le montant reconverti retombe sur le tarif. À désactiver pour
+  /// un versement partiel, qui n'a pas à égaler le tarif.
+  final bool verifierAllerRetour;
 
   /// FlexPay n'accepte que ces devises.
   static const Set<String> codesFlexPay = {'CDF', 'USD'};
@@ -167,11 +174,17 @@ class DevisePaiementController extends ChangeNotifier {
     final seq = ++_requestSeq;
     isLoadingPreview = true;
     _notify();
-    final response = await ApiService.previewConversionVerifiee(
-      codeDeviseSource: source,
-      montant: montant,
-      codeDeviseCible: cible,
-    );
+    final response = verifierAllerRetour
+        ? await ApiService.previewConversionVerifiee(
+            codeDeviseSource: source,
+            montant: montant,
+            codeDeviseCible: cible,
+          )
+        : await ApiService.previewConversion(
+            codeDeviseSource: source,
+            montant: montant,
+            codeDeviseCible: cible,
+          );
     if (_disposed) return null;
     // Une sélection plus récente a été demandée : réponse obsolète.
     if (seq != _requestSeq) return null;

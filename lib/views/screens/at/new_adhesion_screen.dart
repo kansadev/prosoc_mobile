@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -18,7 +19,10 @@ import '../../../utils/electronic_payment_error_handler.dart';
 import '../../../utils/email_utils.dart';
 import '../../../utils/phone_utils.dart';
 import '../../../utils/picked_image_data.dart';
+import '../../../offline/offline_database.dart';
 import '../../../offline/offline_write_gateway.dart';
+import '../../../services/sync_service.dart';
+import '../../../utils/formatters.dart';
 import 'flex_pay_payment_waiting_screen.dart';
 import 'payment_webview_screen.dart';
 import '../../widgets/flex_pay_card_payment_bottom_sheet.dart';
@@ -92,6 +96,18 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
   bool _isLoadingDevises = true;
   bool _isLoadingPrestations = true;
   bool _isLoadingFrais = true;
+
+  // Mode hors ligne
+  bool _isOffline = false;
+
+  /// Bandeau fermé par l'agent ; il revient au prochain changement de réseau.
+  bool _bandeauFerme = false;
+
+  /// Au moins un catalogue provient des référentiels synchronisés.
+  bool _catalogueLocal = false;
+
+  /// Aucune synchronisation n'a encore eu lieu sur l'appareil.
+  bool _referentielsLocauxAbsents = false;
 
   // Liste des dépendants
   final List<Map<String, dynamic>> _dependants = [];
@@ -189,14 +205,148 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
     );
     _animationController.forward();
 
-    _loadTypeAdhesions();
-    _loadDevises();
-    _loadPrestations();
-    _loadFrais();
+    _isOffline = !SyncService.instance.isOnline;
+    if (_isOffline) _forcerCompteVirtuel();
+    SyncService.instance.state.addListener(_onSyncStateChanged);
+    _loadCatalogues();
+  }
+
+  // --- Mode hors ligne --------------------------------------------------
+
+  /// Hors ligne : seul le compte virtuel peut être mis en file (FlexPay,
+  /// Mobile Money et carte exigent le réseau).
+  static const Map<String, String> _modesPaiementHorsLigne = {
+    'VIRTUAL_ACCOUNT': 'Compte virtuel',
+  };
+
+  Map<String, String> get _modesPaiementDisponibles =>
+      _isOffline ? _modesPaiementHorsLigne : _modesPaiement;
+
+  void _forcerCompteVirtuel() {
+    _selectedModePaiement = 'VIRTUAL_ACCOUNT';
+    _modePaiementController.text = 'VIRTUAL_ACCOUNT';
+    _telephonePaiementController.clear();
+  }
+
+  void _onSyncStateChanged() {
+    final offline = !SyncService.instance.isOnline;
+    if (!mounted || offline == _isOffline) return;
+    setState(() {
+      _isOffline = offline;
+      _bandeauFerme = false;
+      if (offline && _selectedModePaiement != 'VIRTUAL_ACCOUNT') {
+        _forcerCompteVirtuel();
+      }
+    });
+    // Retour du réseau : rafraîchir les catalogues issus du cache.
+    if (!offline && _catalogueLocal) _loadCatalogues();
+  }
+
+  /// Réseau d'abord ; ce qui manque est complété par les référentiels
+  /// synchronisés (hors ligne : directement depuis le cache).
+  Future<void> _loadCatalogues() async {
+    if (!_isOffline) {
+      await Future.wait([
+        _loadTypeAdhesions(),
+        _loadDevises(),
+        _loadPrestations(),
+        _loadFrais(),
+      ]);
+      if (!mounted) return;
+      // Appels en échec alors que l'app se croit en ligne : on revérifie la
+      // connexion pour basculer l'écran en mode hors ligne si besoin.
+      if (_typeAdhesions.isEmpty ||
+          _fraisAdhesionOptions.isEmpty ||
+          _devises.isEmpty) {
+        unawaited(SyncService.instance.refreshOnlineStatus());
+      }
+    }
+    _appliquerCatalogueLocal();
+  }
+
+  /// Remplit depuis `OfflineDatabase.referentials` chaque catalogue resté vide.
+  void _appliquerCatalogueLocal() {
+    final refs = OfflineDatabase.referentials;
+    if (kDebugMode) {
+      debugPrint(
+        '[Adhesion] cache offline : ${refs == null ? 'absent' : 'types=${refs.typeAdhesions.length} devises=${refs.devises.length} frais=${refs.frais.length} prestations=${refs.prestations.length}'}'
+        '${refs != null && refs.frais.isNotEmpty ? ' | exemple frais=${refs.frais.first}' : ''}'
+        '${refs != null && refs.prestations.isNotEmpty ? ' | exemple prestation=${refs.prestations.first}' : ''}',
+      );
+    }
+
+    /// Lit une liste du cache sans qu'un élément mal formé n'empêche les
+    /// autres catalogues de se charger.
+    List<T> lire<T>(String nom, List<Map<String, dynamic>> rows, T Function(Map<String, dynamic>) fromJson) {
+      final result = <T>[];
+      for (final row in rows) {
+        try {
+          result.add(fromJson(row));
+        } catch (e, stackTrace) {
+          ApiErrorHelper.logException('Adhesion/cache/$nom', e, stackTrace);
+        }
+      }
+      return result;
+    }
+
+    setState(() {
+      _referentielsLocauxAbsents = refs == null;
+      if (refs != null) {
+        var utilise = false;
+        if (_typeAdhesions.isEmpty && refs.typeAdhesions.isNotEmpty) {
+          _typeAdhesions = lire(
+            'typeAdhesions',
+            refs.typeAdhesions,
+            TypeAdhesion.fromJson,
+          ).where((t) => t.id > 0).toList();
+          if (_typeAdhesions.isNotEmpty) {
+            _selectedTypeAdhesion = _typeAdhesions.first;
+            _typeAdhesionIdController.text = _selectedTypeAdhesion!.id
+                .toString();
+          }
+          utilise = true;
+        }
+        if (_prestations.isEmpty && refs.prestations.isNotEmpty) {
+          _prestations = lire('prestations', refs.prestations, Prestation.fromJson);
+          utilise = true;
+        }
+        // Aucun frais d'adhésion exploitable (liste vide ou incomplète).
+        if (_fraisAdhesionOptions.isEmpty && refs.frais.isNotEmpty) {
+          _frais = lire('frais', refs.frais, Frais.fromJson);
+          final options = _fraisAdhesionOptions;
+          _selectedFraisAdhesion = options.isNotEmpty ? options.first : null;
+          utilise = true;
+        }
+        if (_devises.isEmpty && refs.devises.isNotEmpty) {
+          _devises = lire('devises', refs.devises, Devise.fromJson)
+              .where((d) => d.idDevise > 0 && d.code.isNotEmpty)
+              .toList();
+          if (_selectedPrestation != null) {
+            _applyPrestationSelection(_selectedPrestation);
+          } else {
+            _applyDefaultDevise();
+          }
+          utilise = true;
+        }
+        if (utilise) _catalogueLocal = true;
+      }
+      _isLoadingTypeAdhesions = false;
+      _isLoadingDevises = false;
+      _isLoadingPrestations = false;
+      _isLoadingFrais = false;
+    });
+    if (kDebugMode) {
+      debugPrint(
+        '[Adhesion] catalogues : types=${_typeAdhesions.length} '
+        'frais=${_frais.length} (adhésion=${_fraisAdhesionOptions.length}) '
+        'devises=${_devises.length} prestations=${_prestations.length}',
+      );
+    }
   }
 
   @override
   void dispose() {
+    SyncService.instance.state.removeListener(_onSyncStateChanged);
     _pageController.dispose();
     _animationController.dispose();
     _nomController.dispose();
@@ -577,6 +727,8 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
             ),
           ),
 
+          _buildOfflineBanner(),
+
           // Contenu principal avec animation
           Expanded(
             child: FadeTransition(
@@ -602,6 +754,76 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
 
           // Bottom navigation moderne
           _buildBottomNavigation(),
+        ],
+      ),
+    );
+  }
+
+  /// État de connexion et origine des catalogues.
+  Widget _buildOfflineBanner() {
+    // Clavier ouvert : le formulaire a besoin de toute la hauteur restante.
+    if (_bandeauFerme || MediaQuery.viewInsetsOf(context).bottom > 0) {
+      return const SizedBox.shrink();
+    }
+    final String message;
+    final MaterialColor couleur;
+    final IconData icone;
+    if (_isOffline && _referentielsLocauxAbsents) {
+      couleur = Colors.red;
+      icone = Icons.cloud_off_rounded;
+      message =
+          'Hors ligne et aucune donnée de référence sur l\'appareil. '
+          'Connectez-vous une fois pour synchroniser avant de faire une '
+          'adhésion hors ligne.';
+    } else if (_isOffline) {
+      final sync = OfflineDatabase.lastSyncAt;
+      couleur = Colors.orange;
+      icone = Icons.cloud_off_rounded;
+      message =
+          'Mode hors ligne : l\'adhésion sera enregistrée sur l\'appareil, '
+          'payée par votre compte virtuel et synchronisée au retour du '
+          'réseau.${sync != null ? ' Données de référence du ${AppFormatters.formatDateTime(sync)}.' : ''}';
+    } else if (_catalogueLocal) {
+      couleur = Colors.blue;
+      icone = Icons.info_outline_rounded;
+      message =
+          'Connexion instable : certains catalogues proviennent de la '
+          'dernière synchronisation.';
+    } else {
+      return const SizedBox.shrink();
+    }
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: couleur.shade50,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: couleur.shade200),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icone, color: couleur.shade700, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.35,
+                color: couleur.shade900,
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Fermer',
+            onPressed: () => setState(() => _bandeauFerme = true),
+            icon: Icon(Icons.close_rounded, color: couleur.shade700),
+            iconSize: 18,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 32, height: 32),
+          ),
         ],
       ),
     );
@@ -1043,7 +1265,7 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
             child: TextButton(
               onPressed: () {
                 setState(() => _isLoadingFrais = true);
-                _loadFrais();
+                _loadCatalogues();
               },
               style: TextButton.styleFrom(
                 foregroundColor: Colors.orange.shade900,
@@ -1155,6 +1377,7 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
     IconData? icon,
     bool isLoading = false,
     bool isRequired = false,
+    Key? fieldKey,
   }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1197,6 +1420,7 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                   ),
                 )
               : DropdownButtonFormField<T>(
+                  key: fieldKey,
                   initialValue: value,
                   isExpanded: true,
                   decoration: InputDecoration(
@@ -2202,8 +2426,11 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                 const SizedBox(height: 20),
                 _buildDropdownField<String>(
                   label: 'Mode de paiement',
+                  // La clé reconstruit le champ quand le mode est imposé
+                  // (passage hors ligne → compte virtuel).
+                  fieldKey: ValueKey('mode-$_isOffline-$_selectedModePaiement'),
                   value: _selectedModePaiement,
-                  items: _modesPaiement.keys.toList(),
+                  items: _modesPaiementDisponibles.keys.toList(),
                   isLoading: false,
                   isRequired: true,
                   itemLabel: (mode) => _modesPaiement[mode] ?? mode,
@@ -3439,6 +3666,19 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
       var souscriptionCollecteMontant = souscriptionMontant;
       var souscriptionCollecteDeviseId = souscriptionDeviseId;
 
+      // Le paiement électronique exige le réseau (jamais mis en file).
+      if (_isElectronicPayment && _isOffline) {
+        setState(() {
+          _isLoading = false;
+          _forcerCompteVirtuel();
+        });
+        await _showSnack(
+          'Hors ligne : seul le paiement par compte virtuel est possible. '
+          'Le mode de paiement a été basculé ; vérifiez puis confirmez.',
+        );
+        return;
+      }
+
       // Paiement électronique dans une autre devise : chaque collecte porte
       // la devise de paiement et le montant converti (le serveur reconvertit
       // et vérifie l'égalité avec le tarif).
@@ -3605,6 +3845,8 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         }
       } else {
         // Mode VIRTUAL_ACCOUNT : passerelle offline (file locale si hors ligne).
+        // Le compte virtuel est contrôlé par la passerelle avant toute mise en
+        // file (solde synchronisé moins les opérations déjà en attente).
         final outcome = await OfflineWriteGateway.adhesion(
           adhesion: request.toJson(),
           request: request,
@@ -3615,16 +3857,21 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
 
         if (outcome is OfflineQueued) {
           setState(() => _isLoading = false);
+          final suivi = outcome.clientRequestId.substring(0, 8).toUpperCase();
           await ProsocMessageDialog.show(
             context,
             variant: ProsocMessageVariant.success,
             title: 'Adhésion enregistrée hors ligne',
             message:
-                'Le dossier a été enregistré localement et sera transmis à la '
-                'plateforme dès le retour du réseau. Conservez ce numéro de '
-                'suivi pour l\'affilié.',
+                'Le dossier a été enregistré sur l\'appareil et sera transmis '
+                'à la plateforme dès le retour du réseau.\n\nN° de suivi : '
+                '$suivi',
+            hint:
+                'Le compte virtuel sera débité à la synchronisation. En cas de '
+                'refus (solde insuffisant, affilié déjà enregistré), un '
+                'message s\'affichera en haut de l\'écran.',
           );
-          await _showAdhesionSuccessReceipt(offline: true);
+          await _showAdhesionSuccessReceipt(offline: true, reference: suivi);
           return;
         }
 
@@ -3663,6 +3910,7 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
     String? codeAdhesion,
     int? idAdhesion,
     bool offline = false,
+    String? reference,
   }) async {
     if (!mounted) return;
     final fraisMontant = _selectedFraisAdhesion?.montant ?? 0;
@@ -3684,7 +3932,7 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         deviseId: (_selectedFraisAdhesion?.deviseId ?? 0) > 0
             ? _selectedFraisAdhesion!.deviseId
             : _selectedDevise?.idDevise,
-        reference: _referencePaiementElectronique(),
+        reference: reference ?? _referencePaiementElectronique(),
         modePaiement: offline
             ? 'VIRTUAL_ACCOUNT (hors ligne)'
             : _selectedModePaiement,

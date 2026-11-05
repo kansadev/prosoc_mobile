@@ -5,6 +5,8 @@ import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/dependant_model.dart';
 import 'package:prosoc/models/recent_affilie_model.dart';
 import 'package:prosoc/models/arriere_affilie_model.dart';
+import 'package:prosoc/offline/offline_database.dart';
+import 'package:prosoc/offline/offline_mode.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/arriere_payment_navigator.dart';
 import 'package:prosoc/utils/formatters.dart';
@@ -36,8 +38,11 @@ class AffiliateDetailsScreen extends StatefulWidget {
 }
 
 class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, OfflineAwareState<AffiliateDetailsScreen> {
   bool _isLoading = true;
+
+  /// Fiche lue dans le cache local : lecture seule, sans données annexes.
+  bool _ficheLocale = false;
   String? _errorMessage;
   Map<String, dynamic>? _data;
   List<Dependant> _dependants = [];
@@ -132,7 +137,42 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
     super.dispose();
   }
 
+  /// Repli sur le cache local ; `false` si l'affilié n'y figure pas.
+  bool _chargerFicheLocale() {
+    final row = OfflineDatabase.isInitialized
+        ? OfflineDatabase.affilieById(widget.affilieId)
+        : null;
+    setState(() {
+      _isLoading = false;
+      _ficheLocale = true;
+      if (row != null) {
+        _data = OfflineMode.membreDepuis(
+          row,
+          typeAdhesions: OfflineMode.referentials?.typeAdhesions ?? const [],
+        );
+        _errorMessage = null;
+      } else {
+        _errorMessage =
+            'Cette fiche n\'est pas disponible hors ligne. Connectez-vous pour '
+            'la consulter.';
+      }
+    });
+    return row != null;
+  }
+
+  @override
+  void onOfflineChanged(bool offline) {
+    if (offline || !_ficheLocale) return;
+    _loadAffilie();
+    _loadSouscriptions();
+    _loadArrieres();
+  }
+
   Future<void> _loadAffilie() async {
+    if (isOffline) {
+      _chargerFicheLocale();
+      return;
+    }
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -145,9 +185,15 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
       if (response.success && response.data != null) {
         setState(() {
           _data = response.data;
+          _ficheLocale = false;
           _isLoading = false;
         });
         _loadDependants();
+      } else if (OfflineMode.sansReseau(
+        success: response.success,
+        statusCode: response.statusCode,
+      )) {
+        _chargerFicheLocale();
       } else {
         setState(() {
           _errorMessage =
@@ -159,6 +205,7 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
     } catch (e, stackTrace) {
       ApiErrorHelper.logException('AffiliateDetails', e, stackTrace);
       if (!mounted) return;
+      if (_chargerFicheLocale()) return;
       setState(() {
         _errorMessage = ApiErrorHelper.userFacingNetwork();
         _isLoading = false;
@@ -167,6 +214,7 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
   }
 
   Future<void> _loadDependants() async {
+    if (isOffline) return;
     setState(() {
       _isLoadingDependants = true;
     });
@@ -239,6 +287,7 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
   }
 
   Future<void> _loadSouscriptions() async {
+    if (isOffline) return;
     setState(() {
       _isLoadingSouscriptions = true;
     });
@@ -268,6 +317,7 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
   }
 
   Future<void> _loadArrieres() async {
+    if (isOffline) return;
     setState(() {
       _isLoadingArrieres = true;
     });
@@ -614,6 +664,15 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
                             _buildCouvertureMedicaleCard(nomComplet),
                           ],
 
+                          if (_ficheLocale && _errorMessage == null) ...[
+                            const SizedBox(height: 16),
+                            const OfflineDataBanner(
+                              complement:
+                                  'Dépendants, souscriptions et arriérés '
+                                  'nécessitent une connexion.',
+                            ),
+                          ],
+
                           if (_errorMessage != null) ...[
                             const SizedBox(height: 16),
                             _buildErrorCard(),
@@ -680,11 +739,23 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
         AffiliatePopupMenuWidget(
           onCollecte: _navigateToContributionScreen,
           onPayerFrais: _navigateToPayerFraisScreen,
-          onPayerSouscription: _navigateToPayerSouscriptionScreen,
-          onDependants: _isSoloAdhesion ? null : _showAddDependantBottomSheet,
+          onPayerSouscription: _ficheLocale
+              ? null
+              : _navigateToPayerSouscriptionScreen,
+          onDependants: _ficheLocale || _isSoloAdhesion
+              ? null
+              : _showAddDependantBottomSheet,
           onSouscription: _showSouscriptionBottomSheet,
-          onDemandeBon: _openDemandeBonScreen,
-          onArrieres: _navigateToArrieresScreen,
+          onDemandeBon: _ficheLocale ? null : _openDemandeBonScreen,
+          onArrieres: _ficheLocale ? null : _navigateToArrieresScreen,
+          onCouvertureMedicale:
+              !_ficheLocale && MedicalPermissions.peutConsulterSouscriptions
+              ? () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => MedicalHomeScreen(affilieId: widget.affilieId),
+                  ),
+                )
+              : null,
         ),
       ],
     );
@@ -1824,6 +1895,9 @@ class _AffiliateDetailsScreenState extends State<AffiliateDetailsScreen>
       affilieNom: widget.preview?.nom ?? '',
       affiliePrenom: widget.preview?.prenom ?? '',
       affilieTelephone: telephone,
+      // Fiche consultée par le personnel (AT, percepteur, superviseur…) :
+      // le compte virtuel est proposé, comme dans « Mon réseau ».
+      allowVirtualAccount: !MedicalPermissions.estMembre,
     );
     if (created == true && mounted) {
       await _loadSouscriptions();

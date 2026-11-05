@@ -7,7 +7,8 @@
 /// Les deux seuls types d'écritures acceptés dans la file offline.
 enum SyncWriteKind {
   collecte('COLLECTE'),
-  adhesion('ADHESION_WITH_AFFILIE');
+  adhesion('ADHESION_WITH_AFFILIE'),
+  souscriptionPrestation('SOUSCRIPTION_PRESTATION');
 
   const SyncWriteKind(this.wire);
 
@@ -70,6 +71,50 @@ class SyncWalletRow {
     'deviseId': deviseId,
     'deviseCode': deviseCode,
     'soldeVirtuel': soldeVirtuel,
+    'statut': statut,
+    'updatedAt': updatedAt,
+  };
+}
+
+/// Souscription de prestation synchronisée. Les lignes inactives
+/// (`statut = false`) sont transmises pour répercuter les désactivations.
+class SyncSouscriptionRow {
+  final int idSouscriptionPrestation;
+  final int affilieId;
+  final int prestationId;
+  final String? dateSouscription;
+  final bool statut;
+  final String? updatedAt;
+
+  const SyncSouscriptionRow({
+    required this.idSouscriptionPrestation,
+    required this.affilieId,
+    required this.prestationId,
+    this.dateSouscription,
+    required this.statut,
+    this.updatedAt,
+  });
+
+  factory SyncSouscriptionRow.fromJson(Map<String, dynamic> json) {
+    return SyncSouscriptionRow(
+      idSouscriptionPrestation: _int(
+        json['idSouscriptionPrestation'] ?? json['IdSouscriptionPrestation'],
+      ),
+      affilieId: _int(json['affilieId'] ?? json['AffilieId']),
+      prestationId: _int(json['prestationId'] ?? json['PrestationId']),
+      dateSouscription: _nullableStr(
+        json['dateSouscription'] ?? json['DateSouscription'],
+      ),
+      statut: _bool(json['statut'] ?? json['Statut']),
+      updatedAt: _nullableStr(json['updatedAt'] ?? json['UpdatedAt']),
+    );
+  }
+
+  Map<String, dynamic> toMap() => {
+    'idSouscriptionPrestation': idSouscriptionPrestation,
+    'affilieId': affilieId,
+    'prestationId': prestationId,
+    'dateSouscription': dateSouscription,
     'statut': statut,
     'updatedAt': updatedAt,
   };
@@ -240,6 +285,18 @@ class SyncPage<T> {
     );
   }
 
+  static SyncPage<SyncSouscriptionRow> souscriptions(Map<String, dynamic> json) {
+    return SyncPage<SyncSouscriptionRow>(
+      snapshot: _str(json['snapshot'] ?? json['Snapshot']),
+      items: _mapList(
+        json['items'] ?? json['Items'],
+      ).map(SyncSouscriptionRow.fromJson).toList(),
+      nextCursor: _nullableStr(json['nextCursor'] ?? json['NextCursor']),
+      hasMore: _bool(json['hasMore'] ?? json['HasMore']),
+      nextSince: _nullableStr(json['nextSince'] ?? json['NextSince']),
+    );
+  }
+
   static SyncPage<SyncWalletRow> wallets(Map<String, dynamic> json) {
     return SyncPage<SyncWalletRow>(
       snapshot: _str(json['snapshot'] ?? json['Snapshot']),
@@ -288,6 +345,58 @@ class SyncReferentials {
     'nextSince': nextSince,
     'snapshot': snapshot,
   };
+
+  /// Aucune donnée utile au formulaire d'adhésion.
+  bool get isEmpty =>
+      typeAdhesions.isEmpty && devises.isEmpty && frais.isEmpty;
+
+  /// Applique un delta (`since`) : upsert par identifiant, liste par liste,
+  /// comme le prévoit le contrat de synchronisation.
+  SyncReferentials mergedWith(SyncReferentials delta) {
+    List<Map<String, dynamic>> merge(
+      List<Map<String, dynamic>> base,
+      List<Map<String, dynamic>> changes,
+    ) {
+      if (changes.isEmpty) return base;
+      final byId = <String, Map<String, dynamic>>{
+        for (final row in base) _referentialId(row) ?? '${row.hashCode}': row,
+      };
+      for (final row in changes) {
+        byId[_referentialId(row) ?? '${row.hashCode}'] = row;
+      }
+      return byId.values.toList();
+    }
+
+    return SyncReferentials(
+      typeAdhesions: merge(typeAdhesions, delta.typeAdhesions),
+      devises: merge(devises, delta.devises),
+      provinces: merge(provinces, delta.provinces),
+      frais: merge(frais, delta.frais),
+      prestations: merge(prestations, delta.prestations),
+      tarifsCotisation: merge(tarifsCotisation, delta.tarifsCotisation),
+      plafondWalletVirtuel:
+          delta.plafondWalletVirtuel ?? plafondWalletVirtuel,
+      nextSince: delta.nextSince ?? nextSince,
+      snapshot: delta.snapshot.isNotEmpty ? delta.snapshot : snapshot,
+    );
+  }
+
+  /// Identifiant d'une ligne de référentiel : `id`, sinon le premier champ
+  /// `idXxx` (idFrais, idDevise, idPrestation…).
+  static String? _referentialId(Map<String, dynamic> row) {
+    final direct = row['id'] ?? row['Id'];
+    if (direct != null) return direct.toString();
+    for (final entry in row.entries) {
+      final key = entry.key;
+      if (key.length > 2 &&
+          key.toLowerCase().startsWith('id') &&
+          key[2] == key[2].toUpperCase() &&
+          entry.value != null) {
+        return '$key:${entry.value}';
+      }
+    }
+    return null;
+  }
 
   static SyncReferentials? fromMap(Map<String, dynamic>? map) {
     if (map == null) return null;
@@ -508,6 +617,25 @@ class SyncQueueEntry {
     'payload': payload,
   };
 
+  /// Élément du corps de `POST /api/sync/writes/batch`. [toMap] sert au stockage
+  /// local : ses champs de suivi ne doivent pas partir au serveur.
+  Map<String, dynamic> toWire() => {
+    'clientRequestId': clientRequestId,
+    'type': kind.wire,
+    'deviceId': deviceId,
+    'dateOperationUtc': dateOperationUtc,
+    ...switch (kind) {
+      SyncWriteKind.collecte => {'collecte': payload},
+      SyncWriteKind.adhesion => {'adhesion': payload['adhesion']},
+      SyncWriteKind.souscriptionPrestation => {
+        'souscriptionPrestation': {
+          'affilieId': payload['affilieId'],
+          'achat': payload['achat'],
+        },
+      },
+    },
+  };
+
   static SyncQueueEntry? fromMap(Map<String, dynamic> map) {
     final id = _str(map['clientRequestId']);
     if (id.isEmpty) return null;
@@ -517,9 +645,7 @@ class SyncQueueEntry {
     return SyncQueueEntry(
       clientRequestId: id,
       kind: kind,
-      payload: payload is Map
-          ? Map<String, dynamic>.from(payload)
-          : <String, dynamic>{},
+      payload: payload is Map ? deepStringMap(payload) : <String, dynamic>{},
       deviceId: _str(map['deviceId']),
       dateOperationUtc: _str(map['dateOperationUtc']),
       localStatus: _str(map['localStatus'], fallback: 'pending'),
@@ -577,10 +703,18 @@ String? _nullableStr(dynamic value) {
 
 List<Map<String, dynamic>> _mapList(dynamic value) {
   if (value is! List) return const [];
-  return value
-      .whereType<Map>()
-      .map((e) => Map<String, dynamic>.from(e))
-      .toList();
+  return value.whereType<Map>().map(deepStringMap).toList();
+}
+
+/// Convertit récursivement une map relue depuis Hive (`Map<dynamic, dynamic>`,
+/// y compris les maps et listes imbriquées) en `Map<String, dynamic>`.
+Map<String, dynamic> deepStringMap(Map raw) =>
+    raw.map((key, value) => MapEntry(key.toString(), _deepValue(value)));
+
+dynamic _deepValue(dynamic value) {
+  if (value is Map) return deepStringMap(value);
+  if (value is List) return value.map(_deepValue).toList();
+  return value;
 }
 
 List<int> _intList(dynamic value) {

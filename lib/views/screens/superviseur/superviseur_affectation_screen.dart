@@ -10,6 +10,7 @@ import '../../../utils/api_error_helper.dart';
 import '../../../utils/formatters.dart';
 import '../../widgets/empty_state_widget.dart';
 import '../../widgets/prosoc_resource_error_view.dart';
+import 'superviseur_agents_loader.dart';
 import 'superviseur_reaffectation_screen.dart';
 
 /// File d'attente adhésions en ligne sans gestionnaire + affectation vers un AT.
@@ -26,6 +27,7 @@ class _SuperviseurAffectationScreenState
   final _searchController = TextEditingController();
   final List<AdhesionEnLigneSansGestionnaireModel> _items = [];
   List<AgentModel> _agents = [];
+  String? _agentsErreur;
 
   bool _isLoading = true;
   bool _isLoadingMore = false;
@@ -63,11 +65,12 @@ class _SuperviseurAffectationScreenState
     if (superviseurId == null) return;
 
     try {
-      final response = await ApiService.getAgentsBySuperviseur(superviseurId);
+      final result = await SuperviseurAgentsLoader.load(superviseurId);
       if (!mounted) return;
-      if (response.success && response.data != null) {
-        setState(() => _agents = response.data!);
-      }
+      setState(() {
+        _agents = result.agents;
+        _agentsErreur = result.erreur;
+      });
     } catch (e, stackTrace) {
       ApiErrorHelper.logException(
         'SuperviseurAffectation/agents',
@@ -160,8 +163,16 @@ class _SuperviseurAffectationScreenState
     AdhesionEnLigneSansGestionnaireModel dossier,
   ) async {
     if (_agents.isEmpty) {
-      _showSnack('Aucun agent disponible dans votre équipe.', isError: true);
-      return;
+      // Les agents ont pu échouer au chargement : on retente avant d'abandonner.
+      await _loadAgents();
+      if (!mounted) return;
+      if (_agents.isEmpty) {
+        _showSnack(
+          _agentsErreur ?? 'Aucun agent disponible dans votre équipe.',
+          isError: true,
+        );
+        return;
+      }
     }
 
     final agent = await showModalBottomSheet<AgentModel>(

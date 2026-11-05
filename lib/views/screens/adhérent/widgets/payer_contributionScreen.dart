@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:prosoc/config/api.dart';
 import 'package:prosoc/config/colors.dart';
 import 'package:prosoc/models/adhesion_with_affilie_model.dart';
+import 'package:prosoc/models/cotisation_periode_model.dart';
 import 'package:prosoc/models/penalite_affilie_model.dart';
 import 'package:prosoc/models/collecte_receipt_data.dart';
 import 'package:prosoc/utils/affilie_payment_modes.dart';
@@ -11,6 +12,7 @@ import 'package:prosoc/utils/collecte_montant_helper.dart';
 import 'package:prosoc/utils/collecte_receipt_helper.dart';
 import 'package:prosoc/utils/cotisation_montant_helper.dart';
 import 'package:prosoc/utils/electronic_payment_error_handler.dart';
+import 'package:prosoc/utils/medical_permissions.dart';
 import 'package:prosoc/utils/paginated_response_helper.dart';
 import 'package:prosoc/utils/phone_utils.dart';
 import 'package:prosoc/views/screens/at/flex_pay_payment_waiting_screen.dart';
@@ -18,6 +20,7 @@ import 'package:prosoc/views/screens/at/payment_webview_screen.dart';
 import 'package:prosoc/views/widgets/flex_pay_card_payment_bottom_sheet.dart';
 import 'package:prosoc/views/widgets/devise_paiement_selector.dart';
 import 'package:prosoc/views/widgets/flex_pay_payment_error_dialog.dart';
+import 'package:prosoc/offline/offline_mode.dart';
 import 'package:prosoc/offline/offline_write_gateway.dart';
 import '../../../../services/auth_service.dart';
 
@@ -57,11 +60,11 @@ class PayerContributionScreen extends StatefulWidget {
 }
 
 class _PayerContributionScreenState extends State<PayerContributionScreen>
-    with TickerProviderStateMixin {
-  Map<String, String> get _modesPaiement =>
-      AffiliePaymentModes.modesFor(
-        allowVirtualAccount: widget.allowVirtualAccount,
-      );
+    with TickerProviderStateMixin, OfflineAwareState<PayerContributionScreen> {
+  Map<String, String> get _modesPaiement => OfflineMode.modesDisponibles(
+    allowVirtualAccount: widget.allowVirtualAccount,
+    offline: isOffline,
+  );
 
   late String? _selectedModePaiement;
   int? _selectedTarifId;
@@ -80,6 +83,16 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
   double? _montantAttendu;
   List<PenaliteAffilieModel> _penalites = [];
   bool _isLoadingPenalites = false;
+
+  /// Les tarifs affichés viennent du cache local.
+  bool _tarifsLocaux = false;
+
+  /// Résumé de la période courante pour le tarif [_periodeTarifId].
+  ResumePeriodeCotisation? _periode;
+  int? _periodeTarifId;
+
+  /// L'utilisateur a saisi un montant : les rechargements ne l'écrasent pas.
+  bool _montantSaisi = false;
 
   final TextEditingController _montantController = TextEditingController();
   final TextEditingController _observationController = TextEditingController();
@@ -105,8 +118,9 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
   @override
   void initState() {
     super.initState();
-    _selectedModePaiement = AffiliePaymentModes.defaultModeFor(
+    _selectedModePaiement = OfflineMode.modeParDefaut(
       allowVirtualAccount: widget.allowVirtualAccount,
+      offline: isOffline,
     );
     final tel = widget.affilieTelephone?.trim();
     if (tel != null && tel.isNotEmpty) {
@@ -125,7 +139,30 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
         montant: double.tryParse(_montantController.text.trim()),
       ),
       triggers: _montantController,
+      // Un versement partiel n'a pas à retomber sur le tarif entier.
+      verifierAllerRetour: false,
     )..loadDevises();
+  }
+
+  @override
+  void onOfflineChanged(bool offline) {
+    setState(() {
+      _selectedModePaiement = offline || _selectedModePaiement == null
+          ? OfflineMode.modeParDefaut(
+              allowVirtualAccount: widget.allowVirtualAccount,
+              offline: offline,
+            )
+          : _selectedModePaiement;
+    });
+    if (offline) return;
+    _devisePaiement.loadDevises();
+    if (_devises.isEmpty) _loadDevises();
+    _loadNombreDependants();
+    if (_tarifsLocaux && _selectedTarifId == null) {
+      _loadTarifs();
+    } else {
+      _rechargerResumePeriode();
+    }
   }
 
   @override
@@ -188,9 +225,75 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
     );
   }
 
+  /// Reste payable de la période pour ce tarif (`null` : tarif seul).
+  ResumePeriodeCotisation? _periodeDe(int? tarifId) =>
+      tarifId != null && tarifId == _periodeTarifId ? _periode : null;
+
+  /// Le membre lit le résumé de sa période ; l'agent, qui n'a pas accès à cette
+  /// route, part des arriérés de l'affilié. Sans donnée, le tarif s'applique et
+  /// le serveur reste juge. Un paiement ouvert depuis un arriéré a déjà son
+  /// montant.
+  Future<void> _chargerResumePeriode(int tarifId, {bool force = false}) async {
+    if (isOffline ||
+        widget.initialArrieresAffilieId != null ||
+        widget.initialMontant != null) {
+      return;
+    }
+    if (!force && _periodeTarifId == tarifId) return;
+    if (_periodeTarifId != tarifId) _periode = null;
+    _periodeTarifId = tarifId;
+
+    final now = DateTime.now();
+    ResumePeriodeCotisation? periode;
+    var recu = false;
+    if (MedicalPermissions.estMembre) {
+      final response = await ApiService.getCotisationPeriode(
+        cotisationAffilieId: tarifId,
+        mois: now.month,
+        annee: now.year,
+      );
+      recu = response.success;
+      periode = response.data;
+    } else {
+      final response = await ApiService.getArrieresAffilie(widget.affilieId);
+      if (response.success && response.data != null) {
+        recu = true;
+        periode = ResumePeriodeCotisation.depuisArrieres(
+          response.data!,
+          cotisationAffilieId: tarifId,
+          mois: now.month,
+          annee: now.year,
+        );
+      }
+    }
+    if (!mounted || !recu || _selectedTarifId != tarifId) return;
+    setState(() => _periode = periode);
+    _applyTarifSelection(tarifId);
+  }
+
+  /// Au retour de FlexPay ou après un refus : les réservations ont pu changer.
+  void _rechargerResumePeriode() {
+    final id = _selectedTarifId;
+    if (id != null) _chargerResumePeriode(id, force: true);
+  }
+
+  String? get _resumePeriodeLibelle {
+    final periode = _periodeDe(_selectedTarifId);
+    if (periode == null) return null;
+    String m(double v) => '${v.toStringAsFixed(2)} ${_selectedDevise ?? ''}'.trim();
+    return [
+      'Déjà payé : ${m(periode.montantPaye)}',
+      'Reste à payer : ${m(periode.restAPayer)}',
+      if (periode.montantReserve > 0) ...[
+        'Réservé : ${m(periode.montantReserve)}',
+        'Payable maintenant : ${m(periode.resteDisponible)}',
+      ],
+    ].join(' · ');
+  }
+
   Future<void> _loadPenalites() async {
     final arriereId = widget.initialArrieresAffilieId;
-    if (arriereId == null || arriereId <= 0) return;
+    if (arriereId == null || arriereId <= 0 || isOffline) return;
 
     setState(() => _isLoadingPenalites = true);
 
@@ -352,21 +455,33 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
     });
 
     try {
-      final byAffilie = await ApiService.getTarifCotisationByAffilie(
-        widget.affilieId,
-      );
-      if (!mounted) return;
-
+      var local = isOffline;
       List<Map<String, dynamic>> rows = [];
-      if (byAffilie.success && byAffilie.data != null) {
-        rows = byAffilie.data!
-            .map(_mapFrom)
-            .where((t) => t.isNotEmpty && _isTarifActif(t))
-            .toList();
+      if (!local) {
+        final byAffilie = await ApiService.getTarifCotisationByAffilie(
+          widget.affilieId,
+        );
+        if (!mounted) return;
+        if (byAffilie.success && byAffilie.data != null) {
+          rows = byAffilie.data!
+              .map(_mapFrom)
+              .where((t) => t.isNotEmpty && _isTarifActif(t))
+              .toList();
+        }
+        local = OfflineMode.sansReseau(
+          success: byAffilie.success,
+          statusCode: byAffilie.statusCode,
+        );
+      }
+      if (local) {
+        rows = OfflineMode.tarifsLocaux(
+          widget.affilieId,
+        ).where(_isTarifActif).toList();
       }
 
       setState(() {
         _tarifs = rows;
+        _tarifsLocaux = local;
         _isLoadingTarifs = false;
       });
       if (rows.length == 1) {
@@ -384,7 +499,10 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
       ApiErrorHelper.logException('Contribution/tarifs', e, stackTrace, false);
       if (!mounted) return;
       setState(() {
-        _tarifs = [];
+        _tarifs = OfflineMode.tarifsLocaux(
+          widget.affilieId,
+        ).where(_isTarifActif).toList();
+        _tarifsLocaux = true;
         _isLoadingTarifs = false;
       });
     }
@@ -404,25 +522,36 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
     final montantBase = (montantOverride != null && montantOverride > 0)
         ? montantOverride
         : (montantTotal ?? montantTarif);
-    final montantEffectif = CotisationMontantHelper.montantTotalAvecPenalites(
-          montantCotisation: montantBase,
-          penalites: _penalites,
-        ) ??
-        montantBase;
+    final periode = _periodeDe(tarifId);
+    final montantEffectif = periode != null
+        ? periode.resteDisponible
+        : CotisationMontantHelper.montantTotalAvecPenalites(
+                montantCotisation: montantBase,
+                penalites: _penalites,
+              ) ??
+              montantBase;
 
     setState(() {
       _selectedTarifId = tarifId;
       _montantAttendu = montantEffectif;
-      if (montantEffectif != null && montantEffectif > 0) {
-        _montantController.text = montantEffectif.toString();
-      } else if (montantTarif != null && montantTarif > 0) {
-        _montantController.text = montantTarif.toString();
+      if (!_montantSaisi) {
+        if (periode != null) {
+          _montantController.text = periode.resteDisponible > 0
+              ? periode.resteDisponible.toString()
+              : '';
+        } else if (montantEffectif != null && montantEffectif > 0) {
+          _montantController.text = montantEffectif.toString();
+        } else if (montantTarif != null && montantTarif > 0) {
+          _montantController.text = montantTarif.toString();
+        }
       }
       _applyDeviseFromTarif(tarif);
     });
+    _chargerResumePeriode(tarifId);
   }
 
   Future<void> _loadNombreDependants() async {
+    if (isOffline) return;
     setState(() => _isLoadingDependants = true);
 
     try {
@@ -483,7 +612,20 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
     setState(() => _agentId = resolved);
   }
 
+  void _appliquerDevisesLocales() {
+    setState(() {
+      _devises = OfflineMode.devisesLocales();
+      _isLoadingDevises = false;
+      final tarif = _tarifById(_selectedTarifId);
+      if (tarif != null) _applyDeviseFromTarif(tarif);
+    });
+  }
+
   Future<void> _loadDevises() async {
+    if (isOffline) {
+      _appliquerDevisesLocales();
+      return;
+    }
     setState(() => _isLoadingDevises = true);
 
     try {
@@ -499,12 +641,17 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
             _applyDeviseFromTarif(tarif);
           }
         });
+      } else if (OfflineMode.sansReseau(
+        success: response.success,
+        statusCode: response.statusCode,
+      )) {
+        _appliquerDevisesLocales();
       } else {
         setState(() => _isLoadingDevises = false);
       }
     } catch (_) {
       if (!mounted) return;
-      setState(() => _isLoadingDevises = false);
+      _appliquerDevisesLocales();
     }
   }
 
@@ -627,7 +774,10 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
               ? Padding(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Text(
-                    'Aucun tarif de cotisation disponible pour cet affilié.',
+                    _tarifsLocaux
+                        ? 'Tarif non disponible hors ligne pour cet affilié. '
+                              'Synchronisez en ligne puis réessayez.'
+                        : 'Aucun tarif de cotisation disponible pour cet affilié.',
                     style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
                   ),
                 )
@@ -647,6 +797,7 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
                   }).toList(),
                   onChanged: (value) {
                     if (value == null) return;
+                    _montantSaisi = false;
                     _applyTarifSelection(value);
                   },
                 ),
@@ -673,24 +824,50 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
                 keyboardType: const TextInputType.numberWithOptions(
                   decimal: true,
                 ),
+                onChanged: (_) => _montantSaisi = true,
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                 ),
               ),
+              if (_resumePeriodeLibelle != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _resumePeriodeLibelle!,
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade800),
+                ),
+              ],
+              if (_periodeDe(_selectedTarifId)?.messageBlocage != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  _periodeDe(_selectedTarifId)!.messageBlocage!,
+                  style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
+                ),
+              ],
               if (CollecteMontantHelper.montantAttenduLibelle(
                     montantAttendu: _montantAttendu,
+                    partielAutorise: true,
                   ) !=
                   null) ...[
                 const SizedBox(height: 8),
                 Text(
                   CollecteMontantHelper.montantAttenduLibelle(
                     montantAttendu: _montantAttendu,
+                    partielAutorise: true,
                   )!,
                   style: TextStyle(
                     fontSize: 12,
                     color: Colors.grey.shade600,
                   ),
+                ),
+              ],
+              if (isOffline && _selectedTarifId != null) ...[
+                const SizedBox(height: 8),
+                Text(
+                  'Hors ligne : dépendants et versements déjà faits ne sont pas '
+                  'vérifiés. Contrôlez le montant ; le serveur le validera à la '
+                  'synchronisation.',
+                  style: TextStyle(fontSize: 12, color: Colors.orange.shade900),
                 ),
               ],
               if (_isLoadingDependants) ...[
@@ -788,27 +965,33 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
           label: 'Mode de paiement',
           icon: Icons.payment_outlined,
           required: true,
-          child: DropdownButtonFormField<String>(
-            initialValue: _selectedModePaiement,
-            decoration: _inputDecoration('Mode de paiement'),
-            items: _modesPaiement.entries
-                .map(
-                  (e) => DropdownMenuItem(value: e.key, child: Text(e.value)),
-                )
-                .toList(),
-            onChanged: (value) {
-              setState(() {
-                _selectedModePaiement = value;
-                if (value == 'MOBILE_MONEY' &&
-                    _telephonePaiementController.text.trim().isEmpty) {
-                  final tel = widget.affilieTelephone?.trim() ?? '';
-                  if (tel.isNotEmpty) {
-                    _telephonePaiementController.text = tel;
-                  }
-                }
-              });
-            },
-          ),
+          child: _modesPaiement.isEmpty
+              ? const Text('Le paiement nécessite une connexion internet.')
+              : DropdownButtonFormField<String>(
+                  key: ValueKey('mode-$isOffline-$_selectedModePaiement'),
+                  initialValue: _selectedModePaiement,
+                  decoration: _inputDecoration('Mode de paiement'),
+                  items: _modesPaiement.entries
+                      .map(
+                        (e) => DropdownMenuItem(
+                          value: e.key,
+                          child: Text(e.value),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    setState(() {
+                      _selectedModePaiement = value;
+                      if (value == 'MOBILE_MONEY' &&
+                          _telephonePaiementController.text.trim().isEmpty) {
+                        final tel = widget.affilieTelephone?.trim() ?? '';
+                        if (tel.isNotEmpty) {
+                          _telephonePaiementController.text = tel;
+                        }
+                      }
+                    });
+                  },
+                ),
         ),
         if (_isMobileMoneyPayment) ...[
           const SizedBox(height: 16),
@@ -1056,6 +1239,12 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
       return;
     }
 
+    final blocagePeriode = _periodeDe(_selectedTarifId)?.messageBlocage;
+    if (blocagePeriode != null) {
+      _showErrorSnackBar(blocagePeriode);
+      return;
+    }
+
     final montantRecu = double.tryParse(_montantController.text);
     final montantAttendu = CotisationMontantHelper.montantTotalAvecPenalites(
           montantCotisation: _montantAttendu ??
@@ -1164,6 +1353,7 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
               setState(() => _selectedModePaiement = null);
             },
           );
+          _rechargerResumePeriode();
         }
         return;
       }
@@ -1214,6 +1404,7 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
           message: outcome.message,
           statusCode: outcome.statusCode,
         );
+        _rechargerResumePeriode();
         return;
       }
 
@@ -1279,6 +1470,8 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
       );
       if (result == true && mounted) {
         Navigator.pop(context, true);
+      } else if (mounted) {
+        _rechargerResumePeriode();
       }
       return;
     }
@@ -1286,6 +1479,7 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
     if (payment.flexPayAccepted && _hasFlexPayPaymentUrl(payment)) {
       setState(() => _isLoading = false);
       await _showFlexPayCardPaymentBottomSheet(payment);
+      if (mounted) _rechargerResumePeriode();
       return;
     }
 
@@ -1294,6 +1488,7 @@ class _PayerContributionScreenState extends State<PayerContributionScreen>
       context,
       message: payment.message ?? 'Paiement non accepté par FlexPay.',
     );
+    if (mounted) _rechargerResumePeriode();
   }
 
   Future<void> _showFlexPayCardPaymentBottomSheet(

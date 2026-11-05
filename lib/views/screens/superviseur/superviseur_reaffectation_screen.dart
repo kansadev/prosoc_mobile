@@ -9,6 +9,7 @@ import '../../../services/auth_service.dart';
 import '../../../utils/api_error_helper.dart';
 import '../../widgets/empty_state_widget.dart';
 import '../../widgets/prosoc_resource_error_view.dart';
+import 'superviseur_agents_loader.dart';
 
 /// Réaffectation d'un affilié déjà rattaché à un Agent AT vers un autre agent.
 ///
@@ -92,11 +93,11 @@ class _SuperviseurReaffectationScreenState
     });
 
     try {
-      final response = await ApiService.getAgentsBySuperviseur(superviseurId);
+      final result = await SuperviseurAgentsLoader.load(superviseurId);
       if (!mounted) return;
 
-      if (response.success && response.data != null) {
-        final agents = response.data!;
+      if (result.agents.isNotEmpty) {
+        final agents = result.agents;
         setState(() {
           _agents = agents;
           _isLoadingAgents = false;
@@ -107,9 +108,7 @@ class _SuperviseurReaffectationScreenState
 
       setState(() {
         _isLoadingAgents = false;
-        _agentsError =
-            response.message ??
-            ApiErrorHelper.userFacingMessage(statusCode: response.statusCode);
+        _agentsError = result.erreur;
       });
     } catch (e, stackTrace) {
       if (!mounted) return;

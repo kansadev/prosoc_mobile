@@ -7,6 +7,7 @@ import 'package:prosoc/models/hopital_partenaire_model.dart';
 import 'package:prosoc/services/auth_service.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/formatters.dart';
+import 'package:prosoc/utils/medical_permissions.dart';
 import 'package:prosoc/views/widgets/bon_envoi_qr_view.dart';
 import 'package:prosoc/views/widgets/bon_envoi_scanner_sheet.dart';
 import 'package:prosoc/views/widgets/empty_state_widget.dart';
@@ -398,11 +399,12 @@ class _BonEnvoiMedicalScreenState extends State<BonEnvoiMedicalScreen>
         backgroundColor: AppColors.prosocGreen,
         foregroundColor: Colors.white,
         actions: [
-          IconButton(
-            tooltip: 'Scanner un bon',
-            onPressed: _scannerBon,
-            icon: const Icon(Icons.qr_code_scanner_rounded),
-          ),
+          if (MedicalPermissions.peutScanner)
+            IconButton(
+              tooltip: 'Scanner un bon',
+              onPressed: _scannerBon,
+              icon: const Icon(Icons.qr_code_scanner_rounded),
+            ),
         ],
         bottom: TabBar(
           controller: _tabController,
@@ -593,7 +595,8 @@ class _BonEnvoiMedicalScreenState extends State<BonEnvoiMedicalScreen>
               ),
             ],
             const SizedBox(height: 12),
-            if (tab == _BonMedicalTab.enAttente)
+            if (tab == _BonMedicalTab.enAttente &&
+                MedicalPermissions.peutConfirmerPriseEnCharge)
               FilledButton.icon(
                 onPressed: isBusy ? null : () => _confirmerDemande(d),
                 style: FilledButton.styleFrom(
@@ -611,7 +614,9 @@ class _BonEnvoiMedicalScreenState extends State<BonEnvoiMedicalScreen>
                     : const Icon(Icons.verified_outlined, size: 18),
                 label: const Text('Confirmer (bon + jeton)'),
               )
-            else if (tab == _BonMedicalTab.validees && d.hasCoupleBonJeton)
+            else if (tab == _BonMedicalTab.validees &&
+                d.hasCoupleBonJeton &&
+                MedicalPermissions.peutConsommer)
               OutlinedButton.icon(
                 onPressed: isBusy ? null : () => _utiliserJeton(d),
                 icon: const Icon(Icons.check_circle_outline, size: 18),

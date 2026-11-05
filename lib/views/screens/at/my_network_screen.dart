@@ -9,10 +9,14 @@ import 'package:prosoc/views/screens/adh%C3%A9rent/AffiliateDetailsScreen.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/arrieres_affilie_screen.dart';
 import 'package:prosoc/views/screens/adh%C3%A9rent/adherent_demande_bon_screen.dart';
 import 'package:prosoc/widgets/popup_menu_widget.dart';
+import 'package:prosoc/utils/medical_permissions.dart';
+import 'package:prosoc/views/screens/medical/medical_home_screen.dart';
 import 'package:prosoc/widgets/dependant_bottom_sheet.dart';
 import 'package:prosoc/widgets/souscription_bottom_sheet.dart';
 import '../../../config/colors.dart';
 import '../../../config/api.dart';
+import '../../../offline/offline_mode.dart';
+import '../../../services/sync_service.dart';
 import '../../../services/auth_service.dart';
 import '../../../models/recent_affilie_model.dart';
 import '../../../utils/affilie_id_helper.dart';
@@ -34,7 +38,8 @@ class MyNetworkScreen extends StatefulWidget {
   State<MyNetworkScreen> createState() => _MyNetworkScreenState();
 }
 
-class _MyNetworkScreenState extends State<MyNetworkScreen> {
+class _MyNetworkScreenState extends State<MyNetworkScreen>
+    with OfflineAwareState<MyNetworkScreen> {
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
@@ -50,14 +55,59 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
   static const int _pageSize = 20;
   bool _hasNextPage = false;
 
+  /// La liste affichée vient du cache local.
+  bool _depuisCache = false;
+
+  int _ecrituresEnAttente = 0;
+
   static const String _sortBy = 'dateAdhesion';
   static const String _sortDirection = 'desc';
 
   @override
   void initState() {
     super.initState();
+    _ecrituresEnAttente = SyncService.instance.pendingCount;
+    SyncService.instance.state.addListener(_onFileChangee);
     _scrollController.addListener(_onScroll);
     _loadAffilies(reset: true);
+  }
+
+  /// Des écritures hors ligne viennent de partir : le rechargement fait au
+  /// retour du réseau était antérieur à leur envoi.
+  void _onFileChangee() {
+    final enAttente = SyncService.instance.pendingCount;
+    final envoyees = enAttente < _ecrituresEnAttente;
+    _ecrituresEnAttente = enAttente;
+    if (envoyees && mounted && !isOffline) {
+      _loadAffilies(reset: true, search: _activeSearch);
+    }
+  }
+
+  /// Liste issue du dernier téléchargement : hors ligne, ou réseau en échec.
+  void _chargerDepuisCache(String? search) {
+    final agentId = AuthService.currentUser?.utilisateur.agentId;
+    setState(() {
+      _membres = OfflineMode.membresLocaux(
+        recherche: search ?? '',
+        agentId: agentId,
+      );
+      _depuisCache = true;
+      _activeSearch = search;
+      _currentPage = 1;
+      _hasNextPage = false;
+      _errorMessage = null;
+      _isLoading = false;
+      _isLoadingMore = false;
+    });
+  }
+
+  @override
+  void onOfflineChanged(bool offline) {
+    if (offline && !_depuisCache) {
+      _chargerDepuisCache(_activeSearch);
+    } else if (!offline && _depuisCache) {
+      _loadAffilies(reset: true, search: _activeSearch);
+    }
   }
 
   void _onScroll() {
@@ -71,9 +121,14 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
   }
 
   Future<void> _loadAffilies({bool reset = false, String? search}) async {
+    if (isOffline) {
+      if (reset) _chargerDepuisCache(search);
+      return;
+    }
     try {
       if (reset) {
         setState(() {
+          _depuisCache = false;
           _isLoading = true;
           _isLoadingMore = false;
           _errorMessage = null;
@@ -140,6 +195,12 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
           _isLoading = false;
           _isLoadingMore = false;
         });
+      } else if (reset &&
+          OfflineMode.sansReseau(
+            success: response.success,
+            statusCode: response.statusCode,
+          )) {
+        _chargerDepuisCache(search);
       } else {
         setState(() {
           _errorMessage =
@@ -152,6 +213,10 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
     } catch (e, stackTrace) {
       ApiErrorHelper.logException('MyNetwork/affilies', e, stackTrace);
       if (!mounted) return;
+      if (reset) {
+        _chargerDepuisCache(search);
+        return;
+      }
       setState(() {
         _errorMessage = ApiErrorHelper.userFacingNetwork();
         _isLoading = false;
@@ -181,6 +246,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
 
   @override
   void dispose() {
+    SyncService.instance.state.removeListener(_onFileChangee);
     _searchDebounce?.cancel();
     _searchController.dispose();
     _scrollController.dispose();
@@ -265,18 +331,29 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                 style: TextStyle(color: Colors.red.shade700, fontSize: 13),
               ),
             ),
+          if (_depuisCache)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 0, 16, 8),
+              child: OfflineDataBanner(
+                complement: 'Certaines actions nécessitent une connexion.',
+              ),
+            ),
           Expanded(child: _buildBody()),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _navigateToNewAdhesion,
-        backgroundColor: AppColors.prosocGreen,
-        icon: const Icon(Icons.add_rounded, color: Colors.white),
-        label: const Text(
-          'Nouvelle adhésion',
-          style: TextStyle(color: Colors.white),
-        ),
-      ),
+      // L'adhésion hors ligne a besoin des catalogues synchronisés.
+      floatingActionButton:
+          _depuisCache && (OfflineMode.referentials?.isEmpty ?? true)
+          ? null
+          : FloatingActionButton.extended(
+              onPressed: _navigateToNewAdhesion,
+              backgroundColor: AppColors.prosocGreen,
+              icon: const Icon(Icons.add_rounded, color: Colors.white),
+              label: const Text(
+                'Nouvelle adhésion',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
     );
   }
 
@@ -300,6 +377,9 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
             Text(
               _activeSearch != null
                   ? 'Aucun affilié trouvé pour « $_activeSearch ».'
+                  : _depuisCache
+                  ? 'Aucun affilié enregistré sur cet appareil. Connectez-vous '
+                        'une fois pour les synchroniser.'
                   : 'Aucun affilié dans votre réseau',
               textAlign: TextAlign.center,
               style: TextStyle(
@@ -532,7 +612,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                     ),
                   );
                 },
-                onPayerSouscription: () {
+                onPayerSouscription: _depuisCache ? null : () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
@@ -548,7 +628,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                     ),
                   );
                 },
-                onDependants: _isSoloAdhesion(typeAdhesion)
+                onDependants: _depuisCache || _isSoloAdhesion(typeAdhesion)
                     ? null
                     : () {
                         DependantBottomSheet.show(
@@ -570,7 +650,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                     allowVirtualAccount: true,
                   );
                 },
-                onDemandeBon: () {
+                onDemandeBon: _depuisCache ? null : () {
                   final name = '$prenom $nom'.trim();
                   Navigator.push(
                     context,
@@ -583,7 +663,23 @@ class _MyNetworkScreenState extends State<MyNetworkScreen> {
                     ),
                   );
                 },
-                onArrieres: () {
+                onCouvertureMedicale:
+                    !_depuisCache &&
+                        MedicalPermissions.peutConsulterSouscriptions
+                    ? () {
+                        final name = '$prenom $nom'.trim();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => MedicalHomeScreen(
+                              affilieId: affilieId,
+                              affilieNom: name.isNotEmpty ? name : null,
+                            ),
+                          ),
+                        );
+                      }
+                    : null,
+                onArrieres: _depuisCache ? null : () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(

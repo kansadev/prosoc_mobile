@@ -211,9 +211,52 @@ class _MedicalOffreDetailScreenState extends State<MedicalOffreDetailScreen> {
     });
   }
 
+  /// Règle métier : une nouvelle souscription exige une cotisation à jour.
+  /// Le serveur reste juge ; ce contrôle évite une demande vouée à l'échec et
+  /// explique le montant restant. Retourne un message bloquant ou `null`.
+  Future<String?> _controleCotisationAJour() async {
+    final response = MedicalPermissions.estMembre
+        ? await ApiService.getMesArrieresAffilie()
+        : await ApiService.getArrieresAffilie(widget.affilieId);
+    // Arriérés indisponibles : on laisse le serveur trancher.
+    if (!response.success || response.data == null) return null;
+    // Le serveur ne contrôle que la période courante : d'anciens arriérés ne
+    // doivent pas bloquer ici. Une période absente de la liste lui reste soumise.
+    final now = DateTime.now();
+    final impayes = response.data!
+        .where(
+          (a) =>
+              a.estImpaye &&
+              a.typeObligation.toUpperCase() == 'COTISATION' &&
+              a.mois == now.month &&
+              a.annee == now.year,
+        )
+        .toList();
+    if (impayes.isEmpty) return null;
+    final reste = impayes.fold<double>(0, (t, a) => t + a.restAPayer);
+    return 'La cotisation de la période en cours n\'est pas entièrement réglée : '
+        '${MedicalDevises.montant(reste, deviseId: impayes.first.deviseId)} '
+        'restant à payer. Réglez-la avant de souscrire à une offre médicale.';
+  }
+
   Future<void> _souscrire() async {
     final offre = _offre;
     if (offre == null || _isSubmitting) return;
+
+    setState(() => _isSubmitting = true);
+    final blocage = await _controleCotisationAJour();
+    if (!mounted) return;
+    setState(() => _isSubmitting = false);
+    if (blocage != null) {
+      await ProsocMessageDialog.show(
+        context,
+        variant: ProsocMessageVariant.warning,
+        title: 'Cotisation à régulariser',
+        message: blocage,
+      );
+      return;
+    }
+
     final accepte = await _confirmer(offre);
     if (!accepte || !mounted) return;
 

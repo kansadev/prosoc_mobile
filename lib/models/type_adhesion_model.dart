@@ -19,16 +19,36 @@ class TypeAdhesion {
     required this.categorieAdhesionId,
   });
 
+  /// Tolérant : camelCase / PascalCase et champs facultatifs absents (les
+  /// référentiels de synchronisation peuvent être plus légers que l'API).
   factory TypeAdhesion.fromJson(Map<String, dynamic> json) {
+    dynamic champ(List<String> cles) {
+      for (final cle in cles) {
+        final valeur =
+            json[cle] ?? json[cle[0].toUpperCase() + cle.substring(1)];
+        if (valeur != null) return valeur;
+      }
+      return null;
+    }
+
+    int entier(dynamic v) =>
+        v is num ? v.toInt() : int.tryParse(v?.toString() ?? '') ?? 0;
+
+    final statut = champ(['statut']);
     return TypeAdhesion(
-      id: json['id'] as int,
-      libelle: json['libelle'] as String,
-      maxDependants: json['maxDependants'] as int,
-      description: json['description'] as String,
-      montant: (json['montant'] as num).toDouble(),
-      statut: json['statut'] as bool,
-      dateCreation: DateTime.parse(json['dateCreation'] as String),
-      categorieAdhesionId: json['categorieAdhesionId'] as int,
+      id: entier(champ(['id', 'idTypeAdhesion', 'typeAdhesionId'])),
+      libelle: (champ(['libelle', 'nom']) ?? '').toString(),
+      maxDependants: entier(champ(['maxDependants'])),
+      description: (champ(['description']) ?? '').toString(),
+      montant: () {
+        final v = champ(['montant']);
+        return v is num ? v.toDouble() : double.tryParse('${v ?? ''}') ?? 0;
+      }(),
+      statut: statut is bool ? statut : statut?.toString() != 'false',
+      dateCreation:
+          DateTime.tryParse('${champ(['dateCreation']) ?? ''}') ??
+          DateTime.now(),
+      categorieAdhesionId: entier(champ(['categorieAdhesionId'])),
     );
   }
 

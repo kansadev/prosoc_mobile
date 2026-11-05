@@ -7,6 +7,7 @@ abstract final class OfflineBoxes {
   static const String meta = 'offline_meta';
   static const String affilies = 'offline_affilies';
   static const String wallets = 'offline_wallets';
+  static const String souscriptions = 'offline_souscriptions';
   static const String referentials = 'offline_referentials';
   static const String writeQueue = 'offline_write_queue';
   static const String journal = 'offline_journal';
@@ -51,6 +52,7 @@ class OfflineDatabase {
       Hive.openBox<dynamic>(OfflineBoxes.meta),
       Hive.openBox<dynamic>(OfflineBoxes.affilies),
       Hive.openBox<dynamic>(OfflineBoxes.wallets),
+      Hive.openBox<dynamic>(OfflineBoxes.souscriptions),
       Hive.openBox<dynamic>(OfflineBoxes.referentials),
       Hive.openBox<dynamic>(OfflineBoxes.writeQueue),
       Hive.openBox<dynamic>(OfflineBoxes.journal),
@@ -65,6 +67,7 @@ class OfflineDatabase {
     await Future.wait([
       _box(OfflineBoxes.affilies).clear(),
       _box(OfflineBoxes.wallets).clear(),
+      _box(OfflineBoxes.souscriptions).clear(),
       _box(OfflineBoxes.referentials).clear(),
       _box(OfflineBoxes.writeQueue).clear(),
       _box(OfflineBoxes.journal).clear(),
@@ -81,9 +84,20 @@ class OfflineDatabase {
   /// Version de schéma de la base locale.
   static Future<void> _migrateIfNeeded() async {
     final meta = _box(OfflineBoxes.meta);
-    const current = 1;
+    const current = 4;
     final stored = meta.get(OfflineMetaKeys.dbVersion);
     if (stored == current) return;
+    if (stored is int && stored < current) {
+      // v2 : deltas pris à tort pour un cold start (cache incomplet).
+      // v3 : wallets indexés par agent ET devise.
+      // v4 : souscriptions de prestation synchronisées.
+      // Nouveau cold start ; la file d'écritures en attente est conservée.
+      await _box(OfflineBoxes.wallets).clear();
+      await _box(OfflineBoxes.referentials).clear();
+      await meta.delete(OfflineMetaKeys.watermark);
+      await meta.delete(OfflineMetaKeys.snapshot);
+      await meta.delete(OfflineMetaKeys.lastSyncAt);
+    }
     await meta.put(OfflineMetaKeys.dbVersion, current);
   }
 
@@ -162,7 +176,7 @@ class OfflineDatabase {
     for (final key in box.keys) {
       final raw = box.get(key);
       if (raw is Map) {
-        final row = SyncAffilieRow.fromJson(Map<String, dynamic>.from(raw));
+        final row = SyncAffilieRow.fromJson(deepStringMap(raw));
         if (row.idAffilie > 0 && !row.isDeleted) rows.add(row);
       }
     }
@@ -173,7 +187,7 @@ class OfflineDatabase {
   static SyncAffilieRow? affilieById(int id) {
     final raw = _box(OfflineBoxes.affilies).get(id.toString());
     if (raw is Map) {
-      final row = SyncAffilieRow.fromJson(Map<String, dynamic>.from(raw));
+      final row = SyncAffilieRow.fromJson(deepStringMap(raw));
       return row.isDeleted ? null : row;
     }
     return null;
@@ -195,7 +209,7 @@ class OfflineDatabase {
     for (final key in box.keys) {
       final raw = box.get(key);
       if (raw is Map) {
-        final row = SyncWalletRow.fromJson(Map<String, dynamic>.from(raw));
+        final row = SyncWalletRow.fromJson(deepStringMap(raw));
         if (row.agentId > 0) rows.add(row);
       }
     }
@@ -208,7 +222,7 @@ class OfflineDatabase {
     for (final key in box.keys) {
       final raw = box.get(key);
       if (raw is Map) {
-        final row = SyncWalletRow.fromJson(Map<String, dynamic>.from(raw));
+        final row = SyncWalletRow.fromJson(deepStringMap(raw));
         if (row.agentId == agentId) return row;
       }
     }
@@ -218,9 +232,64 @@ class OfflineDatabase {
   static Future<void> upsertWallets(List<SyncWalletRow> rows) async {
     if (rows.isEmpty) return;
     final box = _box(OfflineBoxes.wallets);
+    // Un wallet par agent ET par devise (CDF / USD) : une clé par agent seul
+    // faisait s'écraser les deux wallets.
     await box.putAll({
-      for (final row in rows) 'agent:${row.agentId}': row.toMap(),
+      for (final row in rows)
+        'agent:${row.agentId}:devise:${row.deviseId}': row.toMap(),
     });
+  }
+
+  /// Débits du compte virtuel déjà engagés dans la file d'écritures (non
+  /// encore synchronisés), par devise, pour un agent.
+  static Map<int, double> debitsEnAttente(int agentId) {
+    final totaux = <int, double>{};
+    for (final entry in writeQueue) {
+      debitsDePayload(entry.payload, agentId: agentId).forEach((devise, montant) {
+        totaux.update(devise, (v) => v + montant, ifAbsent: () => montant);
+      });
+    }
+    return totaux;
+  }
+
+  /// Montants par devise d'une écriture (collecte ou adhésion) débitant le
+  /// compte virtuel de [agentId].
+  static Map<int, double> debitsDePayload(
+    Map<String, dynamic> payload, {
+    required int agentId,
+  }) {
+    double montant(dynamic v) =>
+        v is num ? v.toDouble() : double.tryParse('${v ?? ''}') ?? 0;
+    int entier(dynamic v) =>
+        v is num ? v.toInt() : int.tryParse('${v ?? ''}') ?? 0;
+
+    final totaux = <int, double>{};
+    void ajouter(Map<String, dynamic> collecte) {
+      final devise = entier(collecte['deviseId']);
+      final valeur = montant(collecte['montant']);
+      if (devise <= 0 || valeur <= 0) return;
+      totaux.update(devise, (v) => v + valeur, ifAbsent: () => valeur);
+    }
+
+    final achat = payload['achat'];
+    if (achat is Map) {
+      if (entier(payload['agentId']) != agentId) return totaux;
+      final collecte = deepStringMap(achat)['collecte'];
+      if (collecte is Map) ajouter(deepStringMap(collecte));
+      return totaux;
+    }
+
+    final adhesion = payload['adhesion'];
+    if (adhesion is Map) {
+      final map = deepStringMap(adhesion);
+      if (entier(map['agentId']) != agentId) return totaux;
+      for (final c in (map['collectes'] as List? ?? const [])) {
+        if (c is Map) ajouter(deepStringMap(c));
+      }
+      return totaux;
+    }
+    if (entier(payload['agentId']) == agentId) ajouter(payload);
+    return totaux;
   }
 
   /// Applique le solde serveur renvoyé par le batch (source de vérité).
@@ -233,8 +302,11 @@ class OfflineDatabase {
     for (final key in box.keys) {
       final raw = box.get(key);
       if (raw is! Map) continue;
-      final map = Map<String, dynamic>.from(raw);
-      if ((map['agentId'] as num?)?.toInt() == walletAgentId) {
+      final map = deepStringMap(raw);
+      // `walletAgentId` désigne le wallet ; à défaut, l'agent.
+      final idWallet = (map['idWalletVirtuelAgent'] as num?)?.toInt();
+      final agent = (map['agentId'] as num?)?.toInt();
+      if (idWallet == walletAgentId || (idWallet == null && agent == walletAgentId)) {
         map['soldeVirtuel'] = solde;
         await box.put(key, map);
         return;
@@ -242,10 +314,50 @@ class OfflineDatabase {
     }
   }
 
+  // ---------- Souscriptions de prestation ----------
+
+  static List<SyncSouscriptionRow> souscriptionsByAffilie(int affilieId) {
+    return _box(OfflineBoxes.souscriptions).values
+        .whereType<Map>()
+        .map((raw) => SyncSouscriptionRow.fromJson(deepStringMap(raw)))
+        .where((s) => s.affilieId == affilieId)
+        .toList();
+  }
+
+  /// Prestation déjà active dans le cache, ou achat déjà en attente d'envoi.
+  static bool achatPrestationExistant({
+    required int affilieId,
+    required int prestationId,
+  }) {
+    final active = souscriptionsByAffilie(
+      affilieId,
+    ).any((s) => s.prestationId == prestationId && s.statut);
+    if (active) return true;
+    return writeQueue.any(
+      (e) =>
+          e.kind == SyncWriteKind.souscriptionPrestation &&
+          e.payload['affilieId'] == affilieId &&
+          (e.payload['achat'] as Map?)?['prestationId'] == prestationId,
+    );
+  }
+
+  static Future<void> upsertSouscriptions(
+    List<SyncSouscriptionRow> rows,
+  ) async {
+    if (rows.isEmpty) return;
+    await _box(OfflineBoxes.souscriptions).putAll({
+      for (final row in rows)
+        row.idSouscriptionPrestation.toString(): row.toMap(),
+    });
+  }
+
   // ---------- Référentiels ----------
 
-  static SyncReferentials? get referentials =>
-      SyncReferentials.fromMap(_box(OfflineBoxes.referentials).get('data'));
+  /// Hive relit les maps en `Map<dynamic, dynamic>` : conversion profonde.
+  static SyncReferentials? get referentials {
+    final raw = _box(OfflineBoxes.referentials).get('data');
+    return raw is Map ? SyncReferentials.fromMap(deepStringMap(raw)) : null;
+  }
 
   static Future<void> saveReferentials(SyncReferentials value) async {
     await _box(OfflineBoxes.referentials).put('data', value.toMap());
@@ -260,7 +372,7 @@ class OfflineDatabase {
       for (final id in ids) {
         final raw = affilies.get(id.toString());
         if (raw is Map) {
-          final map = Map<String, dynamic>.from(raw);
+          final map = deepStringMap(raw);
           map['statut'] = false;
           await affilies.put(id.toString(), map);
         }
@@ -290,7 +402,7 @@ class OfflineDatabase {
     for (final key in box.keys) {
       final raw = box.get(key);
       if (raw is Map) {
-        final entry = SyncQueueEntry.fromMap(Map<String, dynamic>.from(raw));
+        final entry = SyncQueueEntry.fromMap(deepStringMap(raw));
         if (entry != null) entries.add(entry);
       }
     }
@@ -303,6 +415,19 @@ class OfflineDatabase {
   static List<SyncQueueEntry> get pendingWrites => writeQueue
       .where((e) => e.localStatus != SyncLocalStatus.syncing)
       .toList();
+
+  /// Écritures restées `syncing` après un arrêt de l'app pendant l'envoi :
+  /// elles repartiront (même `clientRequestId`, donc sans doublon serveur).
+  static Future<void> resetSyncingWrites() async {
+    for (final entry in writeQueue) {
+      if (entry.localStatus == SyncLocalStatus.syncing) {
+        await updateWriteStatus(
+          entry.clientRequestId,
+          localStatus: SyncLocalStatus.pending,
+        );
+      }
+    }
+  }
 
   static Future<void> enqueueWrite(SyncQueueEntry entry) async {
     await _box(
@@ -319,7 +444,7 @@ class OfflineDatabase {
     final box = _box(OfflineBoxes.writeQueue);
     final raw = box.get(clientRequestId);
     if (raw is! Map) return;
-    final entry = SyncQueueEntry.fromMap(Map<String, dynamic>.from(raw));
+    final entry = SyncQueueEntry.fromMap(deepStringMap(raw));
     if (entry == null) return;
     await box.put(
       clientRequestId,
@@ -345,7 +470,7 @@ class OfflineDatabase {
     final box = _box(OfflineBoxes.journal);
     return box.values
         .whereType<Map>()
-        .map((e) => Map<String, dynamic>.from(e))
+        .map(deepStringMap)
         .toList();
   }
 

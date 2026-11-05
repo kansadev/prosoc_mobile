@@ -55,7 +55,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('Rôle principal : ${role.description}'),
+              content: Text('Rôle principal : ${role.nom}'),
               backgroundColor: AppColors.prosocGreen,
             ),
           );
@@ -541,7 +541,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       color: AppColors.prosocGreen,
                                     )
                                   : null,
-                              label: Text(role.description),
+                              label: Text(role.nom),
                               selectedColor:
                                   AppColors.prosocGreen.withValues(alpha: 0.15),
                               side: BorderSide(

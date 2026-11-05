@@ -8,6 +8,8 @@ import 'auth_service.dart';
 import '../offline/offline_database.dart';
 import '../offline/sync_models.dart';
 
+const Object _inchange = Object();
+
 /// État observable du mode offline (bandeau / badge de l'UI).
 class SyncState {
   final bool isOnline;
@@ -17,6 +19,9 @@ class SyncState {
   final DateTime? lastSyncAt;
   final String? lastError;
 
+  /// Opérations hors ligne rejetées au batch, affichées jusqu'à confirmation.
+  final List<String> rejets;
+
   const SyncState({
     required this.isOnline,
     required this.isSyncing,
@@ -24,6 +29,7 @@ class SyncState {
     required this.pendingCount,
     this.lastSyncAt,
     this.lastError,
+    this.rejets = const [],
   });
 
   SyncState copyWith({
@@ -32,7 +38,9 @@ class SyncState {
     bool? isFlushing,
     int? pendingCount,
     DateTime? lastSyncAt,
-    String? lastError,
+    // Conservé si omis : seul un `null` explicite efface l'erreur.
+    Object? lastError = _inchange,
+    List<String>? rejets,
   }) {
     return SyncState(
       isOnline: isOnline ?? this.isOnline,
@@ -40,7 +48,10 @@ class SyncState {
       isFlushing: isFlushing ?? this.isFlushing,
       pendingCount: pendingCount ?? this.pendingCount,
       lastSyncAt: lastSyncAt ?? this.lastSyncAt,
-      lastError: lastError,
+      lastError: identical(lastError, _inchange)
+          ? this.lastError
+          : lastError as String?,
+      rejets: rejets ?? this.rejets,
     );
   }
 }
@@ -61,6 +72,9 @@ class SyncService {
   static final Uuid _uuid = Uuid._();
 
   static const _maxBatchItems = 50;
+
+  /// Statut des collectes en file, comme dans le contrat de synchronisation.
+  static const _statutFile = 'VALIDE';
   static const _maxAttempts = 6;
   static const _connectivityTimeout = Duration(seconds: 6);
 
@@ -76,6 +90,9 @@ class SyncService {
   Timer? _probeTimer;
   bool _started = false;
 
+  /// Posé avant tout `await` : le retour du réseau peut lancer deux passes.
+  bool _envoiEnCours = false;
+
   bool get isOnline => state.value.isOnline;
   int get pendingCount => state.value.pendingCount;
 
@@ -84,6 +101,7 @@ class SyncService {
     if (_started) return;
     _started = true;
     await OfflineDatabase.init();
+    await OfflineDatabase.resetSyncingWrites();
     _refreshPendingCount();
     state.value = state.value.copyWith(lastSyncAt: OfflineDatabase.lastSyncAt);
     await refreshOnlineStatus();
@@ -129,10 +147,17 @@ class SyncService {
     return online;
   }
 
+  /// Toute réponse HTTP (même 401 ou 500) prouve que le réseau passe. Sans code
+  /// HTTP, `ApiService` a absorbé une erreur réseau : l'appareil est hors ligne.
+  @visibleForTesting
+  static bool reponseRecue(int? statusCode) => statusCode != null;
+
   Future<bool> _probeOnline() async {
     try {
-      await ApiService.syncBootstrap().timeout(_connectivityTimeout);
-      return true;
+      final response = await ApiService.syncBootstrap().timeout(
+        _connectivityTimeout,
+      );
+      return reponseRecue(response.statusCode);
     } catch (_) {
       // Hors ligne : timeout, DNS, socket…
       return false;
@@ -166,22 +191,33 @@ class SyncService {
       }
 
       final data = bootstrap.data!;
-      await OfflineDatabase.saveWatermark(
-        data.hasWatermark ? data.watermark : null,
-      );
+      // Cold start (contrat) : référentiels / affiliés / wallets SANS `since`,
+      // puis watermark persisté après succès. En delta : `since` = watermark
+      // de la synchronisation précédente. Enregistrer le watermark du
+      // bootstrap avant ces appels ne rapatriait que des deltas vides.
+      final since = OfflineDatabase.lastSyncAt == null
+          ? null
+          : OfflineDatabase.watermark;
       await OfflineDatabase.saveSnapshot(
         data.snapshot.isNotEmpty ? data.snapshot : null,
       );
       await OfflineDatabase.savePlafond(data.plafondWalletVirtuel);
       await OfflineDatabase.upsertWallets(data.wallets);
 
-      await _syncReferentials();
-      final affiliesOk = await _syncAffilies();
-      final walletsOk = await _syncWallets();
+      await _syncReferentials(since);
+      final affiliesOk = await _syncAffilies(since);
+      final walletsOk = await _syncWallets(since);
+      final souscriptionsOk = await _syncSouscriptions(since);
 
-      if (!affiliesOk || !walletsOk) return false;
+      // Échec : watermark inchangé, la prochaine passe reprend au même point.
+      if (!affiliesOk || !walletsOk || !souscriptionsOk) return false;
 
-      await _syncDeletions();
+      if (since != null) await _syncDeletions(since);
+      // Watermark pris au début de la passe : les changements survenus pendant
+      // la synchronisation seront rapatriés au prochain delta.
+      await OfflineDatabase.saveWatermark(
+        data.hasWatermark ? data.watermark : null,
+      );
       await OfflineDatabase.clearSyncError();
       await OfflineDatabase.markSyncedNow();
       state.value = state.value.copyWith(
@@ -198,6 +234,21 @@ class SyncService {
     }
   }
 
+  /// Synchronisation dès l'ouverture de session (démarrage avec session
+  /// restaurée, ou login) : référentiels, affiliés et soldes sont disponibles
+  /// tout de suite pour un passage hors ligne, sans attendre le minuteur.
+  /// Sans permission `READ_SYNC` (profils non terrain), ne fait rien.
+  Future<void> syncOnSessionStart() async {
+    final user = AuthService.currentUser;
+    if (user == null || !user.hasPermission('READ_SYNC')) return;
+    if (!await refreshOnlineStatus()) return;
+    if (state.value.pendingCount > 0) {
+      await flushQueue(); // réaligne aussi les données (syncAll) si créations
+    } else {
+      await syncAll();
+    }
+  }
+
   /// Synchronise uniquement si l'appareil est en ligne.
   Future<bool> syncIfOnline() async {
     if (!isOnline) return false;
@@ -205,27 +256,41 @@ class SyncService {
     return syncAll();
   }
 
-  Future<void> _syncReferentials() async {
+  /// Référentiels : chargement complet (sans `since`) tant que le cache est
+  /// vide, puis deltas fusionnés par id (contrat : « upsert local par id »).
+  /// Remplacer le cache par un delta le viderait : c'est ce qui laissait le
+  /// formulaire d'adhésion hors ligne sans frais ni types.
+  Future<void> _syncReferentials(String? since) async {
+    final local = OfflineDatabase.referentials;
+    final complet = since == null || local == null || local.isEmpty;
     final response = await ApiService.syncReferentials(
-      since: OfflineDatabase.watermark,
+      since: complet ? null : since,
       snapshot: OfflineDatabase.snapshot,
     );
     if (response.success && response.data != null) {
-      final refs = response.data!;
+      final delta = response.data!;
+      final refs = complet ? delta : local.mergedWith(delta);
       await OfflineDatabase.saveReferentials(refs);
-      if (refs.nextSince != null) {
-        await OfflineDatabase.saveWatermark(refs.nextSince);
+      if (kDebugMode) {
+        debugPrint(
+          '[Sync] référentiels ${complet ? 'complets' : 'delta'} reçus : '
+          'types=${delta.typeAdhesions.length} frais=${delta.frais.length} '
+          'devises=${delta.devises.length} → cache : '
+          'types=${refs.typeAdhesions.length} frais=${refs.frais.length}',
+        );
       }
-      await OfflineDatabase.savePlafond(refs.plafondWalletVirtuel);
+      if (refs.plafondWalletVirtuel != null) {
+        await OfflineDatabase.savePlafond(refs.plafondWalletVirtuel);
+      }
     }
   }
 
-  Future<bool> _syncAffilies() async {
+  Future<bool> _syncAffilies(String? since) async {
     var cursor = '';
     var guard = 0;
     while (guard++ < 500) {
       final response = await ApiService.syncAffilies(
-        since: OfflineDatabase.watermark,
+        since: since,
         cursor: cursor.isEmpty ? null : cursor,
         snapshot: OfflineDatabase.snapshot,
       );
@@ -251,12 +316,12 @@ class SyncService {
     return true;
   }
 
-  Future<bool> _syncWallets() async {
+  Future<bool> _syncWallets(String? since) async {
     var cursor = '';
     var guard = 0;
     while (guard++ < 100) {
       final response = await ApiService.syncWallets(
-        since: OfflineDatabase.watermark,
+        since: since,
         cursor: cursor.isEmpty ? null : cursor,
         snapshot: OfflineDatabase.snapshot,
       );
@@ -282,18 +347,45 @@ class SyncService {
     return true;
   }
 
-  Future<void> _syncDeletions() async {
-    final since = OfflineDatabase.watermark;
-    if (since == null || since.trim().isEmpty) return; // since obligatoire
+  Future<bool> _syncSouscriptions(String? since) async {
+    var cursor = '';
+    var guard = 0;
+    while (guard++ < 500) {
+      final response = await ApiService.syncSouscriptionsPrestations(
+        since: since,
+        cursor: cursor.isEmpty ? null : cursor,
+        snapshot: OfflineDatabase.snapshot,
+      );
+      if (!response.success || response.data == null) {
+        await OfflineDatabase.saveSyncError(
+          response.message ?? 'Sync souscriptions impossible',
+        );
+        state.value = state.value.copyWith(
+          lastError: response.message ?? 'Sync souscriptions impossible',
+        );
+        return false;
+      }
+      final page = response.data!;
+      await OfflineDatabase.upsertSouscriptions(page.items);
+      if (page.snapshot.isNotEmpty) {
+        await OfflineDatabase.saveSnapshot(page.snapshot);
+      }
+      if (!page.hasMore) break;
+      final next = page.nextCursor;
+      if (next == null || next.isEmpty) break;
+      cursor = next;
+    }
+    return true;
+  }
+
+  Future<void> _syncDeletions(String since) async {
+    if (since.trim().isEmpty) return; // since obligatoire
     final response = await ApiService.syncDeletions(
       since: since,
       snapshot: OfflineDatabase.snapshot,
     );
     if (response.success && response.data != null) {
       await OfflineDatabase.applyDeletions(response.data!);
-      if (response.data!.nextSince != null) {
-        await OfflineDatabase.saveWatermark(response.data!.nextSince);
-      }
     }
   }
 
@@ -319,7 +411,6 @@ class SyncService {
     required int annee,
     int? cotisationAffilieId,
     int? souscriptionPrestationId,
-    String statutPaiement = 'VALIDE',
     String? label,
     String? clientRequestId,
   }) async {
@@ -339,7 +430,7 @@ class SyncService {
         'montant': montant,
         'deviseId': deviseId,
         'modePaiement': 'VIRTUAL_ACCOUNT',
-        'statutPaiement': statutPaiement,
+        'statutPaiement': _statutFile,
         'mois': mois,
         'annee': annee,
         'statut': true,
@@ -360,7 +451,59 @@ class SyncService {
       kind: SyncWriteKind.adhesion,
       clientRequestId: clientRequestId,
       label: label,
-      payload: {'adhesion': adhesion},
+      payload: {
+        'adhesion': {
+          ...adhesion,
+          'collectes': [
+            for (final collecte in (adhesion['collectes'] as List? ?? const []))
+              {
+                ...deepStringMap(collecte as Map),
+                'modePaiement': 'VIRTUAL_ACCOUNT',
+                'statutPaiement': _statutFile,
+              },
+          ],
+        },
+      },
+    );
+    await OfflineDatabase.enqueueWrite(entry);
+    _refreshPendingCount();
+    return entry;
+  }
+
+  /// Achat d'une souscription pour un affilié déjà connu du serveur. [agentId]
+  /// sert au contrôle local du solde ; il n'est pas transmis (`toWire`).
+  Future<SyncQueueEntry> enqueueSouscriptionPrestation({
+    required int affilieId,
+    required int agentId,
+    required int prestationId,
+    required double montant,
+    required int deviseId,
+    required int mois,
+    required int annee,
+    required String referencePaiement,
+    String? label,
+    String? clientRequestId,
+  }) async {
+    final entry = _buildEntry(
+      kind: SyncWriteKind.souscriptionPrestation,
+      clientRequestId: clientRequestId,
+      label: label,
+      payload: {
+        'agentId': agentId,
+        'affilieId': affilieId,
+        'achat': {
+          'prestationId': prestationId,
+          'statut': true,
+          'collecte': {
+            'montant': montant,
+            'deviseId': deviseId,
+            'mois': mois,
+            'annee': annee,
+            'modePaiement': 'VIRTUAL_ACCOUNT',
+            'referencePaiement': referencePaiement,
+          },
+        },
+      },
     );
     await OfflineDatabase.enqueueWrite(entry);
     _refreshPendingCount();
@@ -396,23 +539,41 @@ class SyncService {
   ///
   /// Retourne le nombre d'écritures effectivement confirmées.
   Future<SyncFlushReport> flushQueue() async {
-    if (state.value.isFlushing) {
-      return SyncFlushReport.empty();
+    if (_envoiEnCours) return const SyncFlushReport.empty();
+    _envoiEnCours = true;
+    try {
+      return await _envoyerFile();
+    } finally {
+      _envoiEnCours = false;
     }
-    if (!await refreshOnlineStatus()) return SyncFlushReport.empty();
+  }
+
+  Future<SyncFlushReport> _envoyerFile() async {
+    if (!await refreshOnlineStatus()) return const SyncFlushReport.empty();
 
     state.value = state.value.copyWith(isFlushing: true);
     var created = 0;
     var duplicates = 0;
     var rejected = 0;
     var kept = 0;
+    // Rejets métier définitifs à signaler à l'agent (sinon il croirait
+    // l'écriture enregistrée).
+    final rejets = <String>[];
+    // Une tentative par écriture et par passe : une réponse `error` la remet
+    // en attente, sans quoi la boucle la renverrait aussitôt, sans fin.
+    final tentees = <String>{};
+    // Dernière raison pour laquelle une écriture reste en file.
+    String? erreurEnvoi;
 
     try {
       while (true) {
-        final pending = OfflineDatabase.pendingWrites;
+        final pending = OfflineDatabase.pendingWrites
+            .where((e) => !tentees.contains(e.clientRequestId))
+            .toList();
         if (pending.isEmpty) break;
 
         final batch = pending.take(_maxBatchItems).toList();
+        tentees.addAll(batch.map((e) => e.clientRequestId));
         for (final entry in batch) {
           await OfflineDatabase.updateWriteStatus(
             entry.clientRequestId,
@@ -422,8 +583,15 @@ class SyncService {
         }
 
         final response = await ApiService.syncWritesBatch(
-          batch.map((e) => e.toMap()).toList(),
+          batch.map((e) => e.toWire()).toList(),
         );
+        if (kDebugMode) {
+          debugPrint(
+            '[Sync] lot de ${batch.length} écriture(s) : '
+            'HTTP ${response.statusCode}'
+            '${response.success ? '' : ' — ${response.message}'}',
+          );
+        }
 
         if (!response.success || response.data == null) {
           // Erreur réseau/serveur globale : tout reste en file (backoff).
@@ -439,9 +607,7 @@ class SyncService {
             );
           }
           kept += batch.length;
-          state.value = state.value.copyWith(
-            lastError: response.message ?? 'Échec du batch',
-          );
+          erreurEnvoi = response.message ?? 'Échec du batch';
           break;
         }
 
@@ -451,12 +617,22 @@ class SyncService {
 
         for (final entry in batch) {
           final result = results[entry.clientRequestId];
+          if (kDebugMode) {
+            debugPrint(
+              '[Sync] ${entry.kind.wire} '
+              '${entry.clientRequestId.substring(0, 8).toUpperCase()} : '
+              '${result?.status ?? 'aucun résultat'}'
+              '${result?.errorCode != null ? ' [${result!.errorCode}]' : ''}'
+              '${result?.message != null ? ' — ${result!.message}' : ''}',
+            );
+          }
           if (result == null) {
             // Pas de réponse pour cet item : on garde pour un retry.
             await OfflineDatabase.updateWriteStatus(
               entry.clientRequestId,
               localStatus: SyncLocalStatus.pending,
             );
+            erreurEnvoi = 'Réponse incomplète du serveur.';
             kept++;
             continue;
           }
@@ -486,6 +662,10 @@ class SyncService {
               'errorCode': result.errorCode,
               'message': result.message,
             });
+            rejets.add(
+              '${entry.label ?? entry.kind.wire} : '
+              '${_libelleRejet(result.errorCode, result.message)}',
+            );
             rejected++;
             continue;
           }
@@ -496,15 +676,24 @@ class SyncService {
             localStatus: SyncLocalStatus.pending,
             lastError: result.message ?? result.errorCode,
           );
+          erreurEnvoi = result.message ?? 'Erreur temporaire du serveur.';
           kept++;
         }
       }
 
-      await OfflineDatabase.clearSyncError();
-      state.value = state.value.copyWith(lastError: null);
+      if (erreurEnvoi == null) await OfflineDatabase.clearSyncError();
+      state.value = state.value.copyWith(
+        lastError: null,
+        rejets: rejets.isEmpty ? null : [...state.value.rejets, ...rejets],
+      );
       // Une fois les écritures intégrées, on réaligne les soldes.
       if (created > 0) {
         await syncAll();
+      }
+      // Après `syncAll`, qui remet l'erreur à zéro en démarrant.
+      if (erreurEnvoi != null) {
+        await OfflineDatabase.saveSyncError(erreurEnvoi);
+        state.value = state.value.copyWith(lastError: erreurEnvoi);
       }
     } finally {
       state.value = state.value.copyWith(isFlushing: false);
@@ -517,6 +706,32 @@ class SyncService {
       rejected: rejected,
       kept: kept,
     );
+  }
+
+  /// L'agent a pris connaissance des rejets affichés.
+  void acknowledgeRejets() {
+    state.value = state.value.copyWith(
+      lastError: state.value.lastError,
+      rejets: const [],
+    );
+  }
+
+  /// Message lisible pour un rejet de synchronisation.
+  static String _libelleRejet(String? code, String? message) {
+    final libelle = switch (code) {
+      'SOLDE_INSUFFISANT' =>
+        'solde du compte virtuel insuffisant, rechargez puis refaites la saisie',
+      'MODE_NON_VA' => 'mode de paiement non autorisé hors ligne',
+      'ADHESION_EXISTANTE' || 'AFFILIE_DOUBLON' =>
+        'affilié déjà enregistré, vérifiez dans Mon réseau',
+      'AFFILIE_HORS_SCOPE' => 'affilié hors de votre portefeuille',
+      'AGENT_HORS_ZONE' => 'agent hors de votre zone',
+      'AGENT_ID_INTERDIT' => 'opération refusée pour cet agent',
+      _ => null,
+    };
+    final detail = message?.trim();
+    if (libelle != null) return libelle;
+    return detail != null && detail.isNotEmpty ? detail : 'refusée par le serveur';
   }
 
   /// VIDE la file (usage DEBUG / correction manuelle).

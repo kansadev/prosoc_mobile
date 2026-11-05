@@ -3,6 +3,8 @@ import '../../config/colors.dart';
 import '../../controllers/main_controller.dart';
 import '../../controllers/chef_equipe_controller.dart';
 import '../../services/auth_service.dart';
+import '../../utils/medical_permissions.dart';
+import 'medical/medical_agent_tab_screen.dart';
 import 'at/home_screen.dart';
 import 'at/wallet_screen.dart';
 import 'at/virtual_account_screen.dart';
@@ -42,11 +44,20 @@ class _MainScreenState extends State<MainScreen> {
     return AuthService.currentUser?.isChefEquipe ?? false;
   }
 
-  int get _tabCount => _isChefEquipe ? 5 : 4;
+  /// Onglet « Médical » : visible selon les permissions du compte.
+  bool get _hasMedicalTab =>
+      MedicalPermissions.peutConsulterSouscriptions ||
+      MedicalPermissions.peutScanner;
 
-  int get _profileTabIndex => _isChefEquipe ? 4 : 3;
+  // Ordre : Accueil, Wallet, Compte, [Médical], [Zone], Profil.
+  int get _medicalTabIndex => 3;
 
-  int get _zoneTabIndex => 3;
+  int get _zoneTabIndex => _hasMedicalTab ? 4 : 3;
+
+  int get _profileTabIndex =>
+      3 + (_hasMedicalTab ? 1 : 0) + (_isChefEquipe ? 1 : 0);
+
+  int get _tabCount => _profileTabIndex + 1;
 
   int _clampTabIndex(int index) {
     final maxIndex = _tabCount - 1;
@@ -131,6 +142,12 @@ class _MainScreenState extends State<MainScreen> {
         currentIndex: stackIndex,
         child: const VirtualAccountScreen(),
       ),
+      if (_hasMedicalTab)
+        TabLoadGate(
+          tabIndex: _medicalTabIndex,
+          currentIndex: stackIndex,
+          child: const MedicalAgentTabScreen(),
+        ),
       if (_isChefEquipe)
         TabLoadGate(
           tabIndex: _zoneTabIndex,
@@ -197,6 +214,12 @@ class _MainScreenState extends State<MainScreen> {
             activeIcon: Icon(Icons.credit_card),
             label: 'Compte',
           ),
+          if (_hasMedicalTab)
+            const BottomNavigationBarItem(
+              icon: Icon(Icons.local_hospital_outlined),
+              activeIcon: Icon(Icons.local_hospital),
+              label: 'Médical',
+            ),
           if (_isChefEquipe)
             const BottomNavigationBarItem(
               icon: Icon(Icons.map_outlined),

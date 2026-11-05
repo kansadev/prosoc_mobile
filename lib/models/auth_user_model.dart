@@ -2,6 +2,7 @@
 // MODÈLE D'UTILISATEUR AUTHENTIFIÉ
 // ============================================
 
+import '../utils/jwt_claims.dart';
 import 'payment_gateway_config.dart';
 
 class UtilisateurModel {
@@ -187,6 +188,19 @@ class AuthUserModel {
     this.paymentGateway,
   });
 
+  /// Permissions du corps de réponse **et** claims `permission` du JWT (canal
+  /// documenté par l'API), sans doublon.
+  static List<String> _resolvePermissions(Map<String, dynamic> json) {
+    final fromBody = (json['permissions'] as List<dynamic>? ?? const [])
+        .map((e) => e.toString().trim())
+        .where((e) => e.isNotEmpty);
+    final fromToken = JwtClaims.values(
+      json['accessToken']?.toString(),
+      'permission',
+    );
+    return {...fromBody, ...fromToken}.toList();
+  }
+
   factory AuthUserModel.fromJson(Map<String, dynamic> json) {
     PaymentGatewayConfig? gateway;
     final rawGateway = json['paymentGateway'];
@@ -210,7 +224,7 @@ class AuthUserModel {
       acceptNotification: json['acceptNotification'] ?? false,
       utilisateur: UtilisateurModel.fromJson(json['utilisateur'] ?? {}),
       nomRole: json['nomRole'] ?? '',
-      permissions: List<String>.from(json['permissions'] ?? []),
+      permissions: _resolvePermissions(json),
       primaryRole: RoleModel.fromJson(json['primaryRole'] ?? {}),
       roles: (json['roles'] as List<dynamic>?)
               ?.map((role) => RoleModel.fromJson(role))

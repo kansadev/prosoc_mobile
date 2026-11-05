@@ -1,7 +1,11 @@
 import '../config/api.dart';
 import '../models/adhesion_with_affilie_model.dart';
+import '../models/souscription_prestation_model.dart';
+import '../services/auth_service.dart';
 import '../services/sync_service.dart';
 import '../utils/api_error_helper.dart';
+import 'offline_database.dart';
+import 'offline_wallet_check.dart';
 
 /// Résultat d'une écriture passée par la passerelle offline.
 sealed class OfflineWriteOutcome {}
@@ -64,6 +68,10 @@ abstract final class OfflineWriteGateway {
   }) {
     return _run(
       canQueue: modePaiement.toUpperCase() == 'VIRTUAL_ACCOUNT',
+      controleAvantFile: () => OfflineWalletCheck.verifier(
+        agentId: agentId,
+        debits: {deviseId: montant},
+      ),
       queue: (sync) async {
         final entry = await sync.enqueueCollecte(
           typeCollecte: typeCollecte,
@@ -76,7 +84,6 @@ abstract final class OfflineWriteGateway {
           annee: annee,
           cotisationAffilieId: cotisationAffilieId,
           souscriptionPrestationId: souscriptionPrestationId,
-          statutPaiement: statutPaiement,
           label: label,
         );
         return entry.clientRequestId;
@@ -115,6 +122,15 @@ abstract final class OfflineWriteGateway {
   }) {
     return _run(
       canQueue: true,
+      controleAvantFile: () {
+        final agentId = request.agentId ?? 0;
+        return OfflineWalletCheck.verifier(
+          agentId: agentId,
+          debits: OfflineDatabase.debitsDePayload({
+            'adhesion': adhesion,
+          }, agentId: agentId),
+        );
+      },
       queue: (sync) async {
         final entry = await sync.enqueueAdhesion(
           adhesion: adhesion,
@@ -127,10 +143,62 @@ abstract final class OfflineWriteGateway {
     );
   }
 
+  /// Achat d'une nouvelle souscription de prestation au compte virtuel.
+  /// En file, le serveur contrôlera éligibilité, doublon et montant au batch.
+  static Future<OfflineWriteOutcome> souscriptionPrestation({
+    required int affilieId,
+    required int agentId,
+    required int prestationId,
+    required double montant,
+    required int deviseId,
+    required int mois,
+    required int annee,
+    required String referencePaiement,
+    required SouscriptionPrestationCreateRequest request,
+    String? label,
+  }) {
+    return _run(
+      canQueue: true,
+      controleAvantFile: () {
+        if (OfflineDatabase.achatPrestationExistant(
+          affilieId: affilieId,
+          prestationId: prestationId,
+        )) {
+          return 'Cet affilié a déjà souscrit à cette prestation, ou un achat '
+              'identique attend la synchronisation.';
+        }
+        return OfflineWalletCheck.verifier(
+          agentId: agentId,
+          debits: {deviseId: montant},
+        );
+      },
+      queue: (sync) async {
+        final entry = await sync.enqueueSouscriptionPrestation(
+          affilieId: affilieId,
+          agentId: agentId,
+          prestationId: prestationId,
+          montant: montant,
+          deviseId: deviseId,
+          mois: mois,
+          annee: annee,
+          referencePaiement: referencePaiement,
+          label: label,
+        );
+        return entry.clientRequestId;
+      },
+      online: () => ApiService.createSouscriptionPrestation(
+        affilieId: affilieId,
+        request: request,
+      ),
+      label: label,
+    );
+  }
+
   static Future<OfflineWriteOutcome> _run({
     required bool canQueue,
     required Future<String> Function(SyncService sync) queue,
     required Future<ApiResponse<dynamic>> Function() online,
+    String? Function()? controleAvantFile,
     String? label,
   }) async {
     final sync = SyncService.instance;
@@ -138,32 +206,48 @@ abstract final class OfflineWriteGateway {
         ? label.trim()
         : 'Écriture offline';
 
+    // Sans WRITE_SYNC, une écriture en file ne partirait jamais : mieux vaut un
+    // échec réseau visible (ex. Percepteur).
+    final peutEnvoyerFile =
+        AuthService.currentUser?.hasPermission('WRITE_SYNC') ?? false;
+
     // 1) Hors ligne connu avant l'appel → file directe.
-    if (!canQueue) {
+    if (!canQueue || !peutEnvoyerFile) {
       return _attempt(online, sync, resolvedLabel);
     }
-    if (!sync.isOnline) {
+    // Toute mise en file (hors ligne connu OU repli après échec réseau)
+    // passe d'abord par le contrôle local du compte virtuel.
+    Future<OfflineWriteOutcome> mettreEnFile() async {
+      final blocage = controleAvantFile?.call();
+      if (blocage != null) {
+        return OfflineFailed(
+          message: blocage,
+          statusCode: 400,
+          response: ApiResponse.error(blocage, statusCode: 400),
+        );
+      }
       final id = await queue(sync);
       return OfflineQueued(clientRequestId: id, label: resolvedLabel);
     }
 
+    if (!sync.isOnline) return mettreEnFile();
+
     // 2) En ligne : on tente l'appel ; en cas d'échec réseau on met en file.
-    return _attempt(online, sync, resolvedLabel, queue: queue);
+    return _attempt(online, sync, resolvedLabel, queue: mettreEnFile);
   }
 
   static Future<OfflineWriteOutcome> _attempt(
     Future<ApiResponse<dynamic>> Function() online,
     SyncService sync,
     String label, {
-    Future<String> Function(SyncService sync)? queue,
+    Future<OfflineWriteOutcome> Function()? queue,
   }) async {
     ApiResponse<dynamic> response;
     try {
       response = await online();
     } catch (e) {
       if (queue != null && ApiErrorHelper.isRetryableNetworkError(e)) {
-        final id = await queue(sync);
-        return OfflineQueued(clientRequestId: id, label: label);
+        return queue();
       }
       return OfflineFailed(
         message: ApiErrorHelper.userFacingNetwork(),
@@ -185,8 +269,7 @@ abstract final class OfflineWriteGateway {
         ApiErrorHelper.isRetryableStatusCode(response.statusCode) ||
         ApiErrorHelper.isRetryableNetworkError(response.message ?? '');
     if (queue != null && retryable) {
-      final id = await queue(sync);
-      return OfflineQueued(clientRequestId: id, label: label);
+      return queue();
     }
 
     return OfflineFailed(

@@ -3,6 +3,7 @@ import 'package:prosoc/utils/medical_permissions.dart';
 import 'package:prosoc/views/screens/medical/admin/medical_admin_home_screen.dart';
 
 import '../../../config/colors.dart';
+import '../../../models/auth_user_model.dart';
 import '../../../services/auth_service.dart';
 import '../../widgets/logout_flow.dart';
 import '../at/change_password_screen.dart';
@@ -94,34 +95,29 @@ class _ProfilePercepteurScreenState extends State<ProfilePercepteurScreen> {
     if (updated == true && mounted) setState(() {});
   }
 
+  /// Libellé d'un rôle : son **nom** fait foi. La description est un texte
+  /// libre côté backend (le rôle « Percepteur » y est décrit « Superviseur
+  /// d'équipe »), elle n'est utilisée qu'en dernier recours.
+  static String _libelleRole(RoleModel role) =>
+      role.nom.trim().isNotEmpty ? role.nom.trim() : role.description.trim();
+
   /// Badge du rôle effectif affiché sur le profil.
   ///
-  /// Un utilisateur peut cumuler plusieurs rôles (ex. Percepteur + Superviseur
-  /// d'équipe) : `nomRole` reflète alors le rôle principal, pas celui sous
-  /// lequel le profil est consulté. On privilégie donc le rôle Percepteur
-  /// présent dans la liste des rôles, avec repli sur le rôle principal.
+  /// Un utilisateur peut cumuler plusieurs rôles : on privilégie le rôle
+  /// Percepteur présent dans la liste, avec repli sur le rôle principal.
   String get _roleBadge {
     final user = AuthService.currentUser;
     if (user == null) return 'Percepteur';
 
     for (final role in user.roles) {
-      final nom = role.nom.toLowerCase();
-      final description = role.description.toLowerCase();
-      if (nom.contains('percepteur') || description.contains('percepteur')) {
-        return role.description.trim().isNotEmpty
-            ? role.description.trim()
-            : role.nom.trim();
+      if (role.nom.toLowerCase().contains('percepteur')) {
+        return _libelleRole(role);
       }
     }
 
     if (user.nomRole.trim().isNotEmpty) return user.nomRole.trim();
-    if (user.primaryRole.description.trim().isNotEmpty) {
-      return user.primaryRole.description.trim();
-    }
-    if (user.primaryRole.nom.trim().isNotEmpty) {
-      return user.primaryRole.nom.trim();
-    }
-    return 'Percepteur';
+    final principal = _libelleRole(user.primaryRole);
+    return principal.isNotEmpty ? principal : 'Percepteur';
   }
 
   @override
@@ -248,11 +244,11 @@ class _ProfilePercepteurScreenState extends State<ProfilePercepteurScreen> {
                     title: 'Compte',
                     children: [
                       if (primaryRole != null &&
-                          primaryRole.description.isNotEmpty)
+                          _libelleRole(primaryRole).isNotEmpty)
                         _infoTile(
                           icon: Icons.badge_outlined,
                           label: 'Rôle principal',
-                          value: primaryRole.description,
+                          value: _libelleRole(primaryRole),
                         ),
                       _infoTile(
                         icon: statutUtilisateur
@@ -281,7 +277,7 @@ class _ProfilePercepteurScreenState extends State<ProfilePercepteurScreen> {
                               .map(
                                 (role) => Chip(
                                   label: Text(
-                                    role.description,
+                                    _libelleRole(role),
                                     style: const TextStyle(fontSize: 12),
                                   ),
                                   backgroundColor: AppColors.prosocGreen

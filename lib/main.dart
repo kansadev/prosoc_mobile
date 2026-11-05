@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/date_symbol_data_local.dart';
@@ -62,6 +64,9 @@ class _ProsocAppState extends State<ProsocApp> {
       }
       // Sinon, afficher l'onboarding
     });
+
+    // Session restaurée : rafraîchir le cache offline sans bloquer l'UI.
+    if (isLoggedIn) unawaited(SyncService.instance.syncOnSessionStart());
   }
 
   void _completeOnboarding() async {
@@ -80,6 +85,7 @@ class _ProsocAppState extends State<ProsocApp> {
       _userRole = role ?? '';
       _showLogin = false;
     });
+    unawaited(SyncService.instance.syncOnSessionStart());
   }
 
   /// Déterminer quel écran principal afficher en fonction du rôle

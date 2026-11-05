@@ -36,6 +36,9 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
   final VoidCallback? onSouscription;
   final VoidCallback? onDemandeBon;
   final VoidCallback? onArrieres;
+
+  /// Nouveau circuit « Prestations médicales » de l'affilié.
+  final VoidCallback? onCouvertureMedicale;
   final Color? iconColor;
 
   const AffiliatePopupMenuWidget({
@@ -47,6 +50,7 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
     this.onSouscription,
     this.onDemandeBon,
     this.onArrieres,
+    this.onCouvertureMedicale,
     this.iconColor,
   });
 
@@ -80,6 +84,9 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
             break;
           case 'arrieres':
             onArrieres?.call();
+            break;
+          case 'couverture_medicale':
+            onCouvertureMedicale?.call();
             break;
         }
       },
@@ -126,6 +133,12 @@ class AffiliatePopupMenuWidget extends StatelessWidget {
             icon: Icons.history_toggle_off_rounded,
             label: 'Voir les arriérés',
           ),
+        if (onCouvertureMedicale != null)
+          PopupMenuItemWidget(
+            value: 'couverture_medicale',
+            icon: Icons.local_hospital_outlined,
+            label: 'Couverture médicale',
+          ),
       ],
     );
   }
@@ -142,6 +155,7 @@ AppBar createAppBarWithPopupMenu({
   VoidCallback? onSouscription,
   VoidCallback? onDemandeBon,
   VoidCallback? onArrieres,
+  VoidCallback? onCouvertureMedicale,
   bool automaticallyImplyLeading = true,
   Widget? leading,
 }) {
@@ -158,6 +172,7 @@ AppBar createAppBarWithPopupMenu({
         onSouscription: onSouscription,
         onDemandeBon: onDemandeBon,
         onArrieres: onArrieres,
+        onCouvertureMedicale: onCouvertureMedicale,
       ),
       const SizedBox(width: 8),
       ...?actions,

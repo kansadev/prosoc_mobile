@@ -6,6 +6,8 @@ import 'package:prosoc/models/adhesion_with_affilie_model.dart';
 import 'package:prosoc/models/prestation_model.dart';
 import 'package:prosoc/models/souscription_prestation_model.dart';
 import 'package:prosoc/models/collecte_receipt_data.dart';
+import 'package:prosoc/offline/offline_mode.dart';
+import 'package:prosoc/offline/offline_write_gateway.dart';
 import 'package:prosoc/utils/affilie_payment_modes.dart';
 import 'package:prosoc/utils/api_error_helper.dart';
 import 'package:prosoc/utils/collecte_agent_resolver.dart';
@@ -71,11 +73,12 @@ class SouscriptionBottomSheet extends StatefulWidget {
   State<SouscriptionBottomSheet> createState() => _SouscriptionBottomSheetState();
 }
 
-class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
-  Map<String, String> get _modesPaiement =>
-      AffiliePaymentModes.modesFor(
-        allowVirtualAccount: widget.allowVirtualAccount,
-      );
+class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet>
+    with OfflineAwareState<SouscriptionBottomSheet> {
+  Map<String, String> get _modesPaiement => OfflineMode.modesDisponibles(
+    allowVirtualAccount: widget.allowVirtualAccount,
+    offline: isOffline,
+  );
 
   final _formKey = GlobalKey<FormState>();
   final _montantController = TextEditingController();
@@ -101,8 +104,9 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
   @override
   void initState() {
     super.initState();
-    _selectedModePaiement = AffiliePaymentModes.defaultModeFor(
+    _selectedModePaiement = OfflineMode.modeParDefaut(
       allowVirtualAccount: widget.allowVirtualAccount,
+      offline: isOffline,
     );
     final tel = widget.affilieTelephone?.trim();
     if (tel != null && tel.isNotEmpty) {
@@ -130,6 +134,22 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
     super.dispose();
   }
 
+  @override
+  void onOfflineChanged(bool offline) {
+    setState(() {
+      _selectedModePaiement = offline || _selectedModePaiement == null
+          ? OfflineMode.modeParDefaut(
+              allowVirtualAccount: widget.allowVirtualAccount,
+              offline: offline,
+            )
+          : _selectedModePaiement;
+    });
+    if (!offline) {
+      _devisePaiement.loadDevises();
+      if (_prestations.isEmpty) _loadPrestations();
+    }
+  }
+
   Future<void> _loadAgentId() async {
     final resolved = await CollecteAgentResolver.resolveForAffilie(
       widget.affilieId,
@@ -138,7 +158,18 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
     setState(() => _agentId = resolved);
   }
 
+  void _appliquerPrestationsLocales() {
+    setState(() {
+      _prestations = OfflineMode.prestationsLocales();
+      _isLoadingPrestations = false;
+    });
+  }
+
   Future<void> _loadPrestations() async {
+    if (isOffline) {
+      _appliquerPrestationsLocales();
+      return;
+    }
     setState(() => _isLoadingPrestations = true);
 
     try {
@@ -156,6 +187,11 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
               .toList();
           _isLoadingPrestations = false;
         });
+      } else if (OfflineMode.sansReseau(
+        success: response.success,
+        statusCode: response.statusCode,
+      )) {
+        _appliquerPrestationsLocales();
       } else {
         setState(() => _isLoadingPrestations = false);
         await _showError(
@@ -170,8 +206,10 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
         stackTrace,
       );
       if (!mounted) return;
-      setState(() => _isLoadingPrestations = false);
-      await _showError(ApiErrorHelper.userFacingNetwork());
+      _appliquerPrestationsLocales();
+      if (_prestations.isEmpty) {
+        await _showError(ApiErrorHelper.userFacingNetwork());
+      }
     }
   }
 
@@ -370,14 +408,37 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
         return;
       }
 
-      final response = await ApiService.createSouscriptionPrestation(
+      final outcome = await OfflineWriteGateway.souscriptionPrestation(
         affilieId: widget.affilieId,
+        agentId: agentId,
+        prestationId: prestation.id,
+        montant: montantPaye,
+        deviseId: collecteDeviseId,
+        mois: now.month,
+        annee: now.year,
+        referencePaiement: 'SOUSC-VA-${now.millisecondsSinceEpoch}',
         request: request,
+        label: 'Souscription ${widget.affiliePrenom}',
       );
 
       if (!mounted) return;
 
-      if (response.success) {
+      if (outcome is OfflineQueued) {
+        final messenger = ScaffoldMessenger.of(context);
+        Navigator.pop(context, true);
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Souscription enregistrée hors ligne. Elle sera confirmée à la '
+              'synchronisation, dès le retour du réseau.',
+            ),
+            backgroundColor: Color(0xFFF59E0B),
+          ),
+        );
+        return;
+      }
+
+      if (outcome is OfflineSynced) {
         final montant = double.tryParse(_montantController.text.trim()) ?? 0;
         await CollecteReceiptHelper.open(
           context,
@@ -396,11 +457,8 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
           popResult: true,
         );
         if (mounted) Navigator.pop(context, true);
-      } else {
-        await _showError(
-          response.message ?? 'Erreur lors de la création de la souscription.',
-          statusCode: response.statusCode,
-        );
+      } else if (outcome is OfflineFailed) {
+        await _showError(outcome.message, statusCode: outcome.statusCode);
       }
     } catch (e, stackTrace) {
       ApiErrorHelper.logException(
@@ -695,6 +753,9 @@ class _SouscriptionBottomSheetState extends State<SouscriptionBottomSheet> {
                       ),
                     ),
                     const SizedBox(height: 8),
+                    if (_modesPaiement.isEmpty)
+                      const Text('Le paiement nécessite une connexion internet.')
+                    else
                     DropdownButtonFormField<String>(
                       value: _selectedModePaiement,
                       decoration: _inputDecoration('Choisir un mode'),
