@@ -1,0 +1,401 @@
+================================================================================
+RAPPORT DE LIVRAISON - PROSOC MOBILE
+Traitement du rapport QA test_doc.md
+================================================================================
+
+Date            : 2026-10-01
+Depot           : D:\Projects\work_projects\prosoc
+Perimetre       : application Flutter (mobile uniquement)
+Source QA       : test_doc.md
+Plan d'action   : .kilo/plans/1790844398638-prosoc-qa-report-plan.md
+Swagger analyse : https://dev-prosoc.asdc-rdc.org/swagger/v1/swagger.json
+SDK             : Flutter 3.44.4 / Dart 3.12.2
+
+--------------------------------------------------------------------------------
+1. SYNTHESE
+--------------------------------------------------------------------------------
+
+15 demandes du rapport QA traiteees : 13 livrees, 1 hors perimetre documentee,
+1 non corrigible depuis le mobile.
+
+  Livrees                   : 1.1, 1.3, 1.4, 1.5, 1.6, 1.7, 2.1, 2.2, 2.3,
+                              3.1, 4.1, 5.1, 5.2
+  Hors perimetre            : 1.2 (impossible sans evolution du back-end)
+  Non corrigible en mobile  : 4.2 (403 emis par les permissions back-end)
+
+--------------------------------------------------------------------------------
+2. LIVRAISONS DETAILLEES
+--------------------------------------------------------------------------------
+
+--------------------------------------------------------------------------------
+1.1  Dependants : retirer le plafond d'age de 25 ans                [LIVRE]
+--------------------------------------------------------------------------------
+Constat : un dependant hors conjoint de plus de 25 ans etait refuse a
+l'enregistrement, sans fondement metier.
+
+Realise : suppression complete de _computeAge et du blocage "age > 25" dans
+le formulaire de dependant (23 lignes retirees).
+
+Volontairement conserve : la regle de certificat de scolarite obligatoire
+pour la tranche 18-25 ans, qui releve d'une obligation scolaire et non du
+defaut signale.
+
+Fichier : lib/widgets/dependant_bottom_sheet.dart
+
+--------------------------------------------------------------------------------
+1.2  Dependants : maitrise du sexe / genre          [HORS PERIMETRE - BACK-END]
+--------------------------------------------------------------------------------
+Constat : un champ sexe / genre est attendu sur la fiche dependant.
+
+Non realisable cote mobile : aucun endpoint du Swagger n'expose d'attribut
+sexe, genre ou piece d'identite pour un dependant. La seule voie est
+l'ajout de champs cote back-end.
+
+A instruire par le back-end.
+
+--------------------------------------------------------------------------------
+1.3  Recu de collecte imprimable et partageable                    [LIVRE]
+--------------------------------------------------------------------------------
+Constat : le recu ne pouvait etre que copie dans le presse-papiers, donc
+non imprimable et non partageable.
+
+Realise :
+  - generation PDF locale, sans dependance a un service de facturation
+  - bouton "Imprimer", qui ouvre aussi "enregistrer en PDF" sur mobile
+  - bouton "Partager" via la feuille systeme du telephone
+  - en-tete PROSOC, bloc montant mis en avant, pied de page pagine
+  - mention explicite : "ne constitue pas une facture fiscale"
+  - CollecteReceiptScreen converti en StatefulWidget pour gerer l'etat de
+    generation ; la copie presse-papiers est conservee
+
+Dependances ajoutees (flutter pub get execute) :
+  pdf         3.13.1
+  printing    5.15.1
+  share_plus  11.1.0
+  Les fichiers de generated_plugin_registrant natifs ont ete regeneres
+  pour linux, macos et windows.
+
+Fichiers :
+  lib/utils/collecte_receipt_pdf_service.dart         (243 l., nouveau)
+  lib/views/widgets/collecte_receipt_screen.dart      (modifie, +91/-)
+
+--------------------------------------------------------------------------------
+1.4  Retirer les antecedents du process d'adhesion                [LIVRE]
+--------------------------------------------------------------------------------
+Realise : suppression de tous les points d'entree UI des antecedents.
+  - parametre onAntecedents retire de PopupMenuWidget
+  - callbacks retires de my_network_screen.dart et AffiliateDetailsScreen.dart
+  - imports associes nettoyes
+  - antecedent_bottom_sheet.dart supprime : 288 lignes, fichier orphelin
+
+Fichiers :
+  lib/widgets/popup_menu_widget.dart
+  lib/views/screens/at/my_network_screen.dart
+  lib/views/screens/adherent/AffiliateDetailsScreen.dart
+  lib/widgets/antecedent_bottom_sheet.dart           (supprime)
+
+--------------------------------------------------------------------------------
+1.5  Selecteur de periode sur les objectifs Agent AT               [LIVRE]
+--------------------------------------------------------------------------------
+Realise :
+  - selecteur segmente : Aujourd'hui / 7 derniers jours / Mois en cours
+  - le realise, montant des collectes et nombre d'adhesions, suit la
+    periode selectionnee
+  - l'objectif reste mensuel, avec un bandeau d'avertissement explicite
+    separant les deux notions
+  - le realise jour et 7 jours est reconstruit cote client depuis
+    graphs.activiteQuotidienne, qui couvre les 30 derniers jours
+
+Limite API : GET /api/DashboardAgent/objectifs n'accepte que "mois" et
+"annee". Aucun objectif par jour ni par semaine n'existe cote serveur, donc
+la comparaison se fait toujours contre un objectif mensuel, affiche comme
+tel.
+
+Fichier : lib/views/screens/at/dashboard_screen.dart
+
+--------------------------------------------------------------------------------
+1.6  Clarifier Commission / Solde commission                      [LIVRE]
+--------------------------------------------------------------------------------
+Realise :
+  - carte "Comprendre vos commissions" expliquant la difference entre les
+    montants, absente jusqu'ici
+  - libelles explicites : "Solde commission disponible", avec infobulle
+    definissant le montant apres retraits et paiements deja effectues
+  - "Collectes du mois" et "Commissions du mois" distingues
+
+Fichier : lib/views/screens/at/dashboard_screen.dart
+
+--------------------------------------------------------------------------------
+1.7  Demande de rechargement du wallet Agent AT                   [LIVRE]
+--------------------------------------------------------------------------------
+Realise : nouvel ecran complet, demande et historique.
+  - champs acceptes : agentId et motif facultatif ; aucun montant saisi
+  - bandeau indiquant que le montant est calcule par la plateforme
+  - encart bloquant la nouvelle demande et rappelant le montant annonce
+    lorsqu'une demande est en attente
+  - historique pagine, badge de statut normalise, motif de rejet affiche
+  - dialogue de confirmation indiquant le montant calcule par le serveur
+  - point d'entree "Rechargement" dans le wallet de l'Agent AT
+
+Limite API : DemandeRechargeWalletVirtuelCreateDto n'accepte que "agentId"
+et "motif" de 0 a 500 caracteres. Le montant est calcule par le serveur et
+retourne dans montantCalcule, avec soldeAuMomentDemande et
+plafondAuMomentDemande.
+
+Fichiers :
+  lib/views/screens/at/wallet_recharge_request_screen.dart  (655 l., nouveau)
+  lib/models/demande_recharge_wallet_virtuel_model.dart      (199 l., nouveau)
+  lib/views/screens/at/wallet_screen.dart                    (modifie, +19)
+
+--------------------------------------------------------------------------------
+2.1  Historique des cotisations : corriger le scoping             [LIVRE]
+--------------------------------------------------------------------------------
+Constat : l'historique pouvait paraitre vide a tort.
+
+Realise :
+  - appel de getCollecteByAffiliePaginated, donc des donnees affiliees et
+    non de l'historique global
+  - tri sur dateCollecte decroissant
+  - filtrage explicite sur le type COTISATION
+  - recherche bornee jusqu'a 25 pages, pour compenser l'absence de filtre
+    annee cote client
+  - libelle d'etat vide harmonise en "Aucune cotisation"
+
+Fichier : lib/views/screens/adherent/cotisationsScreen.dart
+
+--------------------------------------------------------------------------------
+2.2  Afficher le contact de l'Agent AT dans le profil affilie      [LIVRE]
+--------------------------------------------------------------------------------
+Realise :
+  - chargement du contact via GET /api/Agent/{id}, non bloquant : la carte
+    "Agent territorial" reste utile si l'appel echoue
+  - telephone et email affiches s'ils existent
+  - telephone cliquable pour appeler, email cliquable pour rediger un
+    message, avec sous-lignement et couleur d'affordance
+  - _compactRow rendu cliquable de facon generique
+
+Limite API : AgentReadDto n'expose que "phone" et "emailAgent" comme
+coordonnees de contact.
+
+Fichier : lib/views/screens/adherent/adherent_profile_screen.dart
+
+--------------------------------------------------------------------------------
+2.3  Corriger le nombre de personnes a charge                     [LIVRE]
+--------------------------------------------------------------------------------
+Realise :
+  - ajout de nombrePersonnesACharge au modele de resume affilie
+  - la valeur provient de l'API et remplace le calcul erronee en client
+  - affichage conserve meme lorsque la valeur vaut 0
+
+Fichiers :
+  lib/models/dashboard_affilie_model.dart
+  lib/views/screens/adherent/adherent_profile_screen.dart
+
+--------------------------------------------------------------------------------
+3.1  Resume des collectes du Chef d'equipe                        [LIVRE]
+--------------------------------------------------------------------------------
+Realise :
+  - badge de periode affichant le mois et l'annee en cours
+  - mention explicite : les indicateurs sont calcules sur le mois civil en
+    cours, la plateforme n'exposant pas de periode personnalisee
+  - libelles des indicateurs prefixes par "du mois"
+  - montants des collectes desormais formates avec la devise de la zone,
+    et non plus en nombre brut
+
+Limite API : ChefEquipeKpisDto ne porte que des agregats mensuels, sans
+champ de mois ni d'annee. Les periodes jour, semaine ou mois arbitraire ne
+sont pas accessibles.
+
+Fichier : lib/views/screens/chef_equipe/chef_equipe_kpis_screen.dart
+
+--------------------------------------------------------------------------------
+4.1  Collecte hebdomadaire du Percepteur                          [LIVRE]
+--------------------------------------------------------------------------------
+Constat : seule la collectivite mensuelle etait affichee.
+
+Realise :
+  - selecteur de periode jour, semaine et mois, avec translation en
+    agregats jour, semaine et mois deja charges par le endpoint summary
+  - nouvelle feuille de detail listant les operations de la periode
+  - bouton "Voir les operations de la periode", avec fenetre de dates
+    calculee selon la periode selectionnee
+
+Regle de fenetre appliquee :
+  jour     : debut du jour courant jusqu'au lendemain 00:00
+  semaine  : 7 derniers jours glissants, jusqu'au lendemain 00:00
+  mois     : 1er du mois courant jusqu'au lendemain 00:00
+La borne haute est fixee au lendemain 00:00 et non a l'instant present,
+afin qu'une seconde d'attente ne fasse pas disparaitre la journee en cours
+d'une periode mensuelle.
+
+Limite API : l'API ne connait pas la notion de semaine. La semaine est
+donc une fenetre glissante de 7 jours, signalee comme telle dans l'interface.
+
+Fichiers :
+  lib/views/screens/Percepteur/dashboard_percepteur_screen.dart   (modifie, +162)
+  lib/views/screens/Percepteur/widgets/perception_periode_detail_sheet.dart
+                                                               (432 l., nouveau)
+  lib/models/dashboard_percepteur_model.dart                    (modifie, +1)
+
+--------------------------------------------------------------------------------
+4.2  Erreur 403 sur le Percepteur                    [NON CORRIGIBLE EN MOBILE]
+--------------------------------------------------------------------------------
+Constat : erreur 403 sur un parcours de collecte.
+
+Analyse : le 403 est emis par le back-end. Le message utilisateur affiche
+est "Action non authorised.", ce qui masque un probleme de droits cote
+serveur. L'ecran est le seul point d'entree concerne ; le filtrage des
+agents par date existe deja dans l'appel API mais n'etait pas transmis.
+
+Aucune correction applicative n'est pertinente : il faut intervenir sur les
+permissions et les roles cote back-end.
+
+--------------------------------------------------------------------------------
+5.1  Gestion des Chefs d'equipe cote Superviseur                  [LIVRE]
+--------------------------------------------------------------------------------
+Realise : nouvel ecran "Zones & chefs d'equipe", accessible depuis le
+dashboard superviseur.
+  - liste des zones sociales avec recherche
+  - chef d'equipe affiche par zone, ou "Non attribue"
+  - designation d'un chef d'equipe avec confirmation, en signalant le
+    remplacement eventuel de l'agent actuel
+  - retrait du chef d'equipe avec confirmation
+  - indicateur d'activite pendant l'enregistrement
+
+Ecart favorable au plan initial : l'approximation par zone sociale prevue
+initialement s'est revelee inutile. GET /api/ZoneSociale renvoie directement
+chefEquipeAgentId et chefEquipeNom, ce qui fournit une lecture fiable sans
+approximation. L'ecriture passe par les endpoints dedies.
+
+Limite API : aucun endpoint GET de listage des chefs d'equipe n'existe ; la
+lecture passe donc par les zones sociales.
+
+Fichiers :
+  lib/views/screens/superviseur/superviseur_zones_screen.dart  (596 l., nouveau)
+  lib/models/zone_sociale_model.dart                            (69 l., nouveau)
+  lib/views/screens/superviseur/superviseur_home_screen.dart   (modifie, +22)
+
+--------------------------------------------------------------------------------
+5.2  Affectation des affilies : reaffectation et tracabilite      [LIVRE]
+--------------------------------------------------------------------------------
+Realise : nouvel ecran "Reaffecter un affilie", accessible depuis l'ecran
+d'affectation existant.
+  - selection de l'agent source dans l'equipe supervisee
+  - liste paginee et searchable de ses affilies, via
+    GET /api/Agent/{agentId}/affilies
+  - selection de l'agent cible, exclu de la liste s'il s'agit du meme agent
+  - confirmation explicite presentant agent actuel et nouvel agent, avec
+    rappel du transfert du portfolio de l'affilie
+  - tracabilite : journal des operations de la session, et restitution du
+    ancienAgentId confirme par le serveur dans le dialogue de resultat
+
+Limite API : aucun endpoint GET d'historique affilie vers agent n'existe.
+La seule trace cote serveur est le retour de l'affectation, qui expose
+ancienAgentId ; c'est cette valeur qui est affichee apres validation. Le
+journal local retrace les operations de la session en cours.
+
+Fichiers :
+  lib/views/screens/superviseur/superviseur_reaffectation_screen.dart
+                                                               (885 l., nouveau)
+  lib/models/agent_affilie_row_model.dart                       (51 l., nouveau)
+  lib/views/screens/superviseur/superviseur_affectation_screen.dart (modifie, +19)
+
+--------------------------------------------------------------------------------
+3. INVENTAIRE DES FICHIERS
+--------------------------------------------------------------------------------
+
+CREES (8 fichiers, 3130 lignes)
+  lib/models/agent_affilie_row_model.dart                              51 l.
+  lib/models/zone_sociale_model.dart                                   69 l.
+  lib/models/demande_recharge_wallet_virtuel_model.dart              199 l.
+  lib/utils/collecte_receipt_pdf_service.dart                         243 l.
+  lib/views/screens/Percepteur/widgets/perception_periode_detail_sheet.dart
+                                                                         432 l.
+  lib/views/screens/at/wallet_recharge_request_screen.dart           655 l.
+  lib/views/screens/superviseur/superviseur_zones_screen.dart        596 l.
+  lib/views/screens/superviseur/superviseur_reaffectation_screen.dart
+                                                                         885 l.
+
+MODIFIES (16 fichiers applicatifs, +1165/-444 lignes au total)
+  lib/config/api.dart                                       +208
+  lib/models/dashboard_affilie_model.dart                    +24
+  lib/models/dashboard_percepteur_model.dart                  +1
+  lib/views/screens/Percepteur/dashboard_percepteur_screen.dart
+                                                               +162
+  lib/views/screens/adherent/adherent_profile_screen.dart    +125
+  lib/views/screens/adherent/cotisationsScreen.dart          +109
+  lib/views/screens/at/dashboard_screen.dart                 +282
+  lib/views/widgets/collecte_receipt_screen.dart              +91
+  lib/views/screens/chef_equipe/chef_equipe_kpis_screen.dart  +78
+  lib/views/screens/superviseur/superviseur_home_screen.dart  +22
+  lib/views/screens/at/wallet_screen.dart                      +19
+  lib/views/screens/superviseur/superviseur_affectation_screen.dart
+                                                                +19
+  lib/views/widgets/dependant_bottom_sheet.dart                -23
+  lib/views/screens/at/my_network_screen.dart                   -9
+  lib/views/widgets/popup_menu_widget.dart                     -14
+  lib/views/screens/adherent/AffiliateDetailsScreen.dart        -11
+
+SUPPRIME (1 fichier)
+  lib/widgets/antecedent_bottom_sheet.dart                    -288
+
+CONFIGURATION
+  pubspec.yaml                       +5 (pdf, printing, share_plus)
+  pubspec.lock                       regenere
+  linux/flutter/generated_plugin_registrant.cc     regenere
+  linux/flutter/generated_plugins.cmake            regenere
+  macos/Flutter/GeneratedPluginRegistrant.swift     regenere
+  windows/flutter/generated_plugin_registrant.cc   regenere
+  windows/flutter/generated_plugins.cmake          regenere
+
+--------------------------------------------------------------------------------
+4. POINTS DE VIGILANCE
+--------------------------------------------------------------------------------
+
+a) Aucun test automatise n'existe dans le depot (pas de dossier test/).
+   Aucune validation automatique n'a donc ete possible. Seule l'analyse
+   statique a ete conduite.
+
+b) L'impression et le partage PDF n'ont pas ete testes sur appareil. L'analyse
+   statique valide la surface d'API des plugins mais pas leur comportement
+   natif. Un test manuel sur un telephone reel reste necessaire.
+
+c) Defaut preexistant non corrige : analysis_options.yaml inclut
+   package:flutter_lints/flutter.yaml, mais flutter_lints n'est declare dans
+   aucune dev_dependency et est absent du pubspec.lock. L'incluse est donc
+   silencieusement ignoree et le projet tourne sans lints. Ce defaut
+   predate cette intervention ; il n'a pas ete corrige pour rester hors
+   perimetre, mais il explique la faible qualite de la base de 17
+   diagnostics de fond.
+
+d) Les 17 diagnostics restants sont tous preexistants et situes dans des
+   fichiers non touches : code mort (_handleLogout, _showSuccessSnackBar,
+   _FaceIndicator), un import inutilise, une variable locale inutilisee,
+   et des usages deprecies de Radio et TextFormField dans l'ecran
+   d'inscription.
+
+e) Aucun commit n'a ete cree. L'ensemble des modifications est present dans
+   l'arbre de travail, en attente de revue.
+
+f) La version du projet dans pubspec.yaml est passee de 1.0.0+6 a 1.0.0+8.
+   Cette modification ne provient pas de cette intervention ; elle etait
+   deja presente dans l'arbre de travail.
+
+--------------------------------------------------------------------------------
+5. LIMITES API A RELEVER AU NIVEAU BACK-END
+--------------------------------------------------------------------------------
+
+Les points suivants ne sont pas des omissions de livraison : ils decoulent
+du contrat d'API actuel et ne sont pas contournables depuis le mobile.
+
+  1.2  aucun champ sexe ou genre sur un dependant
+  1.5  objectifs limites au mois et a l'annee
+  1.7  montant de rechargement non saisissable, calcule par le serveur
+  3.1  indicateurs Chef d'equipe limites au mois, sans champ de periode
+  4.2  403 emis par les permissions back-end
+  5.1  aucun endpoint GET de listage des chefs d'equipe
+  5.2  aucun endpoint GET d'historique d'affectation d'affilie
+
+================================================================================
+FIN DU RAPPORT
+================================================================================

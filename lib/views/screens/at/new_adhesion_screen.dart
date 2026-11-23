@@ -10,6 +10,7 @@ import '../../../models/type_adhesion_model.dart';
 import '../../../models/devise_model.dart';
 import '../../../models/prestation_model.dart';
 import '../../../models/adhesion_with_affilie_model.dart';
+import '../../../models/adhesion_partner_model.dart';
 import '../../../models/frais_model.dart';
 import 'package:flutter/foundation.dart';
 import '../../../models/collecte_receipt_data.dart';
@@ -19,6 +20,7 @@ import '../../../utils/electronic_payment_error_handler.dart';
 import '../../../utils/email_utils.dart';
 import '../../../utils/phone_utils.dart';
 import '../../../utils/picked_image_data.dart';
+import '../../../utils/paginated_response_helper.dart';
 import '../../../offline/offline_database.dart';
 import '../../../offline/offline_write_gateway.dart';
 import '../../../services/sync_service.dart';
@@ -30,9 +32,22 @@ import '../../widgets/flex_pay_payment_error_dialog.dart';
 import '../../widgets/prosoc_date_picker.dart';
 import '../../widgets/prosoc_message_dialog.dart';
 import '../../widgets/devise_paiement_selector.dart';
+import 'widgets/adhesion_category_picker_bottom_sheet.dart';
 
 class NewAdhesionScreen extends StatefulWidget {
-  const NewAdhesionScreen({super.key});
+  const NewAdhesionScreen({super.key, this.initialCategorieCode});
+
+  final String? initialCategorieCode;
+
+  static Future<bool?> open(BuildContext context) async {
+    final categoryCode = await AdhesionCategoryPickerBottomSheet.show(context);
+    if (categoryCode == null || !context.mounted) return null;
+    return Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => NewAdhesionScreen(initialCategorieCode: categoryCode),
+      ),
+    );
+  }
 
   @override
   State<NewAdhesionScreen> createState() => _NewAdhesionScreenState();
@@ -49,14 +64,21 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
 
   int _currentStep = 0;
   bool _isLoading = false;
+  bool _categorieInitialeAppliquee = false;
 
   // Lists for dropdowns
+  List<AdhesionCategory> _categoriesAdhesion = [];
+  List<AdhesionPartner> _structuresPartenaires = [];
+  List<AdhesionPartner> _entreprisesPartenaires = [];
+  List<TypeAdhesion> _allTypeAdhesions = [];
   List<TypeAdhesion> _typeAdhesions = [];
   List<Devise> _devises = [];
   List<Prestation> _prestations = [];
   List<Frais> _frais = [];
 
   // Selected items
+  AdhesionCategory? _selectedCategorieAdhesion;
+  AdhesionPartner? _selectedPartenaire;
   TypeAdhesion? _selectedTypeAdhesion;
   Devise? _selectedDevise;
   Prestation? _selectedPrestation;
@@ -93,9 +115,15 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
 
   // Loading states
   bool _isLoadingTypeAdhesions = true;
+  bool _isLoadingCategoriesAdhesion = true;
+  bool _isLoadingPartenaires = true;
   bool _isLoadingDevises = true;
   bool _isLoadingPrestations = true;
   bool _isLoadingFrais = true;
+  String? _categorieAdhesionError;
+  String? _typeAdhesionError;
+  String? _structurePartenaireError;
+  String? _entreprisePartenaireError;
 
   // Mode hors ligne
   bool _isOffline = false;
@@ -185,6 +213,33 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
       _selectedModePaiement == 'MOBILE_MONEY' ||
       _selectedModePaiement == 'CARTE_BANCAIRE';
 
+  String get _categorieCode =>
+      _selectedCategorieAdhesion?.code.toUpperCase() ?? '';
+
+  bool get _requiresPartner =>
+      _categorieCode == 'ENTREPRISE' || _categorieCode == 'STRUCTURE';
+
+  bool get _supportedCategorie =>
+      _categorieCode == 'PARTICULIER' ||
+      _categorieCode == 'ENTREPRISE' ||
+      _categorieCode == 'STRUCTURE';
+
+  List<AdhesionPartner> get _partenairesPourCategorie {
+    if (_categorieCode == 'STRUCTURE') return _structuresPartenaires;
+    if (_categorieCode == 'ENTREPRISE') return _entreprisesPartenaires;
+    return const [];
+  }
+
+  String get _labelPartenaire => _categorieCode == 'STRUCTURE'
+      ? 'Structure partenaire'
+      : 'Entreprise partenaire';
+
+  String? get _partenaireError => switch (_categorieCode) {
+    'STRUCTURE' => _structurePartenaireError,
+    'ENTREPRISE' => _entreprisePartenaireError,
+    _ => null,
+  };
+
   String get _statutPaiementCollecte =>
       _isElectronicPayment ? 'EN_ATTENTE' : 'OK';
 
@@ -247,7 +302,8 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
   Future<void> _loadCatalogues() async {
     if (!_isOffline) {
       await Future.wait([
-        _loadTypeAdhesions(),
+        _loadCategoriesAdhesion(),
+        _loadPartenaires(),
         _loadDevises(),
         _loadPrestations(),
         _loadFrais(),
@@ -255,13 +311,48 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
       if (!mounted) return;
       // Appels en échec alors que l'app se croit en ligne : on revérifie la
       // connexion pour basculer l'écran en mode hors ligne si besoin.
-      if (_typeAdhesions.isEmpty ||
+      if (_categoriesAdhesion.isEmpty ||
           _fraisAdhesionOptions.isEmpty ||
           _devises.isEmpty) {
         unawaited(SyncService.instance.refreshOnlineStatus());
       }
+      if (_selectedCategorieAdhesion != null) {
+        await _loadTypeAdhesions(_selectedCategorieAdhesion!.id);
+      }
     }
+    if (!mounted) return;
     _appliquerCatalogueLocal();
+    await _appliquerCategorieInitiale();
+  }
+
+  Future<void> _appliquerCategorieInitiale() async {
+    if (!mounted) return;
+    final code = widget.initialCategorieCode?.trim().toUpperCase();
+    if (code == null || code.isEmpty || _categorieInitialeAppliquee) return;
+    if (_selectedCategorieAdhesion != null) {
+      _categorieInitialeAppliquee = true;
+      return;
+    }
+
+    AdhesionCategory? category;
+    for (final item in _categoriesAdhesion) {
+      if (item.code.toUpperCase() == code) {
+        category = item;
+        break;
+      }
+    }
+    if (category == null) {
+      if (mounted) {
+        setState(() {
+          _categorieAdhesionError =
+              'La catégorie $code n’est pas disponible dans les références chargées.';
+        });
+      }
+      return;
+    }
+
+    _categorieInitialeAppliquee = true;
+    await _onCategorieAdhesionChanged(category);
   }
 
   /// Remplit depuis `OfflineDatabase.referentials` chaque catalogue resté vide.
@@ -277,7 +368,11 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
 
     /// Lit une liste du cache sans qu'un élément mal formé n'empêche les
     /// autres catalogues de se charger.
-    List<T> lire<T>(String nom, List<Map<String, dynamic>> rows, T Function(Map<String, dynamic>) fromJson) {
+    List<T> lire<T>(
+      String nom,
+      List<Map<String, dynamic>> rows,
+      T Function(Map<String, dynamic>) fromJson,
+    ) {
       final result = <T>[];
       for (final row in rows) {
         try {
@@ -290,24 +385,67 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
     }
 
     setState(() {
-      _referentielsLocauxAbsents = refs == null;
+      _referentielsLocauxAbsents =
+          refs == null ||
+          refs.categoriesAdhesion.isEmpty ||
+          refs.typeAdhesions.isEmpty;
       if (refs != null) {
         var utilise = false;
+        if (_categoriesAdhesion.isEmpty && refs.categoriesAdhesion.isNotEmpty) {
+          _categoriesAdhesion = lire(
+            'categoriesAdhesion',
+            refs.categoriesAdhesion,
+            AdhesionCategory.fromJson,
+          ).where((category) => category.id > 0 && category.statut).toList();
+          if (_categoriesAdhesion.isNotEmpty) {
+            _categorieAdhesionError = null;
+          }
+          utilise = _categoriesAdhesion.isNotEmpty;
+        }
+        if (_structuresPartenaires.isEmpty &&
+            refs.structuresPartenaires.isNotEmpty) {
+          _structuresPartenaires = lire(
+            'structuresPartenaires',
+            refs.structuresPartenaires,
+            AdhesionPartner.fromJson,
+          ).where((partner) => partner.id > 0 && partner.statut).toList();
+          if (_structuresPartenaires.isNotEmpty &&
+              _selectedCategorieAdhesion?.code.toUpperCase() == 'STRUCTURE') {
+            _structurePartenaireError = null;
+          }
+          utilise = _structuresPartenaires.isNotEmpty || utilise;
+        }
+        if (_entreprisesPartenaires.isEmpty &&
+            refs.entreprisesPartenaires.isNotEmpty) {
+          _entreprisesPartenaires = lire(
+            'entreprisesPartenaires',
+            refs.entreprisesPartenaires,
+            AdhesionPartner.fromJson,
+          ).where((partner) => partner.id > 0 && partner.statut).toList();
+          if (_entreprisesPartenaires.isNotEmpty &&
+              _selectedCategorieAdhesion?.code.toUpperCase() == 'ENTREPRISE') {
+            _entreprisePartenaireError = null;
+          }
+          utilise = _entreprisesPartenaires.isNotEmpty || utilise;
+        }
         if (_typeAdhesions.isEmpty && refs.typeAdhesions.isNotEmpty) {
-          _typeAdhesions = lire(
+          _allTypeAdhesions = lire(
             'typeAdhesions',
             refs.typeAdhesions,
             TypeAdhesion.fromJson,
-          ).where((t) => t.id > 0).toList();
-          if (_typeAdhesions.isNotEmpty) {
-            _selectedTypeAdhesion = _typeAdhesions.first;
-            _typeAdhesionIdController.text = _selectedTypeAdhesion!.id
-                .toString();
+          ).where((t) => t.id > 0 && t.statut).toList();
+          if (_selectedCategorieAdhesion != null) {
+            _typeAdhesions = _typesForCategory(_selectedCategorieAdhesion!.id);
+            if (_typeAdhesions.isNotEmpty) _typeAdhesionError = null;
           }
           utilise = true;
         }
         if (_prestations.isEmpty && refs.prestations.isNotEmpty) {
-          _prestations = lire('prestations', refs.prestations, Prestation.fromJson);
+          _prestations = lire(
+            'prestations',
+            refs.prestations,
+            Prestation.fromJson,
+          );
           utilise = true;
         }
         // Aucun frais d'adhésion exploitable (liste vide ou incomplète).
@@ -318,9 +456,11 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
           utilise = true;
         }
         if (_devises.isEmpty && refs.devises.isNotEmpty) {
-          _devises = lire('devises', refs.devises, Devise.fromJson)
-              .where((d) => d.idDevise > 0 && d.code.isNotEmpty)
-              .toList();
+          _devises = lire(
+            'devises',
+            refs.devises,
+            Devise.fromJson,
+          ).where((d) => d.idDevise > 0 && d.code.isNotEmpty).toList();
           if (_selectedPrestation != null) {
             _applyPrestationSelection(_selectedPrestation);
           } else {
@@ -330,6 +470,12 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         }
         if (utilise) _catalogueLocal = true;
       }
+      if (_categoriesAdhesion.isEmpty && _categorieAdhesionError == null) {
+        _categorieAdhesionError =
+            'Aucune catégorie active n’est disponible sur cet appareil.';
+      }
+      _isLoadingCategoriesAdhesion = false;
+      _isLoadingPartenaires = false;
       _isLoadingTypeAdhesions = false;
       _isLoadingDevises = false;
       _isLoadingPrestations = false;
@@ -375,61 +521,199 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
     super.dispose();
   }
 
-  Future<void> _loadTypeAdhesions() async {
+  List<Map<String, dynamic>> _referenceRows(dynamic data) {
+    return PaginatedResponseHelper.extractRows(
+      data,
+    ).whereType<Map>().map((row) => Map<String, dynamic>.from(row)).toList();
+  }
+
+  Future<void> _loadCategoriesAdhesion() async {
     try {
-      final response = await ApiService.getTypeAdhesions();
-      debugPrint('[DEBUG] Réponse API TypeAdhesion brute: $response');
-
+      final response = await ApiService.getCategorieAdhesionsActives();
       if (!mounted) return;
-
       if (response.success && response.data != null) {
-        List<dynamic> dataList;
-        if (response.data is List) {
-          dataList = response.data as List<dynamic>;
-        } else if (response.data is Map &&
-            (response.data as Map).containsKey('data')) {
-          dataList = (response.data as Map)['data'] as List<dynamic>;
-          debugPrint(
-            '[DEBUG] Données extraites de la réponse paginée: ${dataList.length} éléments',
-          );
-        } else {
-          debugPrint(
-            '[DEBUG] Format de données inattendu: ${response.data.runtimeType}',
-          );
-          setState(() => _isLoadingTypeAdhesions = false);
-          return;
-        }
-
+        final rows = _referenceRows(response.data);
+        final categories = rows
+            .map(AdhesionCategory.fromJson)
+            .where(
+              (category) =>
+                  category.id > 0 &&
+                  category.statut &&
+                  category.code.isNotEmpty,
+            )
+            .toList();
         setState(() {
-          _typeAdhesions = dataList
-              .map(
-                (json) => TypeAdhesion.fromJson(json as Map<String, dynamic>),
-              )
-              .toList();
-          if (_typeAdhesions.isNotEmpty) {
-            _selectedTypeAdhesion = _typeAdhesions.first;
-            _typeAdhesionIdController.text = _selectedTypeAdhesion!.id
-                .toString();
-            debugPrint(
-              '[DEBUG] Type d\'adhésion sélectionné par défaut: ${_selectedTypeAdhesion!.libelle} (ID: ${_selectedTypeAdhesion!.id})',
-            );
-          }
-          _isLoadingTypeAdhesions = false;
-          debugPrint(
-            '[DEBUG] Nombre de types d\'adhésion chargés: ${_typeAdhesions.length}',
-          );
+          _categoriesAdhesion = categories;
+          _isLoadingCategoriesAdhesion = false;
+          _categorieAdhesionError = categories.isEmpty
+              ? 'Aucune catégorie d’adhésion active n’est disponible.'
+              : null;
         });
+        await OfflineDatabase.saveAdhesionReferences(categoriesAdhesion: rows);
       } else {
-        debugPrint(
-          '[DEBUG] Échec du chargement des types d\'adhésion: ${response.message}',
-        );
-        setState(() => _isLoadingTypeAdhesions = false);
+        setState(() {
+          _isLoadingCategoriesAdhesion = false;
+          _categorieAdhesionError =
+              response.message ?? 'Impossible de charger les catégories.';
+        });
       }
     } catch (e, stackTrace) {
-      debugPrint('[DEBUG] Erreur lors du chargement des types d\'adhésion: $e');
-      debugPrint('[DEBUG] Stack trace: $stackTrace');
+      ApiErrorHelper.logException('Adhesion/categories', e, stackTrace);
       if (mounted) {
-        setState(() => _isLoadingTypeAdhesions = false);
+        setState(() {
+          _isLoadingCategoriesAdhesion = false;
+          _categorieAdhesionError = 'Impossible de charger les catégories.';
+        });
+      }
+    }
+  }
+
+  Future<void> _loadPartenaires() async {
+    try {
+      final responses = await Future.wait([
+        ApiService.getStructuresPartenairesActives(),
+        ApiService.getEntreprisesPartenairesActives(),
+      ]);
+      if (!mounted) return;
+
+      final structureRows = responses[0].success
+          ? _referenceRows(responses[0].data)
+          : const <Map<String, dynamic>>[];
+      final entrepriseRows = responses[1].success
+          ? _referenceRows(responses[1].data)
+          : const <Map<String, dynamic>>[];
+      final structures = structureRows
+          .map(AdhesionPartner.fromJson)
+          .where((partner) => partner.id > 0 && partner.statut)
+          .toList();
+      final entreprises = entrepriseRows
+          .map(AdhesionPartner.fromJson)
+          .where((partner) => partner.id > 0 && partner.statut)
+          .toList();
+
+      setState(() {
+        if (responses[0].success) _structuresPartenaires = structures;
+        if (responses[1].success) _entreprisesPartenaires = entreprises;
+        _isLoadingPartenaires = false;
+        _structurePartenaireError = responses[0].success
+            ? null
+            : responses[0].message ?? 'Impossible de charger les structures.';
+        _entreprisePartenaireError = responses[1].success
+            ? null
+            : responses[1].message ??
+                  'Impossible de charger les entreprises.';
+      });
+      await OfflineDatabase.saveAdhesionReferences(
+        structuresPartenaires: responses[0].success ? structureRows : null,
+        entreprisesPartenaires: responses[1].success ? entrepriseRows : null,
+      );
+    } catch (e, stackTrace) {
+      ApiErrorHelper.logException('Adhesion/partenaires', e, stackTrace);
+      if (mounted) {
+        setState(() {
+          _isLoadingPartenaires = false;
+          _structurePartenaireError = 'Impossible de charger les structures.';
+          _entreprisePartenaireError =
+              'Impossible de charger les entreprises.';
+        });
+      }
+    }
+  }
+
+  List<TypeAdhesion> _typesForCategory(int categoryId) => _allTypeAdhesions
+      .where(
+        (type) =>
+            type.statut &&
+            type.id > 0 &&
+            type.categorieAdhesionId == categoryId,
+      )
+      .toList();
+
+  Future<void> _onCategorieAdhesionChanged(AdhesionCategory? category) async {
+    setState(() {
+      _selectedCategorieAdhesion = category;
+      _selectedTypeAdhesion = null;
+      _typeAdhesionIdController.clear();
+      _selectedPartenaire = null;
+      _typeAdhesions = category == null ? [] : _typesForCategory(category.id);
+      _typeAdhesionError = null;
+      _isLoadingTypeAdhesions = category != null && !_isOffline;
+    });
+    if (category == null) return;
+    if (_isOffline) {
+      setState(() {
+        if (_typeAdhesions.isEmpty) {
+          _typeAdhesionError =
+              'Aucun type de cette catégorie n’est disponible en cache.';
+        }
+        if (_requiresPartner && _partenairesPourCategorie.isEmpty) {
+          final error = 'Aucun $_labelPartenaire n’est disponible en cache.';
+          if (_categorieCode == 'STRUCTURE') {
+            _structurePartenaireError = error;
+          } else {
+            _entreprisePartenaireError = error;
+          }
+        }
+      });
+      return;
+    }
+    await _loadTypeAdhesions(category.id);
+  }
+
+  Future<void> _loadTypeAdhesions(int categorieAdhesionId) async {
+    try {
+      final response = await ApiService.getTypeAdhesionsPourCategorie(
+        categorieAdhesionId,
+      );
+      if (!mounted) return;
+      if (!response.success || response.data == null) {
+        setState(() {
+          _isLoadingTypeAdhesions = false;
+          _typeAdhesionError = _typeAdhesions.isEmpty
+              ? response.message ?? 'Impossible de charger les types.'
+              : null;
+          if (_typeAdhesions.isNotEmpty) _catalogueLocal = true;
+        });
+        return;
+      }
+
+      final rows = _referenceRows(response.data);
+      final types = rows
+          .map(TypeAdhesion.fromJson)
+          .where(
+            (type) =>
+                type.id > 0 &&
+                type.statut &&
+                type.categorieAdhesionId == categorieAdhesionId,
+          )
+          .toList();
+      setState(() {
+        _allTypeAdhesions = [
+          ..._allTypeAdhesions.where(
+            (type) => type.categorieAdhesionId != categorieAdhesionId,
+          ),
+          ...types,
+        ];
+        _typeAdhesions = types;
+        _isLoadingTypeAdhesions = false;
+        _typeAdhesionError = types.isEmpty
+            ? 'Aucun type actif n’est disponible pour cette catégorie.'
+            : null;
+      });
+      await OfflineDatabase.saveAdhesionReferences(
+        typeCategorieAdhesionId: categorieAdhesionId,
+        typeAdhesions: types.map((type) => type.toJson()).toList(),
+      );
+    } catch (e, stackTrace) {
+      ApiErrorHelper.logException('Adhesion/types', e, stackTrace);
+      if (mounted) {
+        setState(() {
+          _isLoadingTypeAdhesions = false;
+          _typeAdhesionError = _typeAdhesions.isEmpty
+              ? 'Impossible de charger les types.'
+              : null;
+          if (_typeAdhesions.isNotEmpty) _catalogueLocal = true;
+        });
       }
     }
   }
@@ -1469,6 +1753,14 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
     );
   }
 
+  Widget _buildReferenceError(String message) => Align(
+    alignment: Alignment.centerLeft,
+    child: Text(
+      message,
+      style: TextStyle(color: Colors.red.shade700, fontSize: 12, height: 1.3),
+    ),
+  );
+
   bool get _skipDependantsStep =>
       _selectedTypeAdhesion?.libelle.toLowerCase().contains('solo') ?? false;
 
@@ -1686,8 +1978,36 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         }
         return true;
       case 2:
+        if (_selectedCategorieAdhesion == null) {
+          _showSnack('Sélectionnez la catégorie d’adhésion.');
+          return false;
+        }
+        if (!_supportedCategorie) {
+          _showSnack(
+            'Cette catégorie n’est pas encore prise en charge par le formulaire.',
+          );
+          return false;
+        }
         if (_selectedTypeAdhesion == null) {
           _showSnack("Sélectionnez le type d'adhésion.");
+          return false;
+        }
+        if (_selectedTypeAdhesion!.categorieAdhesionId !=
+            _selectedCategorieAdhesion!.id) {
+          _showSnack(
+            'Le type sélectionné ne correspond pas à la catégorie choisie.',
+          );
+          return false;
+        }
+        if (_requiresPartner && _selectedPartenaire == null) {
+          _showSnack('Sélectionnez $_labelPartenaire.');
+          return false;
+        }
+        if (_requiresPartner && _partenairesPourCategorie.isEmpty) {
+          _showSnack(
+            _partenaireError ??
+                'Aucun $_labelPartenaire actif n’est disponible.',
+          );
           return false;
         }
         if (_selectedFraisAdhesion == null) {
@@ -2246,6 +2566,49 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
             ),
             child: Column(
               children: [
+                _buildDropdownField<AdhesionCategory>(
+                  label: 'Catégorie d’adhésion',
+                  value: _selectedCategorieAdhesion,
+                  items: _categoriesAdhesion,
+                  isLoading: _isLoadingCategoriesAdhesion,
+                  isRequired: true,
+                  icon: Icons.category_outlined,
+                  itemLabel: (category) =>
+                      '${category.libelle} (${category.code})',
+                  onChanged: _onCategorieAdhesionChanged,
+                ),
+                if (_categorieAdhesionError != null) ...[
+                  const SizedBox(height: 8),
+                  _buildReferenceError(_categorieAdhesionError!),
+                ],
+                if (_selectedCategorieAdhesion != null &&
+                    !_supportedCategorie) ...[
+                  const SizedBox(height: 8),
+                  _buildReferenceError(
+                    'La catégorie ${_selectedCategorieAdhesion!.code} '
+                    'n’est pas prise en charge.',
+                  ),
+                ],
+                if (_requiresPartner) ...[
+                  const SizedBox(height: 20),
+                  _buildDropdownField<AdhesionPartner>(
+                    label: _labelPartenaire,
+                    value: _selectedPartenaire,
+                    items: _partenairesPourCategorie,
+                    isLoading: _isLoadingPartenaires,
+                    isRequired: true,
+                    icon: Icons.business_outlined,
+                    itemLabel: (partner) => partner.nom,
+                    onChanged: (partner) async {
+                      setState(() => _selectedPartenaire = partner);
+                    },
+                  ),
+                  if (_partenaireError != null) ...[
+                    const SizedBox(height: 8),
+                    _buildReferenceError(_partenaireError!),
+                  ],
+                ],
+                const SizedBox(height: 20),
                 _buildDropdownField<TypeAdhesion>(
                   label: "Type d'adhésion",
                   value: _selectedTypeAdhesion,
@@ -2270,6 +2633,10 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                     }
                   },
                 ),
+                if (_typeAdhesionError != null) ...[
+                  const SizedBox(height: 8),
+                  _buildReferenceError(_typeAdhesionError!),
+                ],
                 const SizedBox(height: 20),
                 _buildDropdownField<Prestation>(
                   label: "Prestation (optionnel)",
@@ -2480,7 +2847,8 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
                   const SizedBox(height: 20),
                   _buildDropdownField<Devise>(
                     label: 'Devise de paiement',
-                    value: _devisesPaiementElectronique.contains(_selectedDevise)
+                    value:
+                        _devisesPaiementElectronique.contains(_selectedDevise)
                         ? _selectedDevise
                         : null,
                     items: _devisesPaiementElectronique,
@@ -3753,7 +4121,14 @@ class _NewAdhesionScreenState extends State<NewAdhesionScreen>
         carteIdentiteBase64: _carteIdentite?.base64,
         carteIdentiteContentType: _carteIdentite?.contentType,
         affilieStatut: true,
+        categorieAdhesionId: _selectedCategorieAdhesion!.id,
         typeAdhesionId: typeAdhesionId,
+        entreprisePartenaireId: _categorieCode == 'ENTREPRISE'
+            ? _selectedPartenaire!.id
+            : null,
+        structurePartenaireId: _categorieCode == 'STRUCTURE'
+            ? _selectedPartenaire!.id
+            : null,
         agentId: agentId,
         adhesionStatut: true,
         // Règle métier: une adhésion nouvellement créée doit toujours démarrer en "En Attente",

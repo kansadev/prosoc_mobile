@@ -1,0 +1,315 @@
+================================================================================
+NOTE DE LIVRAISON - APPLICATION MOBILE PROSOC
+Fonctionnalites livrees et scenarii de test
+================================================================================
+
+Destinataire : equipe de test / recette
+Date : 13 octobre 2026
+Environnement de reference : UAT (https://uat-prosoc.asdc-rdc.org)
+
+
+--------------------------------------------------------------------------------
+1. CORRECTION DU BLOCAGE A L'ETAPE "SOUSCRIPTION" DE L'ADHESION
+--------------------------------------------------------------------------------
+Ce qui change :
+Jusqu'a present, il etait impossible de passer de l'etape "Souscription" a
+l'etape "Dependants" meme avec tous les champs remplis. Un message demandait de
+completer le type d'adhesion et le paiement, alors que rien ne manquait
+visiblement. La cause : les frais d'adhesion envoyes par la plateforme sont
+libelles avec un accent ("Frais adhesion"), ce qui n'etait pas reconnu par
+l'application. Le champ "Frais d'adhesion" n'apparaissait donc jamais.
+
+Comment tester :
+1. Se connecter avec un compte Agent (AT) ou Superviseur.
+2. Ouvrir "Nouvelle adhesion" et remplir les etapes 1 (Infos) et 2 (Adresse).
+3. A l'etape "Souscription", verifier que le champ "Frais d'adhesion" est bien
+   affiche (avec son montant et sa devise, ex. "Frais adhesion (USD 0.25)").
+4. Choisir le mode de paiement puis cliquer sur "Continuer".
+Resultat attendu :
+- Le champ frais d'adhesion est visible des l'ouverture de l'etape.
+- Le bouton "Continuer" fait bien passer a l'etape "Dependants".
+- Plus aucun message d'erreur "Completez le type d'adhesion et le paiement".
+
+En complément :
+- Si la plateforme ne renvoie aucun frais d'adhesion, un encadre orange
+  "Frais d'adhesion indisponibles" s'affiche avec un bouton "Reessayer" (au lieu
+  de laisser l'utilisateur bloque sans explication).
+- Les messages d'erreur nomment desormais précisement le champ manquant
+  (type d'adhesion, frais, mode de paiement, devise).
+
+Test du cas d'echec :
+1. Couper le reseau puis ouvrir "Nouvelle adhesion".
+2. Aller a l'etape "Souscription" et cliquer sur "Continuer".
+Resultat attendu :
+- Message clair : "Les frais d'adhesion n'ont pas pu etre charges. Reessayez
+  depuis la section Frais d'adhesion."
+- Le bouton "Reessayer" relance le chargement une fois le reseau retabli.
+
+
+--------------------------------------------------------------------------------
+2. CHOIX DE LA DEVISE DE PAIEMENT A L'ADHESION
+--------------------------------------------------------------------------------
+Ce qui change :
+La devise et auparavant affichee en lecture seule (non modifiable). L'utilisateur
+peut maintenant la choisir lui-meme dans une liste deroulante.
+
+Comment tester :
+1. Ouvrir "Nouvelle adhesion" et aller jusqu'a l'etape "Souscription".
+2. Dans le champ "Devise de paiement", selectionner une devise differente de
+   celle proposee par defaut.
+3. Terminer l'adhesion et verifier l'etape "Confirmation".
+Resultat attendu :
+- La liste des devises disponibles s'affiche (CDF, USD, EURO).
+- La devise choisie apparaît dans le recapitulatif de confirmation
+  (ligne "Devise de paiement").
+- Par defaut, la devise du frais d'adhesion reste selectionnee.
+
+
+--------------------------------------------------------------------------------
+3. DEPENDANTS OPTIONNELS A L'ADHESION
+--------------------------------------------------------------------------------
+Ce qui change :
+Les personnes a charge ne sont plus une etape imposante : elles sont
+clairement facultatives et peuvent etre completees plus tard par un agent.
+
+Comment tester :
+1. Ouvrir "Nouvelle adhesion", choisir un type d'adhesion autre que "Solo"
+   (ex. F6, F3, Couple).
+2. A l'etape "Dependants", NE RIEN saisir puis cliquer sur
+   "Ignorer les personnes a charge (facultatif)".
+Resultat attendu :
+- Passerelle directe vers l'etape "Confirmation", sans question posee.
+- Possibilite aussi de simplement cliquer sur "Continuer" sans rien ajouter.
+- Si on ajoute un enfant de 18 a 25 ans sans certificat de scolarite, la
+  demande de confirmation du report apparait toujours (comportement conserve).
+
+Verifier egalement :
+- L'etape "Souscription" affiche un encadre bleu rappelant que les personnes a
+  charge sont facultatives.
+
+
+--------------------------------------------------------------------------------
+4. BOUTON "ANTECEDENTS MEDICAUX" RETIRE
+--------------------------------------------------------------------------------
+Ce qui change :
+Le bouton "Ajouter un antecedent" a ete retire des menus de l'application.
+
+Comment tester :
+1. Ouvrir une fiche affilie (Menu "..." en haut a droite).
+2. Ouvrir egalement "Mon reseau".
+Resultat attendu :
+- Le menu ne contient plus l'entree "Ajouter un antecedent".
+- Toutes les autres entrees restent presentes (Payer une cotisation, Payer un
+  frais, Ajouter un dependant, Voir les arrieres, etc.).
+
+
+--------------------------------------------------------------------------------
+5. RECU PLUS GRAND ET PLUS LISIBLE
+--------------------------------------------------------------------------------
+Ce qui change :
+Le recu (affichage ecran et impression / PDF) a ete agrandi pour etre lu et
+imprime confortablement.
+
+Comment tester :
+1. Effectuer n'importe quel encaissement (cotisation, frais ou adhesion).
+2. A la fin, observer le recqui puis lancer l'impression ou le partage.
+Resultat attendu :
+- Montant bien plus gros a l'ecran.
+- Lignes d'informations plus espacees, texte plus grand.
+- A l'impression, toutes les informations restent lisibles sur la page.
+
+
+--------------------------------------------------------------------------------
+6. AFFECTATION ET REAFFECTATION DES AFFILIES (SUPERVISEUR)
+--------------------------------------------------------------------------------
+Ce qui change :
+L'affectation des nouveaux adherents et la reaffectation des affilies d'un agent
+vers un autre fonctionnent desormais de facon fiable.
+
+Comment tester :
+A. Affectation
+1. Se connecter en Superviseur.
+2. Ouvrir "Affectation" depuis l'ecran d'accueil.
+3. Verifier que la liste des nouveaux dossiers apparait.
+4. Choisir un agent dans l'equipe puis valider.
+B. Reaffectation
+1. Depuis l'ecran d'affectation, cliquer sur l'icone de transfert
+   (echange entre agents).
+2. Choisir l'agent source, rechercher un affilie, puis choisir l'agent cible.
+3. Valider.
+Resultat attendu :
+- Le dossier disparaît de la liste des dossiers a affecter.
+- Un message confirme l'operation (nombre de reussites).
+- L'affilie apparait ensuite chez le nouvel agent.
+- Si la plateforme ne fournit pas l'identifiant de l'affilie, un message clair
+  s'affiche ("Identifiant de l'affilie non communique par la plateforme...
+  Actualisez la liste") au lieu d'un echec silencieux.
+
+
+--------------------------------------------------------------------------------
+7. NOUVEAU MODULE "RECHARGEMENT" (SUPERVISEUR)
+--------------------------------------------------------------------------------
+Ce qui change :
+Un nouveau module centralise tout ce qui concerne le rechargement des comptes
+virtuels des agents : visualisation des demandes en attente et rechargement.
+
+Comment tester :
+1. Se connecter en Superviseur.
+2. Depuis l'ecran d'accueil, cliquer sur la tuile "Rechargement".
+3. Verifier qu'apparaissent UNIQUEMENT les agents ayant soumis une demande en
+   attente (nom, matricule, montant, solde, plafond, motif, date).
+4. Cliquer sur "Recharger" puis confirmer.
+Resultat attendu :
+- Une boite de dialogue affiche le montant credite et le nouveau solde de
+  l'agent.
+- La demande quitte la liste apres confirmation.
+- Le bouton "Rejeter" demande un motif obligatoire.
+- En tirant l'ecran vers le bas, la liste se rafraichit.
+
+Verifier egalement :
+- Le bouton "Recharger" n'existe plus dans le module "Mon equipe" du superviseur
+  ni dans la fiche de detail d'un agent : tout passe par le module
+  "Rechargement".
+- Les messages d'erreur metier sont expliques en francais (solde au plafond,
+  demande deja en file, agent hors perimetre).
+
+Cas "aucune demande" :
+- Un message "Aucune demande en attente" s'affiche si aucun agent n'a fait de
+  demande.
+
+
+--------------------------------------------------------------------------------
+8. AFFICHAGE DES ZONES HARMONISE (SUPERVISEUR)
+--------------------------------------------------------------------------------
+Ce qui change :
+Le module "Zones et chefs d'equipe" du superviseur affiche desormais les memes
+informations que le module "Ma zone" du chef d'equipe.
+
+Comment tester :
+1. Se connecter en Superviseur.
+2. Ouvrir "Zones et chefs d'equipe".
+Resultat attendu :
+Chaque zone affiche :
+- son nom et son numero (ex. "Zone #1"),
+- sa commune,
+- son statut (Active ou Inactive),
+- le nom de son chef d'equipe (ou "Non attribue"),
+- le nombre d'agents AT rattaches a la zone.
+Les actions "Designer", "Changer" et "Retirer" un chef d'equipe fonctionnent
+comme avant.
+
+
+--------------------------------------------------------------------------------
+9. PROFIL CHEF D'EQUIPE : SUIVI DES COLLECTES JOURNALIERES
+--------------------------------------------------------------------------------
+Ce qui change :
+Le chef d'equipe peut suivre la collecte du jour de chacun de ses agents AT.
+Le bouton de rechargement a ete retire de son interface.
+
+Comment tester :
+1. Se connecter avec un compte Chef d'equipe.
+2. Ouvrir l'onglet "Mon equipe".
+3. Utiliser le bouton de bascule "Jour / Mois" en haut de la liste.
+Resultat attendu :
+- En position "Jour" : chaque agent affiche le nombre de collectes du jour et
+  le montant collecte aujourd'hui.
+- En position "Mois" : chaque agent affiche le nombre de collectes du mois et
+  le montant total du mois.
+- La valeur "Jour" reflete les collectes reellement enregistrees dans la
+  journee (0 si aucune collecte encore).
+- Aucun bouton "Recharger" n'est visible dans la liste d'equipe ni dans la
+  fiche de detail d'un agent.
+
+
+--------------------------------------------------------------------------------
+10. PROFIL PERCEPTEUR : BADGE CORRIGE ET ENCAISSEMENT TOTAL
+--------------------------------------------------------------------------------
+Ce qui change :
+- Le badge de role affiche maintenant "Percepteur" (il affichait auparavant
+  "Superviseur d'equipe" pour les utilisateurs cumulant plusieurs roles).
+- Nouvelle action "Encaisser le total" pour encaisser en une seule fois toutes
+  les collectes en attente d'un agent.
+
+Comment tester :
+A. Badge
+1. Se connecter avec un compte Percepteur.
+2. Regarder le bandeau sous le nom d'utilisateur dans le profil.
+Resultat attendu : le badge indique "Percepteur".
+
+B. Encaissement du total
+1. Aller dans "Encaissement" puis choisir le type "Agent".
+2. Dans la liste des agents, reperer un agent ayant des collectes en attente
+   (une ligne precise le nombre de collectes et le montant total).
+3. Cliquer sur "Encaisser le total".
+Resultat attendu :
+- Toutes les collectes de l'agent sont pre-selectionnees.
+- Le total affiche correspond bien a la somme des collectes en attente.
+- Il ne reste qu'a confirmer la perception (session caisse requise comme
+  d'habitude).
+
+Verifier egalement :
+- Un agent sans collecte en attente n'affiche pas de bouton "Encaisser le total".
+
+
+--------------------------------------------------------------------------------
+11. MODE HORS LIGNE (OFFLINE) - SYNCHRONISATION AUTOMATIQUE
+--------------------------------------------------------------------------------
+Ce qui change :
+L'application peut maintenant fonctionner sans reseau. Les saisies faites hors
+ligne sont conservees sur le telephone, puis envoyees automatiquement des le
+retour de la connexion.
+
+Comment tester :
+A. Saisie hors ligne
+1. Verifier que l'application a ete ouverte au moins une fois avec le reseau
+   active (preparation des donnees locales).
+2. Activer le mode avion (ou couper le Wi-Fi et les donnees mobiles).
+3. Effectuer un paiement de cotisation, de frais ou une nouvelle adhesion en
+   mode "Compte virtuel" (VIRTUAL_ACCOUNT).
+Resultat attendu :
+- Un bandeau orange "Mode hors ligne" s'affiche en haut de l'ecran.
+- Un message confirme que l'operation est enregistree localement et sera
+   envoyee au retour du reseau.
+- Le compose "N en attente" apparait sur le bandeau.
+- Le reçu d'adhesion mentionne "EN ATTENTE SYNC".
+
+B. Retour du reseau
+1. Reactiver le reseau.
+Resultat attendu :
+- Le bandeau devient bleu et indique le nombre d'ecritures en attente.
+- La synchronisation se declenche (automatiquement ou via le bouton
+  "Synchroniser").
+- Le bandeon disparaît une fois tout envoye.
+- Les operations sont retrouvees normalement dans l'application.
+
+C. Donnees en lecture seule hors ligne
+- Les listes d'affilies et les soldes charges precedemment restent consultables
+  sans reseau.
+
+Limites connues a tester :
+- Les paiements par Mobile Money, carte bancaire et FlexPay NECESSITENT le
+  reseau (ils ne sont jamais mis en attente).
+- L'encaissement especes et la perception virtuelle ne fonctionnent pas hors
+  ligne.
+
+IMPORTANT POUR L'EQUIPE DE TEST (prerequis technique a faire une fois) :
+Le mode hors ligne doit etre active cote serveur avant les tests :
+1. Executer le script SQL "MigrateOfflineSyncPermissions.idempotent.sql" sur
+   l'environnement de test.
+2. Redemarrer l'application mobile (reconnexion obligatoire avec un compte AT
+   ou Chef d'equipe).
+Sans cette etape, les fonctions de synchronisation renverront une erreur 403.
+
+
+--------------------------------------------------------------------------------
+POINTS D'ATTENTION POUR LES TESTS
+--------------------------------------------------------------------------------
+1. Comptes a utiliser : au moins un Agent (AT), un Chef d'equipe, un
+   Superviseur et un Percepteur pour couvrir l'ensemble des scenarios.
+2. Tester avec et sans reseau pour toutes les operations d'encaissement.
+3. Verifier que les montants affiches sont bien dans la meme devise que celle
+   du compte virtuel de l'agent.
+4. Verifier l'impression d'un recu sur imprimante thermique ( lisibilite ).
+
+Bonne recette a tous !
+================================================================================

@@ -7,6 +7,7 @@ class TypeAdhesion {
   final bool statut;
   final DateTime dateCreation;
   final int categorieAdhesionId;
+  final String code;
 
   TypeAdhesion({
     required this.id,
@@ -17,6 +18,7 @@ class TypeAdhesion {
     required this.statut,
     required this.dateCreation,
     required this.categorieAdhesionId,
+    this.code = '',
   });
 
   /// Tolérant : camelCase / PascalCase et champs facultatifs absents (les
@@ -49,6 +51,7 @@ class TypeAdhesion {
           DateTime.tryParse('${champ(['dateCreation']) ?? ''}') ??
           DateTime.now(),
       categorieAdhesionId: entier(champ(['categorieAdhesionId'])),
+      code: (champ(['code']) ?? '').toString(),
     );
   }
 
@@ -62,6 +65,7 @@ class TypeAdhesion {
       'statut': statut,
       'dateCreation': dateCreation.toIso8601String(),
       'categorieAdhesionId': categorieAdhesionId,
+      'code': code,
     };
   }
 

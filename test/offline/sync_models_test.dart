@@ -86,4 +86,41 @@ void main() {
     expect(merged.frais.any((f) => f['code'] == 'FRAIS_ADHESION'), isTrue);
     expect(merged.typeAdhesions, hasLength(1));
   });
+
+  test('référentiels partenaire persistés et fusionnés par identifiant', () {
+    final local = SyncReferentials(
+      typeAdhesions: const [],
+      categoriesAdhesion: [
+        {'idCategorieAdhesion': 3, 'code': 'STRUCTURE'},
+      ],
+      structuresPartenaires: [
+        {'idStructurePartenaire': 12, 'nom': 'Ancienne'},
+      ],
+      entreprisesPartenaires: const [],
+      devises: const [],
+      provinces: const [],
+      frais: const [],
+      prestations: const [],
+      tarifsCotisation: const [],
+      snapshot: 's1',
+    );
+    final delta = SyncReferentials(
+      typeAdhesions: const [],
+      categoriesAdhesion: const [],
+      structuresPartenaires: [
+        {'idStructurePartenaire': 12, 'nom': 'Mise à jour'},
+      ],
+      entreprisesPartenaires: const [],
+      devises: const [],
+      provinces: const [],
+      frais: const [],
+      prestations: const [],
+      tarifsCotisation: const [],
+      snapshot: '',
+    );
+
+    final merged = SyncReferentials.fromMap(local.mergedWith(delta).toMap())!;
+    expect(merged.categoriesAdhesion.single['code'], 'STRUCTURE');
+    expect(merged.structuresPartenaires.single['nom'], 'Mise à jour');
+  });
 }

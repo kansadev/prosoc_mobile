@@ -419,12 +419,7 @@ class _SuperviseurHomeScreenState extends State<SuperviseurHomeScreen> {
             label: 'Adhésion',
             color: AppColors.prosocGreen,
             onTap: () async {
-              await Navigator.push<bool>(
-                context,
-                MaterialPageRoute<bool>(
-                  builder: (_) => const NewAdhesionScreen(),
-                ),
-              );
+              await NewAdhesionScreen.open(context);
             },
           ),
         ),

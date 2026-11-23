@@ -3769,6 +3769,24 @@ class ApiService {
     return _get<List<dynamic>>('/api/categorieadhesion');
   }
 
+  /// GET /api/CategorieAdhesion/actives — catégories disponibles au formulaire.
+  static Future<ApiResponse<List<dynamic>>>
+  getCategorieAdhesionsActives() async {
+    return _get<List<dynamic>>('/api/CategorieAdhesion/actives');
+  }
+
+  /// GET /api/StructurePartenaire/actives — liste publique des structures.
+  static Future<ApiResponse<List<dynamic>>>
+  getStructuresPartenairesActives() async {
+    return _get<List<dynamic>>('/api/StructurePartenaire/actives');
+  }
+
+  /// GET /api/EntreprisePartenaire/actives — liste publique des entreprises.
+  static Future<ApiResponse<List<dynamic>>>
+  getEntreprisesPartenairesActives() async {
+    return _get<List<dynamic>>('/api/EntreprisePartenaire/actives');
+  }
+
   /// GET /api/categorieagent - Catégories d'agents
   static Future<ApiResponse<List<dynamic>>> getCategorieAgents() async {
     return _get<List<dynamic>>('/api/categorieagent');
@@ -3782,6 +3800,20 @@ class ApiService {
   /// GET /api/typeadhesion - Types d'adhésions
   static Future<ApiResponse<List<dynamic>>> getTypeAdhesions() async {
     return _get<List<dynamic>>('/api/typeadhesion');
+  }
+
+  /// GET /api/TypeAdhesion?categorieAdhesionId=... — types d'une catégorie.
+  static Future<ApiResponse<dynamic>> getTypeAdhesionsPourCategorie(
+    int categorieAdhesionId,
+  ) async {
+    return _get<dynamic>(
+      '/api/TypeAdhesion',
+      queryParams: {
+        'categorieAdhesionId': categorieAdhesionId.toString(),
+        'page': '1',
+        'pageSize': '20',
+      },
+    );
   }
 
   // ============================================

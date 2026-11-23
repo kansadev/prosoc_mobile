@@ -271,6 +271,9 @@ class SyncService {
       final delta = response.data!;
       final refs = complet ? delta : local.mergedWith(delta);
       await OfflineDatabase.saveReferentials(refs);
+      if (complet || local.categoriesAdhesion.isEmpty) {
+        await _syncAdhesionPartnerReferences();
+      }
       if (kDebugMode) {
         debugPrint(
           '[Sync] référentiels ${complet ? 'complets' : 'delta'} reçus : '
@@ -283,6 +286,28 @@ class SyncService {
         await OfflineDatabase.savePlafond(refs.plafondWalletVirtuel);
       }
     }
+  }
+
+  Future<void> _syncAdhesionPartnerReferences() async {
+    final responses = await Future.wait([
+      ApiService.getCategorieAdhesionsActives(),
+      ApiService.getStructuresPartenairesActives(),
+      ApiService.getEntreprisesPartenairesActives(),
+    ]);
+
+    List<Map<String, dynamic>> rows(ApiResponse<List<dynamic>> response) {
+      if (!response.success || response.data == null) return const [];
+      return response.data!
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+    }
+
+    await OfflineDatabase.saveAdhesionReferences(
+      categoriesAdhesion: responses[0].success ? rows(responses[0]) : null,
+      structuresPartenaires: responses[1].success ? rows(responses[1]) : null,
+      entreprisesPartenaires: responses[2].success ? rows(responses[2]) : null,
+    );
   }
 
   Future<bool> _syncAffilies(String? since) async {

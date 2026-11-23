@@ -234,10 +234,7 @@ class _MyNetworkScreenState extends State<MyNetworkScreen>
   }
 
   Future<void> _navigateToNewAdhesion() async {
-    final created = await Navigator.push<bool>(
-      context,
-      MaterialPageRoute(builder: (context) => const NewAdhesionScreen()),
-    );
+    final created = await NewAdhesionScreen.open(context);
 
     if (created == true && mounted) {
       await _loadAffilies(reset: true);

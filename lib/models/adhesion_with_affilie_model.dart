@@ -16,6 +16,7 @@ class AdhesionApiValues {
   static const typeCollecteSouscriptionCollecte = 'Souscription';
   static const statutDossierComplet = 'COMPLET';
   static const statutDossierEnAttente = 'En Attente';
+
   /// Adhésion en ligne (accès libre) — spec PROCESSUS.
   static const statutDossierEnLigne = 'EN ATTENTE';
 
@@ -52,7 +53,10 @@ class AdhesionWithAffilieRequest {
   final String? carteIdentiteContentType;
   final bool affilieStatut;
   final String? statutDossier;
+  final int categorieAdhesionId;
   final int typeAdhesionId;
+  final int? entreprisePartenaireId;
+  final int? structurePartenaireId;
   final int? agentId;
   final bool adhesionStatut;
   final List<CollecteRequest>? collectes;
@@ -83,7 +87,10 @@ class AdhesionWithAffilieRequest {
     this.carteIdentiteContentType,
     required this.affilieStatut,
     this.statutDossier,
+    required this.categorieAdhesionId,
     required this.typeAdhesionId,
+    this.entreprisePartenaireId,
+    this.structurePartenaireId,
     this.agentId,
     required this.adhesionStatut,
     this.collectes,
@@ -100,6 +107,7 @@ class AdhesionWithAffilieRequest {
       'telephone': telephone,
       'provinceResidence': provinceResidence,
       'affilieStatut': affilieStatut,
+      'categorieAdhesionId': categorieAdhesionId,
       'typeAdhesionId': typeAdhesionId,
       'adhesionStatut': adhesionStatut,
       'collectes': (collectes ?? const <CollecteRequest>[])
@@ -135,6 +143,12 @@ class AdhesionWithAffilieRequest {
       payload['carteIdentiteContentType'] = carteIdentiteContentType;
     }
     if (statutDossier != null) payload['statutDossier'] = statutDossier;
+    if (entreprisePartenaireId != null) {
+      payload['entreprisePartenaireId'] = entreprisePartenaireId;
+    }
+    if (structurePartenaireId != null) {
+      payload['structurePartenaireId'] = structurePartenaireId;
+    }
     if (agentId != null) payload['agentId'] = agentId;
 
     return payload;

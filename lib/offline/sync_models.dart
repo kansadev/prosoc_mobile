@@ -313,6 +313,9 @@ class SyncPage<T> {
 /// Catalogue métier `GET /api/sync/referentials`.
 class SyncReferentials {
   final List<Map<String, dynamic>> typeAdhesions;
+  final List<Map<String, dynamic>> categoriesAdhesion;
+  final List<Map<String, dynamic>> structuresPartenaires;
+  final List<Map<String, dynamic>> entreprisesPartenaires;
   final List<Map<String, dynamic>> devises;
   final List<Map<String, dynamic>> provinces;
   final List<Map<String, dynamic>> frais;
@@ -324,6 +327,9 @@ class SyncReferentials {
 
   const SyncReferentials({
     required this.typeAdhesions,
+    this.categoriesAdhesion = const [],
+    this.structuresPartenaires = const [],
+    this.entreprisesPartenaires = const [],
     required this.devises,
     required this.provinces,
     required this.frais,
@@ -336,6 +342,9 @@ class SyncReferentials {
 
   Map<String, dynamic> toMap() => {
     'typeAdhesions': typeAdhesions,
+    'categoriesAdhesion': categoriesAdhesion,
+    'structuresPartenaires': structuresPartenaires,
+    'entreprisesPartenaires': entreprisesPartenaires,
     'devises': devises,
     'provinces': provinces,
     'frais': frais,
@@ -348,7 +357,12 @@ class SyncReferentials {
 
   /// Aucune donnée utile au formulaire d'adhésion.
   bool get isEmpty =>
-      typeAdhesions.isEmpty && devises.isEmpty && frais.isEmpty;
+      typeAdhesions.isEmpty &&
+      categoriesAdhesion.isEmpty &&
+      structuresPartenaires.isEmpty &&
+      entreprisesPartenaires.isEmpty &&
+      devises.isEmpty &&
+      frais.isEmpty;
 
   /// Applique un delta (`since`) : upsert par identifiant, liste par liste,
   /// comme le prévoit le contrat de synchronisation.
@@ -369,6 +383,15 @@ class SyncReferentials {
 
     return SyncReferentials(
       typeAdhesions: merge(typeAdhesions, delta.typeAdhesions),
+      categoriesAdhesion: merge(categoriesAdhesion, delta.categoriesAdhesion),
+      structuresPartenaires: merge(
+        structuresPartenaires,
+        delta.structuresPartenaires,
+      ),
+      entreprisesPartenaires: merge(
+        entreprisesPartenaires,
+        delta.entreprisesPartenaires,
+      ),
       devises: merge(devises, delta.devises),
       provinces: merge(provinces, delta.provinces),
       frais: merge(frais, delta.frais),
@@ -402,6 +425,9 @@ class SyncReferentials {
     if (map == null) return null;
     return SyncReferentials(
       typeAdhesions: _mapList(map['typeAdhesions']),
+      categoriesAdhesion: _mapList(map['categoriesAdhesion']),
+      structuresPartenaires: _mapList(map['structuresPartenaires']),
+      entreprisesPartenaires: _mapList(map['entreprisesPartenaires']),
       devises: _mapList(map['devises']),
       provinces: _mapList(map['provinces']),
       frais: _mapList(map['frais']),
@@ -416,6 +442,15 @@ class SyncReferentials {
   factory SyncReferentials.fromJson(Map<String, dynamic> json) {
     return SyncReferentials(
       typeAdhesions: _mapList(json['typeAdhesions'] ?? json['TypeAdhesions']),
+      categoriesAdhesion: _mapList(
+        json['categoriesAdhesion'] ?? json['CategoriesAdhesion'],
+      ),
+      structuresPartenaires: _mapList(
+        json['structuresPartenaires'] ?? json['StructuresPartenaires'],
+      ),
+      entreprisesPartenaires: _mapList(
+        json['entreprisesPartenaires'] ?? json['EntreprisesPartenaires'],
+      ),
       devises: _mapList(json['devises'] ?? json['Devises']),
       provinces: _mapList(json['provinces'] ?? json['Provinces']),
       frais: _mapList(json['frais'] ?? json['Frais']),

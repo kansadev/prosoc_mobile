@@ -363,6 +363,60 @@ class OfflineDatabase {
     await _box(OfflineBoxes.referentials).put('data', value.toMap());
   }
 
+  static Future<void> saveAdhesionReferences({
+    List<Map<String, dynamic>>? categoriesAdhesion,
+    List<Map<String, dynamic>>? structuresPartenaires,
+    List<Map<String, dynamic>>? entreprisesPartenaires,
+    int? typeCategorieAdhesionId,
+    List<Map<String, dynamic>>? typeAdhesions,
+  }) async {
+    final current =
+        referentials ??
+        const SyncReferentials(
+          typeAdhesions: [],
+          devises: [],
+          provinces: [],
+          frais: [],
+          prestations: [],
+          tarifsCotisation: [],
+          snapshot: '',
+        );
+    final updatedTypes = typeAdhesions == null
+        ? current.typeAdhesions
+        : [
+            ...current.typeAdhesions.where(
+              (row) =>
+                  _categoryIdFromReferential(row) != typeCategorieAdhesionId,
+            ),
+            ...typeAdhesions,
+          ];
+    await saveReferentials(
+      SyncReferentials(
+        typeAdhesions: updatedTypes,
+        categoriesAdhesion: categoriesAdhesion ?? current.categoriesAdhesion,
+        structuresPartenaires:
+            structuresPartenaires ?? current.structuresPartenaires,
+        entreprisesPartenaires:
+            entreprisesPartenaires ?? current.entreprisesPartenaires,
+        devises: current.devises,
+        provinces: current.provinces,
+        frais: current.frais,
+        prestations: current.prestations,
+        tarifsCotisation: current.tarifsCotisation,
+        plafondWalletVirtuel: current.plafondWalletVirtuel,
+        nextSince: current.nextSince,
+        snapshot: current.snapshot,
+      ),
+    );
+  }
+
+  static int _categoryIdFromReferential(Map<String, dynamic> row) {
+    final value =
+        row['categorieAdhesionId'] ?? row['CategorieAdhesionId'];
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
   // ---------- Deletions ----------
 
   static Future<void> applyDeletions(SyncDeletions deletions) async {

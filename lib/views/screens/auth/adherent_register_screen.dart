@@ -376,6 +376,7 @@ class _AdherentRegisterScreenState extends State<AdherentRegisterScreen> {
       carteIdentiteBase64: _carteIdentite?.base64,
       carteIdentiteContentType: _carteIdentite?.contentType,
       affilieStatut: true,
+      categorieAdhesionId: _selectedType!.categorieAdhesionId,
       typeAdhesionId: _selectedType!.id,
       adhesionStatut: true,
       statutDossier: AdhesionApiValues.statutDossierEnLigne,

@@ -472,10 +472,7 @@ String _getGreeting() {
   Future<void> _navigateToService(BuildContext context, String serviceName) async {
     switch (serviceName) {
       case 'Adhésion':
-        final created = await Navigator.push<bool>(
-          context,
-          MaterialPageRoute(builder: (context) => const NewAdhesionScreen()),
-        );
+        final created = await NewAdhesionScreen.open(context);
         if (created == true && mounted) {
           setState(() => _isLoadingSummary = true);
           await _loadAgentSummary();
